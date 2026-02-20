@@ -1,0 +1,7 @@
+[tools]
+rust = "stable"
+just = "1.46.0"
+lefthook = "2.1.1"
+
+[env]
+RUST_BACKTRACE = "1"

@@ -1,0 +1,23 @@
+# Secrets
+.env
+.env.*
+*.key
+secrets/
+**/secrets/
+
+# Build outputs
+target/
+dist/
+node_modules/
+
+# Common binaries
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.pdf
+*.zip
+*.wasm
+
+diffship_*/

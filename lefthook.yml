@@ -1,0 +1,13 @@
+pre-commit:
+  jobs:
+    - name: fmt-check
+      run: mise exec -- just fmt-check
+    - name: clippy
+      run: mise exec -- just lint
+    - name: traceability
+      run: mise exec -- just trace-check
+
+pre-push:
+  jobs:
+    - name: ci
+      run: mise exec -- just ci

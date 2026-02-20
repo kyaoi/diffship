@@ -1,0 +1,6 @@
+# Runtime artifacts created by diffship ops.
+# Keep this directory itself in the repo so docs-check path references stay valid.
+
+runs/
+worktrees/
+lock
