@@ -69,10 +69,10 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M0-01 | todo | `diffship init`（project kit生成） | `.diffship/` が生成され、既存があれば安全にスキップ/`--force`で上書き |
-| M0-02 | todo | ロック（同時実行防止） | .diffship/lock が作られ、二重起動を拒否できる |
-| M0-03 | todo | runsの保存（run-id/ログ） | .diffship/runs/ 配下に run-id ディレクトリを作り、apply/verify の結果が保存される |
-| M0-04 | todo | M0の統合テスト | 一時git repo上で `init`→`status`→`runs` が通る |
+| M0-01 | done | `diffship init`（project kit生成） | `.diffship/` が生成され、既存があれば安全にスキップ/`--force`で上書き |
+| M0-02 | done | ロック（同時実行防止） | .diffship/lock が作られ、二重起動を拒否できる |
+| M0-03 | done | runsの保存（run-id/ログ） | `.diffship/runs/<run-id>/run.json` が作られ、少なくとも `init` の結果（`init.json`）が保存される（apply/verify は M2 で拡張） |
+| M0-04 | done | M0の統合テスト | 一時git repo上で `init`→`status`→`runs` が通る |
 
 ### M1: worktree/session/sandbox（作業ツリーを汚さない核）
 
@@ -110,9 +110,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M0-01 init
-2) M0-02 lock
-3) M0-03 runs
+1) M1-01 session 作成/再利用
+2) M1-02 sandbox 作成（runごと）
+3) M1-03 クリーンアップ方針
 
 ---
 

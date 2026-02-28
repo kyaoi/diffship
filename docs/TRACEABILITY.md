@@ -188,8 +188,8 @@ Conventions:
 
 ## status
 
-- **S-STATUS-001** — Tests: TBD — Code: `src/ops/status.rs` — Status: Planned
-- **S-STATUS-002** — Tests: TBD — Code: `src/ops/status.rs` — Status: Planned
+- **S-STATUS-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/status.rs` — Status: Implemented
+- **S-STATUS-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/status.rs` — Status: Implemented
 
 ---
 
@@ -228,8 +228,8 @@ Conventions:
 
 ---
 
-- **S-OPS-001** — Tests: TBD — Code: `src/ops/lock.rs` — Status: Planned
-- **S-OPS-002** — Tests: TBD — Code: `src/ops/lock.rs` — Status: Planned
+- **S-OPS-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/lock.rs` — Status: Implemented
+- **S-OPS-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/lock.rs` — Status: Implemented
 - **S-OPS-003** — Tests: TBD — Code: `src/ops/paths.rs` — Status: Planned
 - **S-OPS-004** — Tests: TBD — Code: `src/ops/paths.rs` — Status: Planned
 - **S-OPS-005** — Tests: TBD — Code: `src/ops/patch_policy.rs` — Status: Planned
@@ -238,25 +238,25 @@ Conventions:
 
 ## Runs & logs
 
-- **S-RUN-001** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
-- **S-RUN-002** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
+- **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
+- **S-RUN-002** — Tests: TBD — Code: `src/ops/run.rs` — Status: Partial
 - **S-RUN-003** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
 
 ---
 
 ## Init (Project kit)
 
-- **S-INIT-001** — Tests: TBD — Code: `src/ops/init.rs` — Status: Planned
-- **S-INIT-002** — Tests: TBD — Code: `src/ops/init.rs` — Status: Planned
-- **S-INIT-003** — Tests: TBD — Code: `src/ops/init.rs` — Status: Planned
+- **S-INIT-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-003** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 
 ---
 
 ## Exit codes
 
-- **S-EXIT-000** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-001** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-002** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-000** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-001** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-003** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-004** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-005** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
@@ -264,7 +264,7 @@ Conventions:
 - **S-EXIT-007** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-008** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-009** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-010** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-011** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-012** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-013** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
