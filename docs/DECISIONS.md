@@ -43,4 +43,4 @@ diffship OS の重要な意思決定ログです。
 - Date: 2026-03-01
 - Decision:
   - secrets らしきものを検知したら promotion を停止し、ユーザーの明示 ack が必要
-  - ユーザーがやるべき作業は bundle の `tasks/USER_TASKS.md` に同梱する
+  - ユーザーがやるべき作業は bundle の tasks/USER_TASKS.md に同梱する

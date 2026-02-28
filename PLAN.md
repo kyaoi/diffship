@@ -18,7 +18,9 @@
 
 ユーザーが基本的に何も気にせず、
 
-- `diffship loop <patch-bundle.zip>`
+```bash
+diffship loop <patch-bundle.zip>
+```
 
 を繰り返すだけで、
 
@@ -68,16 +70,16 @@
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M0-01 | todo | `diffship init`（project kit生成） | `.diffship/` が生成され、既存があれば安全にスキップ/`--force`で上書き |
-| M0-02 | todo | ロック（同時実行防止） | `.diffship/lock` が作られ、二重起動を拒否できる |
-| M0-03 | todo | runsの保存（run-id/ログ） | `.diffship/runs/<run-id>/` に apply/verify の結果が保存される |
+| M0-02 | todo | ロック（同時実行防止） | .diffship/lock が作られ、二重起動を拒否できる |
+| M0-03 | todo | runsの保存（run-id/ログ） | .diffship/runs/ 配下に run-id ディレクトリを作り、apply/verify の結果が保存される |
 | M0-04 | todo | M0の統合テスト | 一時git repo上で `init`→`status`→`runs` が通る |
 
 ### M1: worktree/session/sandbox（作業ツリーを汚さない核）
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M1-01 | todo | session 作成/再利用 | `.diffship/worktrees/session/` を安定して再利用できる |
-| M1-02 | todo | sandbox 作成（runごと） | `runs/<id>/` と対応する sandbox を作れる |
+| M1-01 | todo | session 作成/再利用 | .diffship/worktrees/ 配下の session を安定して再利用できる |
+| M1-02 | todo | sandbox 作成（runごと） | runs（run-id）と対応する sandbox を作れる |
 | M1-03 | todo | クリーンアップ方針 | 失敗/中断時でも破綻せず `status` で復旧できる |
 
 ### M2: apply → verify → promotion（commit）
@@ -95,7 +97,7 @@
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M3-01 | todo | secrets 検知 → promotion停止 | 危険検知時に必ず止まり、明示ackがないと promoteできない |
-| M3-02 | todo | tasks 同梱契約 | bundleの `tasks/USER_TASKS.md` がrunに残り、ユーザーが実行すべき作業が見える |
+| M3-02 | todo | tasks 同梱契約 | bundleの tasks/USER_TASKS.md が run に残り、ユーザーが実行すべき作業が見える |
 
 ### M4: 設定（グローバル/プロジェクト/CLI/bundle）
 
