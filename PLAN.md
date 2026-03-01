@@ -86,9 +86,9 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M2-01 | todo | patch bundle 検証（構造/manifest/path） | 不正bundleを確実に拒否できる |
-| M2-02 | todo | `apply`（sandboxで） | apply成功/失敗がrunに記録され、失敗時はrollbackされる |
-| M2-03 | todo | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
+| M2-01 | done | patch bundle 検証（構造/manifest/path） | 不正bundleを確実に拒否できる |
+| M2-02 | done | `apply`（sandboxで） | apply成功/失敗がrunに記録され、失敗時はrollbackされる |
+| M2-03 | done | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
 | M2-04 | todo | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
 | M2-05 | todo | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
 
@@ -110,9 +110,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M2-01 patch bundle 検証（構造/manifest/path）
-2) M2-02 `apply`（sandboxで）
-3) M2-03 `verify`（standard）
+1) M2-04 promotion=commit
+2) M2-05 `loop`（M2結合）
+3) M3-01 secrets 検知 → promotion停止
 
 ---
 

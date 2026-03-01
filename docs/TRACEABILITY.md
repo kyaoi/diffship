@@ -131,25 +131,25 @@ Conventions:
 
 ## Patch bundle (input contract)
 
-- **S-PBUNDLE-001** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
-- **S-PBUNDLE-002** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
-- **S-PBUNDLE-003** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
-- **S-PBUNDLE-004** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
-- **S-PBUNDLE-005** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
+- **S-PBUNDLE-001** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-PBUNDLE-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-PBUNDLE-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-PBUNDLE-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-PBUNDLE-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-006** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
 
 ---
 
 ## Apply
 
-- **S-APPLY-001** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-002** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-003** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-004** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-005** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-006** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-007** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-APPLY-008** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
+- **S-APPLY-001** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
 
 ---
 
@@ -165,10 +165,10 @@ Conventions:
 
 ## Verify
 
-- **S-VERIFY-001** — Tests: TBD — Code: `src/ops/verify.rs` — Status: Planned
-- **S-VERIFY-002** — Tests: TBD — Code: `src/ops/verify.rs` — Status: Planned
-- **S-VERIFY-003** — Tests: TBD — Code: `src/ops/verify.rs` — Status: Planned
-- **S-VERIFY-004** — Tests: TBD — Code: `src/ops/verify.rs` — Status: Planned
+- **S-VERIFY-001** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
+- **S-VERIFY-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
+- **S-VERIFY-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
+- **S-VERIFY-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
 
 ---
 
@@ -230,16 +230,17 @@ Conventions:
 
 - **S-OPS-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/lock.rs` — Status: Implemented
 - **S-OPS-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/lock.rs` — Status: Implemented
-- **S-OPS-003** — Tests: TBD — Code: `src/ops/paths.rs` — Status: Planned
-- **S-OPS-004** — Tests: TBD — Code: `src/ops/paths.rs` — Status: Planned
-- **S-OPS-005** — Tests: TBD — Code: `src/ops/patch_policy.rs` — Status: Planned
+- **S-OPS-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-OPS-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-OPS-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+
 
 ---
 
 ## Runs & logs
 
 - **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
-- **S-RUN-002** — Tests: TBD — Code: `src/ops/run.rs` — Status: Partial
+- **S-RUN-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-003** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
 
 ---
@@ -259,11 +260,11 @@ Conventions:
 - **S-EXIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-003** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-004** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-005** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-006** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-007** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-008** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-009** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
+- **S-EXIT-009** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-011** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-012** — Tests: TBD — Code: `src/exit.rs` — Status: Planned

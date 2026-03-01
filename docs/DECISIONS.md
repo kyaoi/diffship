@@ -65,3 +65,18 @@ diffship OS の重要な意思決定ログです。
     - 必要に応じて `git worktree remove --force <path>` で復旧/掃除できる
   - sandbox 削除は best-effort（成功/失敗どちらでも落ちない）を基本とし、
     - 取りこぼしは `status` で可視化して回収する
+
+---
+
+## D-006: verify profile のデフォルト（M2）
+
+- Date: 2026-03-01
+- Decision:
+  - `verify` は「ローカルで定義されたコマンド」を実行する（bundle内のコマンドは実行しない）
+  - M4（設定ロード）実装前の暫定として、以下のヒューリスティクスをデフォルトにする
+    1) `justfile` があり `just` が利用可能 → profile に応じた `just ...` を実行
+    2) `Cargo.toml` がある → profile に応じた `cargo ...` を実行
+    3) それ以外 → `git diff --check` のみ実行
+- Rationale:
+  - diffship 自身（このリポジトリ）では `just` を品質ゲートとして使う
+  - 一方で、任意の Git repo でも `verify` 自体は破綻しないようにする

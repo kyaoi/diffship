@@ -20,6 +20,12 @@ pub enum Command {
     /// List recent runs
     Runs(RunsArgs),
 
+    /// Apply a patch bundle safely (in an isolated sandbox)
+    Apply(ApplyArgs),
+
+    /// Run verification (profile: fast|standard|full) in the latest sandbox
+    Verify(VerifyArgs),
+
     /// Internal test helper: acquire the lock and hold it for a duration.
     #[command(name = "__test_hold_lock", hide = true)]
     __TestHoldLock(TestHoldLockArgs),
@@ -64,6 +70,31 @@ pub struct RunsArgs {
     /// Number of runs to show
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
+}
+
+#[derive(Debug, Args)]
+pub struct ApplyArgs {
+    /// Patch bundle path (directory or .zip)
+    pub bundle: String,
+
+    /// Session name (default: "default")
+    #[arg(long, default_value = "default")]
+    pub session: String,
+
+    /// Keep the sandbox worktree for later verification/promotion (default: true)
+    #[arg(long, default_value_t = true)]
+    pub keep_sandbox: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct VerifyArgs {
+    /// Verification profile (fast|standard|full)
+    #[arg(long, default_value = "standard")]
+    pub profile: String,
+
+    /// Run id to verify (defaults to the latest run that has a sandbox)
+    #[arg(long)]
+    pub run_id: Option<String>,
 }
 
 #[derive(Debug, Args)]
