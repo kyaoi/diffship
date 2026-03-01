@@ -2,7 +2,9 @@ mod init;
 mod lock;
 mod run;
 mod runs;
+mod session;
 mod status;
+mod worktree;
 
 use crate::cli::{Cli, Command};
 use crate::exit::{EXIT_GENERAL, ExitError};
@@ -23,5 +25,8 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
         Command::Status(args) => status::cmd(&git_root, args),
         Command::Runs(args) => runs::cmd(&git_root, args),
         Command::__TestHoldLock(args) => lock::test_hold_lock(&git_root, args),
+        Command::__TestM1Setup(args) => worktree::test_m1_setup(&git_root, args),
+        Command::__TestM1AdvanceSession(args) => session::test_m1_advance_session(&git_root, args),
+        Command::__TestM1CleanupSandbox(args) => worktree::test_m1_cleanup_sandbox(&git_root, args),
     }
 }

@@ -44,3 +44,24 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - secrets らしきものを検知したら promotion を停止し、ユーザーの明示 ack が必要
   - ユーザーがやるべき作業は bundle の tasks/USER_TASKS.md に同梱する
+
+---
+
+## D-005: worktree レイアウトと復旧戦略（status で復帰可能）
+
+- Date: 2026-03-01
+- Decision:
+  - worktree は `.diffship/worktrees/` 配下に集約する
+    - session worktree: `.diffship/worktrees/sessions/<session>/`
+    - sandbox worktree: `.diffship/worktrees/sandboxes/<run-id>/`
+  - session state は以下を組み合わせて保持する
+    - git ref: `refs/diffship/sessions/<session>`
+    - state json: `.diffship/sessions/<session>.json`
+  - run と sandbox の紐付けは run dir に保存する
+    - `.diffship/runs/<run-id>/sandbox.json`
+- Recovery:
+  - `diffship status` は sessions と sandboxes を列挙し、
+    - 中断時に「どの run の sandbox が残っているか」を確認できる
+    - 必要に応じて `git worktree remove --force <path>` で復旧/掃除できる
+  - sandbox 削除は best-effort（成功/失敗どちらでも落ちない）を基本とし、
+    - 取りこぼしは `status` で可視化して回収する

@@ -205,10 +205,10 @@ Conventions:
 
 ## Sessions
 
-- **S-SESSION-001** — Tests: TBD — Code: `src/ops/session.rs` — Status: Planned
-- **S-SESSION-002** — Tests: TBD — Code: `src/ops/session.rs` — Status: Planned
-- **S-SESSION-003** — Tests: TBD — Code: `src/ops/worktree.rs` — Status: Planned
-- **S-SESSION-004** — Tests: TBD — Code: `src/ops/session.rs` — Status: Planned
+- **S-SESSION-001** — Tests: `tests/m1_worktrees.rs` — Code: `src/ops/session.rs` — Status: Implemented
+- **S-SESSION-002** — Tests: `tests/m1_worktrees.rs` — Code: `src/ops/session.rs` — Status: Implemented
+- **S-SESSION-003** — Tests: `tests/m1_worktrees.rs` — Code: `src/ops/worktree.rs` — Status: Implemented
+- **S-SESSION-004** — Tests: `tests/m1_worktrees.rs` — Code: `src/ops/session.rs` — Status: Implemented
 
 ---
 

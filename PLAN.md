@@ -78,9 +78,9 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M1-01 | todo | session 作成/再利用 | .diffship/worktrees/ 配下の session を安定して再利用できる |
-| M1-02 | todo | sandbox 作成（runごと） | runs（run-id）と対応する sandbox を作れる |
-| M1-03 | todo | クリーンアップ方針 | 失敗/中断時でも破綻せず `status` で復旧できる |
+| M1-01 | done | session 作成/再利用 | .diffship/worktrees/ 配下の session を安定して再利用できる |
+| M1-02 | done | sandbox 作成（runごと） | runs（run-id）と対応する sandbox を作れる |
+| M1-03 | done | クリーンアップ方針 | 失敗/中断時でも破綻せず `status` で復旧できる |
 
 ### M2: apply → verify → promotion（commit）
 
@@ -110,9 +110,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M1-01 session 作成/再利用
-2) M1-02 sandbox 作成（runごと）
-3) M1-03 クリーンアップ方針
+1) M2-01 patch bundle 検証（構造/manifest/path）
+2) M2-02 `apply`（sandboxで）
+3) M2-03 `verify`（standard）
 
 ---
 

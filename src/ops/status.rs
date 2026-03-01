@@ -2,6 +2,8 @@ use crate::cli::StatusArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::lock;
 use crate::ops::run;
+use crate::ops::session;
+use crate::ops::worktree;
 use serde::Serialize;
 use std::path::Path;
 
@@ -9,6 +11,8 @@ use std::path::Path;
 struct StatusJson {
     git_root: String,
     lock: LockState,
+    sessions: Vec<session::SessionState>,
+    sandboxes: Vec<SandboxState>,
     recent_runs: Vec<run::RunSummary>,
 }
 
@@ -19,12 +23,25 @@ struct LockState {
     info: Option<lock::LockInfo>,
 }
 
+#[derive(Debug, Serialize)]
+struct SandboxState {
+    run_id: String,
+    path: String,
+    exists: bool,
+    meta: Option<worktree::SandboxMeta>,
+}
+
 pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
     let lock_path = lock::default_lock_path(git_root);
     let held = lock::is_lock_held(&lock_path).unwrap_or(false);
     let info = lock::read_lock_info(&lock_path);
 
     let recent_runs = run::list_runs(git_root, args.limit)?;
+
+    let sessions = session::list_sessions(git_root);
+
+    // Sandboxes: scan the worktree dir to support recovery even if runs list is truncated.
+    let sandboxes = list_sandboxes(git_root);
 
     if args.json {
         let payload = StatusJson {
@@ -34,6 +51,8 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
                 held,
                 info,
             },
+            sessions,
+            sandboxes,
             recent_runs,
         };
 
@@ -71,13 +90,64 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
 
     if recent_runs.is_empty() {
         println!("  runs     : (none)");
-        return Ok(());
+    } else {
+        println!("  runs     :");
+        for r in &recent_runs {
+            println!("    - {}  {}  {}", r.created_at, r.run_id, r.command);
+        }
     }
 
-    println!("  runs     :");
-    for r in recent_runs {
-        println!("    - {}  {}  {}", r.created_at, r.run_id, r.command);
+    if sessions.is_empty() {
+        println!("  sessions : (none)");
+    } else {
+        println!("  sessions :");
+        for s in &sessions {
+            println!("    - {}  head={}  wt={}", s.name, s.head, s.worktree_path);
+        }
+    }
+
+    if sandboxes.is_empty() {
+        println!("  sandboxes: (none)");
+    } else {
+        println!("  sandboxes:");
+        for sb in &sandboxes {
+            let hint = if sb.exists { "" } else { " (missing on disk)" };
+            println!("    - {}  {}{}", sb.run_id, sb.path, hint);
+        }
+        println!("  hint: you can remove a sandbox via: git worktree remove --force <path>");
     }
 
     Ok(())
+}
+
+fn list_sandboxes(git_root: &Path) -> Vec<SandboxState> {
+    let dir = worktree::sandboxes_dir(git_root);
+    if !dir.exists() {
+        return vec![];
+    }
+
+    let mut out = vec![];
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return vec![];
+    };
+    for ent in rd.flatten() {
+        let Ok(ft) = ent.file_type() else {
+            continue;
+        };
+        if !ft.is_dir() {
+            continue;
+        }
+        let run_id = ent.file_name().to_string_lossy().to_string();
+        let path = ent.path();
+        let meta = worktree::read_sandbox_meta(git_root, &run_id);
+        out.push(SandboxState {
+            run_id,
+            path: path.display().to_string(),
+            exists: path.exists(),
+            meta,
+        });
+    }
+
+    out.sort_by(|a, b| a.run_id.cmp(&b.run_id));
+    out
 }
