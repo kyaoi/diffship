@@ -109,13 +109,29 @@ diffship loop <patch-bundle.zip>
 
 ---
 
+
+### M5: TUI（操作の見える化 + 実行支援）
+
+| ID | Status | 内容 | Done条件 |
+|---|---|---|---|
+| M5-01 | todo | TUI骨格（起動/終了/画面遷移） | `diffship`（引数なし）でTUIが起動し、q/ESCで安全に終了できる。非TTYでは従来通りヘルプを出す。 |
+| M5-02 | todo | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
+| M5-03 | todo | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
+| M5-04 | todo | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
+| M5-05 | todo | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
+
+
 ## Next（いま着手する3つ）
 
-1) M5-XX（候補）: verify の config-driven profiles（docs/CONFIG.md の [verify.profiles.*]）
-2) M4-XX（候補）: config のテスト/サンプル増強（precedence / manifest / CLI overrides）
-3) M3-XX（候補）: secrets/tasks のポリシーを config で切り替え可能にする（今は CLI ack のみ）
+1) M5-01 TUI骨格（起動/終了/画面遷移）
+2) M5-02 status/runs ビューア（run詳細/エラー表示）
+3) M5-04 TUIから `loop` 実行（既存ops呼び出し + 進捗表示）
 
-## メモ（詰まったらここに書く）
+（候補）
+- config のテスト/サンプル増強
+- verify の config-driven profiles（`[verify.profiles.*]`）
+
+## メモ（詰まったらここに書く）## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
 

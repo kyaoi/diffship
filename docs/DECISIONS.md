@@ -103,7 +103,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
   - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
-  - verify 失敗時は `pack-fix` により reprompt zip を生成し、sandbox を残して終了する（M2-06）
+  - verify 失敗時は `pack-fix`（reprompt zip）を作成して終了する（M2-06）
 
 ---
 
@@ -130,18 +130,19 @@ diffship OS の重要な意思決定ログです。
 
 ---
 
-## D-011: 設定優先順位（CLI > manifest > project > global > default）
+## D-011: 設定ロードの優先順位（config precedence）
 
 - Date: 2026-03-03
 - Decision:
-  - ops 設定は複数ソースをマージし、後勝ちで解決する（CLI が最優先）
-  - グローバル: `~/.config/diffship/config.toml`
-  - プロジェクト: `./.diffship/config.toml`（`diffship init` が生成）と互換の `./.diffship.toml`
-  - bundle: `manifest.yaml` の `verify_profile/target_branch/promotion_mode/commit_policy`
-- Rationale:
-  - repo / bundle / 実行単位（CLI）で安全にオーバーライドできるようにする
-- Implications:
-  - `docs/CONFIG.md` に precedence と対応キーを明記する
+  - 設定の最終値は以下の優先順位で決める（後勝ち）
+    1) CLI flags
+    2) bundle manifest
+    3) project config（`.diffship/config.toml`）
+    4) global config（`~/.config/diffship/config.toml`）
+    5) built-in defaults
+- Notes:
+  - “未指定”は上位で上書きしない（Option は None のまま次の層へ委譲）
+  - これにより「普段のデフォルトを保ちつつ run 単位で安全にオーバーライド」が可能
 
 ---
 
@@ -156,3 +157,17 @@ diffship OS の重要な意思決定ログです。
 - Notes:
   - `promotion=none` の場合は promotion をスキップし、run に promotion.json を残す（sandbox は既定で保持）
   - `commit-policy=manual` の場合、git-apply の promotion は sandbox 側にコミットが存在することを要求する
+
+---
+
+## D-013: TUI v0 は「可視化 + 実行支援」に絞り、CLI とパリティを保つ
+
+- Date: 2026-03-04
+- Decision:
+  - TUI は「status/runs の可視化」と「loop 実行の支援」に絞る（まずは read-only 中心）
+  - TUI は既存 ops/CLI を呼び出す薄いラッパとして実装し、**TUIだけにしかない挙動**を作らない（CLI parity）
+  - 起動導線は `diffship tui` を用意しつつ、`diffship`（引数なし）を TTY のときは TUI 起動に寄せる（非TTYは従来のヘルプ/エラー）
+- Rationale:
+  - 自動化（CLI/loop）を壊さずに、運用中の「いま何が起きたか」を見える化したい
+- Implications:
+  - 画面は「Runs」「Status」「Run detail/log」「Loop」の最小セットから始める
