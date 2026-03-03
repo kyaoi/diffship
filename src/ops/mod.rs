@@ -2,6 +2,7 @@ mod apply;
 mod init;
 mod lock;
 mod loop_cmd;
+mod pack_fix;
 mod patch_bundle;
 mod promote;
 mod run;
@@ -33,6 +34,7 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
         Command::Runs(args) => runs::cmd(&git_root, args),
         Command::Apply(args) => apply::cmd(&git_root, args),
         Command::Verify(args) => verify::cmd(&git_root, args),
+        Command::PackFix(args) => pack_fix::cmd(&git_root, args),
         Command::Promote(args) => promote::cmd(&git_root, args),
         Command::Loop(args) => loop_cmd::cmd(&git_root, args),
         Command::__TestHoldLock(args) => lock::test_hold_lock(&git_root, args),

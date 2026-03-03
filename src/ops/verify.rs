@@ -1,6 +1,7 @@
 use crate::cli::VerifyArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_VERIFY_FAILED, ExitError};
 use crate::ops::lock;
+use crate::ops::pack_fix;
 use crate::ops::run;
 use crate::ops::worktree;
 use serde::Serialize;
@@ -179,9 +180,10 @@ pub fn verify_locked(
         }
     }
 
+    // NOTE: `created_at` is used in both verify.json and pack-fix. Clone for summary.
     let summary = VerifySummary {
         run_id: run_id.to_string(),
-        created_at,
+        created_at: created_at.clone(),
         profile: profile.to_string(),
         ok,
         commands: results,
@@ -194,6 +196,19 @@ pub fn verify_locked(
     })?;
     fs::write(run_dir.join("verify.json"), bytes)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to write verify.json: {e}")))?;
+
+    if !ok {
+        match pack_fix::try_write_default_pack_fix_zip(
+            git_root,
+            run_id,
+            &run_dir,
+            &sandbox_path,
+            &created_at,
+        ) {
+            Ok(p) => eprintln!("diffship verify: pack-fix saved to {}", p.display()),
+            Err(e) => eprintln!("diffship verify: pack-fix failed: {}", e),
+        }
+    }
 
     Ok(VerifyOut {
         ok,
@@ -268,54 +283,68 @@ fn plan_cmd(bin: &str, args: Vec<String>) -> VerifyCommand {
     }
 }
 
-fn sanitize_name(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect()
-}
-
 fn which_available(bin: &str) -> bool {
-    Command::new(bin)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
+    Command::new("sh")
+        .args([
+            "-lc",
+            &format!("command -v {} >/dev/null 2>&1", shell_escape(bin)),
+        ])
+        .status()
+        .map(|s| s.success())
         .unwrap_or(false)
 }
 
-fn detect_latest_run_with_sandbox(git_root: &Path) -> Option<String> {
-    let runs_dir = run::runs_dir(git_root);
-    if !runs_dir.exists() {
-        return None;
-    }
+fn shell_escape(s: &str) -> String {
+    // minimal escape used for command -v; safe enough for this context.
+    s.replace('"', "\\\"")
+}
 
+fn sanitize_name(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn detect_latest_run_with_sandbox(git_root: &Path) -> Option<String> {
+    // Prefer the latest run that has sandbox.json.
+    let runs_dir = run::runs_dir(git_root);
     let mut best: Option<(String, String)> = None; // (created_at, run_id)
-    let Ok(rd) = fs::read_dir(&runs_dir) else {
-        return None;
-    };
-    for ent in rd.flatten() {
-        if !ent.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+
+    let entries = fs::read_dir(&runs_dir).ok()?;
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_dir() {
             continue;
         }
-        let run_id = ent.file_name().to_string_lossy().to_string();
-        let meta_path = ent.path().join("run.json");
-        let Ok(bytes) = fs::read(&meta_path) else {
-            continue;
-        };
-        let Ok(meta) = serde_json::from_slice::<run::RunMeta>(&bytes) else {
-            continue;
-        };
-        if worktree::read_sandbox_meta(git_root, &run_id).is_none() {
+        let run_id = path.file_name()?.to_string_lossy().to_string();
+        let run_json = path.join("run.json");
+        let sandbox_json = path.join("sandbox.json");
+        if !run_json.exists() || !sandbox_json.exists() {
             continue;
         }
+
+        let bytes = fs::read(&run_json).ok()?;
+        let meta: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        let created_at = meta
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
         match &best {
+            None => best = Some((created_at, run_id)),
             Some((best_created, best_id)) => {
-                if meta.created_at > *best_created
-                    || (meta.created_at == *best_created && meta.run_id > *best_id)
+                if created_at > *best_created || (created_at == *best_created && run_id > *best_id)
                 {
-                    best = Some((meta.created_at, meta.run_id));
+                    best = Some((created_at, run_id));
                 }
             }
-            None => best = Some((meta.created_at, meta.run_id)),
         }
     }
 

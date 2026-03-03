@@ -26,6 +26,10 @@ pub enum Command {
     /// Run verification (profile: fast|standard|full) in the latest sandbox
     Verify(VerifyArgs),
 
+    /// Create a reprompt zip for a run (M2-06)
+    #[command(name = "pack-fix")]
+    PackFix(PackFixArgs),
+
     /// Promote a verified sandbox result back to a target branch (default: develop)
     Promote(PromoteArgs),
 
@@ -101,6 +105,17 @@ pub struct VerifyArgs {
     /// Run id to verify (defaults to the latest run that has a sandbox)
     #[arg(long)]
     pub run_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PackFixArgs {
+    /// Run id to pack (defaults to the latest run)
+    #[arg(long)]
+    pub run_id: Option<String>,
+
+    /// Output zip path (default: .diffship/runs/<run-id>/pack-fix.zip)
+    #[arg(long)]
+    pub out: Option<String>,
 }
 
 #[derive(Debug, Args)]

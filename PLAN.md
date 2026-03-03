@@ -91,7 +91,7 @@ diffship loop <patch-bundle.zip>
 | M2-03 | done | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
 | M2-04 | done | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
 | M2-05 | done | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
-| M2-06 | todo | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
+| M2-06 | done | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
 
 ### M3: secrets / tasks（止めるべき時に止まる）
 
@@ -111,9 +111,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M2-06 pack-fix（verify失敗時の reprompt zip）
-2) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
-3) M4-02 commit/promotion切替（--promotion / --commit-policy）
+1) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
+2) M4-02 commit/promotion切替（--promotion / --commit-policy）
+3) M4-XX（次の候補）: config のテスト/サンプル増強
 
 ## メモ（詰まったらここに書く）
 

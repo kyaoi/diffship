@@ -103,7 +103,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
   - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
-  - verify 失敗時の `pack-fix` は未実装のため、現状は sandbox を残して終了する（M2-06 で実装する）
+  - verify 失敗時は `.diffship/runs/<run-id>/pack-fix.zip`（reprompt kit）を生成し、sandbox を残して終了する
 
 ---
 

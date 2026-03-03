@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+zip = "0.6.6"
+
 anyhow = "1.0.97"
 clap = { version = "4.5.31", features = ["derive"] }
 fs4 = "0.8.4"
