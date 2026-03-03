@@ -103,7 +103,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
   - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
-  - verify 失敗時の `pack-fix` は未実装のため、現状は sandbox を残して終了する（M2-06 で実装する）
+  - verify 失敗時は `pack-fix` により reprompt zip を生成し、sandbox を残して終了する（M2-06）
 
 ---
 
@@ -127,6 +127,21 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `diffship apply` は tasks のパスを出力し、run dir に保持する
   - `diffship promote/loop` は tasks 未ack時に exit=12 で拒否する
+
+---
+
+## D-011: 設定優先順位（CLI > manifest > project > global > default）
+
+- Date: 2026-03-03
+- Decision:
+  - ops 設定は複数ソースをマージし、後勝ちで解決する（CLI が最優先）
+  - グローバル: `~/.config/diffship/config.toml`
+  - プロジェクト: `./.diffship/config.toml`（`diffship init` が生成）と互換の `./.diffship.toml`
+  - bundle: `manifest.yaml` の `verify_profile/target_branch/promotion_mode/commit_policy`
+- Rationale:
+  - repo / bundle / 実行単位（CLI）で安全にオーバーライドできるようにする
+- Implications:
+  - `docs/CONFIG.md` に precedence と対応キーを明記する
 
 ---
 

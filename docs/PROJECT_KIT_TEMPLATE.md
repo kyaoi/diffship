@@ -10,9 +10,10 @@ Goal: help an AI agent reliably produce **diffship-compatible patch bundles** an
 
 diffship is a local tool that:
 
-- packages diffs/bundles for AI handoff
-- applies AI-returned patch bundles safely
-- records deterministic run logs and can generate “reprompt bundles”
+- applies AI-returned **patch bundles** safely (isolated sandbox)
+- records deterministic run logs under `.diffship/runs/`
+- can generate “reprompt bundles” for iteration (`pack-fix`)
+- (planned/spec) will also support building AI handoff bundles from local diffs
 
 diffship does **not**:
 
@@ -133,7 +134,7 @@ Typical loop:
 diffship loop path/to/patch-bundle.zip
 ```
 
-3) If it fails, diffship generates a reprompt bundle under `.diffship/runs/<run-id>/...` (or prints the path)
+3) If it fails, the user runs `diffship pack-fix --run-id <run-id>` to generate a reprompt zip under `.diffship/runs/<run-id>/...`
 4) User sends that reprompt bundle back to the AI
 5) AI fixes and returns a new patch bundle with an updated `base_commit` (if the session advanced)
 

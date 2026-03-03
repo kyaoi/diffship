@@ -105,15 +105,15 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | todo | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
+| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
 
 ---
 
 ## Next（いま着手する3つ）
 
-1) M4-02 commit/promotion切替（--promotion / --commit-policy）
-2) M4-XX（次の候補）: config のテスト/サンプル増強
-3) M5-XX（次の候補）: verify の config-driven profiles（docs/CONFIG.md の [verify.profiles.*]）
+1) M5-XX（候補）: verify の config-driven profiles（docs/CONFIG.md の [verify.profiles.*]）
+2) M4-XX（候補）: config のテスト/サンプル増強（precedence / manifest / CLI overrides）
+3) M3-XX（候補）: secrets/tasks のポリシーを config で切り替え可能にする（今は CLI ack のみ）
 
 ## メモ（詰まったらここに書く）
 

@@ -1,86 +1,116 @@
 # diffship
 
-**diffship** is an **AI-assisted development OS** for Git repos.
+**diffship** is an **AI-assisted development OS** for Git repositories.
 
-It supports two core workflows:
+It focuses on the *ops* side of an AI workflow:
 
-1) **Handoff**: package Git diffs into an **AI-friendly bundle** that stays within upload limits and includes a single navigation document (`HANDOFF.md`).
-2) **Ops**: safely apply an AI-produced **patch bundle** back onto your repo, run verification, and generate a “reprompt bundle” when something fails.
+- safely **apply** an AI-produced patch bundle in an isolated sandbox
+- **verify** it with local quality gates
+- **promote** the result back to your target branch (or skip / no-commit)
+- record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
-This repository is set up for **spec-driven development**:
-- `docs/SPEC_V1.md` is the **source of truth**
-- changes must keep CI green
-- agent workflows are standardized in `.agents/skills/*/SKILL.md`
-
----
-
-## What diffship is for
-
-Typical workflow:
-1) You run an AI agent to implement changes and return a patch bundle
-2) You run `diffship loop` locally to apply + verify safely
-3) If it fails, you send the generated “reprompt bundle” back to the AI for iteration
-4) When it passes, you commit/push as usual (or let diffship auto-commit if enabled)
+> Note: The *handoff* (diff → AI bundle) / TUI workflow is **specified** but not yet implemented as user-facing commands.
+> See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
 
 ---
 
-## Quickstart
+## Install
 
-### 0) Install dev tools (recommended)
+This repository is currently intended for local use.
+
+```bash
+# in this repo
+cargo install --path .
+
+# or, without installing
+cargo run -- <subcommand> ...
+```
+
+---
+
+## Quickstart (Ops)
+
+### 1) Initialize project kit
+Run this once per repo you want to operate on:
+
+```bash
+diffship init
+```
+
+It creates files under `.diffship/` (generated):
+
+```text
+.diffship/PROJECT_KIT.md
+.diffship/config.toml
+```
+
+### 2) Apply → verify → promote (the main loop)
+
+```bash
+diffship loop path/to/patch-bundle.zip
+```
+
+If promotion is blocked:
+
+- secrets were detected → rerun with `--ack-secrets`
+- required user tasks exist → complete them, then rerun with `--ack-tasks`
+
+If verification fails, use `diffship pack-fix` to build a reprompt zip for the run and send it back to the AI.
+
+---
+
+## Commands
+
+All commands below are implemented.
+
+- `diffship init` — generate `.diffship/` project kit files
+- `diffship status` — show lock state and recent runs (`--json` available)
+- `diffship runs` — list recent runs (`--json` available)
+- `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)
+- `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
+- `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
+- `diffship promote` — promote a verified run into a target branch
+- `diffship loop <bundle>` — apply → verify → promote
+
+### Promotion / commit switches
+
+Both `promote` and `loop` accept overrides:
+
+- `--promotion <none|working-tree|commit>`
+- `--commit-policy <auto|manual>`
+
+For details and examples, see `docs/OPS_WORKFLOW.md`.
+
+---
+
+## Configuration
+
+diffship merges config sources with precedence:
+
+**CLI > manifest.yaml > project > global > default**
+
+See `docs/CONFIG.md` for supported keys and examples.
+
+---
+
+## Development
+
 This repo uses **mise** + **just** + **lefthook**.
 
 ```bash
 mise install
 lefthook install
-```
-
-### 1) Run quality gates
-```bash
 just ci
 ```
-
----
-
-## Commands (v1)
-
-### Handoff
-- `diffship` (no args) → starts **TUI** (same as `diffship tui`)
-- `diffship tui` → interactive range/options + preview + build
-- `diffship build ...` → non-interactive build (scripts/CI)
-- `diffship preview <bundle>` → browse a generated handoff bundle (optional)
-
-### Ops
-- `diffship init` → generate a ChatGPT Project kit under `.diffship/`
-- `diffship apply <patch-bundle>` → apply a patch bundle safely (strict by default)
-- `diffship verify` → run verification commands (profiles)
-- `diffship pack-fix` → create a reprompt bundle from the last run
-- `diffship loop <patch-bundle>` → apply → verify → (on failure) pack-fix
-- `diffship status` → show lock state and recent runs
 
 ---
 
 ## Documentation
 
 - **Spec (v1, source of truth):** `docs/SPEC_V1.md`
-- **Handoff bundle format:** `docs/BUNDLE_FORMAT.md`
-- **Patch bundle format:** `docs/PATCH_BUNDLE_FORMAT.md`
+- **Patch bundle contract:** `docs/PATCH_BUNDLE_FORMAT.md`
+- **Ops workflow guide:** `docs/OPS_WORKFLOW.md`
 - **Config:** `docs/CONFIG.md`
-- **Handoff template:** `docs/HANDOFF_TEMPLATE.md`
-- **Test plan:** `docs/TEST_PLAN.md`
 - **Traceability:** `docs/TRACEABILITY.md`
 - **Definition of Done:** `docs/DEFINITION_OF_DONE.md`
-- **Spec change workflow:** `docs/SPEC_CHANGE.md`
-- **Versioning:** `docs/VERSIONING.md`
 - **Working with AI:** `docs/AI_WORKFLOW.md`
-- **ChatGPT Project kit template:** `docs/PROJECT_KIT_TEMPLATE.md`
-- **Determinism policy:** `docs/DETERMINISM.md`
-- **Implementation status:** `docs/IMPLEMENTATION_STATUS.md`
-
----
-
-## Agent workflows
-
-Read:
-1) `AGENTS.md`
-2) `.agents/skills/start-here/SKILL.md`
-3) the relevant skill in `.agents/skills/`
