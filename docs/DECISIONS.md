@@ -103,7 +103,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
   - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
-  - verify 失敗時は `.diffship/runs/<run-id>/pack-fix.zip`（reprompt kit）を生成し、sandbox を残して終了する
+  - verify 失敗時の `pack-fix` は未実装のため、現状は sandbox を残して終了する（M2-06 で実装する）
 
 ---
 
@@ -130,17 +130,14 @@ diffship OS の重要な意思決定ログです。
 
 ---
 
-## D-011: 設定ロードの優先順位（M4-01）
+## D-012: M4-02 CLI flags で promotion/commit-policy を切り替える
 
 - Date: 2026-03-03
 - Decision:
-  - 設定は以下の優先順位で **マージ** して確定する
-    - CLI > patch bundle manifest > project > global > default
-  - project 設定は `.diffship/config.toml` を正とし、互換のため `./.diffship.toml` も読み取る（同一キーがあれば `.diffship/config.toml` が勝つ）
-  - global 設定は `~/.config/diffship/config.toml`
-  - bundle 側の上書きは `manifest.yaml` の以下の任意キーで行う
-    - `verify_profile`, `target_branch`, `promotion_mode`, `commit_policy`
+  - `--promotion`（none|working-tree|commit）と `--commit-policy`（auto|manual）で挙動を切り替えられるようにする
+  - 設定優先順位は D-011 に従い、CLI は最優先で上書きする
 - Rationale:
-  - その場の run（bundle）で明示的に挙動を上書きしつつ、普段は project/global のデフォルトで回せるようにする
+  - bundle / project / global のデフォルトを保ちつつ、run 単位で安全にオーバーライドしたい
 - Notes:
-  - 現状の実装で実際に参照するキーは段階的に増やす（未使用キーは無視される）
+  - `promotion=none` の場合は promotion をスキップし、run に promotion.json を残す（sandbox は既定で保持）
+  - `commit-policy=manual` の場合、git-apply の promotion は sandbox 側にコミットが存在することを要求する

@@ -184,6 +184,8 @@ fn parse_promote(argv: &[String]) -> Option<cli::Cli> {
     }
 
     let args = cli::PromoteArgs {
+        promotion: None,
+        commit_policy: None,
         run_id,
         target_branch,
         ack_secrets,
@@ -247,6 +249,8 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
 
     let bundle = bundle?;
     let args = cli::LoopArgs {
+        promotion: None,
+        commit_policy: None,
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
         profile,

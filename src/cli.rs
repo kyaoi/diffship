@@ -139,6 +139,13 @@ pub struct PromoteArgs {
     /// Keep the sandbox worktree after promotion (default: false)
     #[arg(long, default_value_t = false)]
     pub keep_sandbox: bool,
+    /// Promotion mode override (none|working-tree|commit)
+    #[arg(long, value_name = "MODE")]
+    pub promotion: Option<String>,
+
+    /// Commit policy override (auto|manual)
+    #[arg(long, value_name = "POLICY")]
+    pub commit_policy: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -165,6 +172,13 @@ pub struct LoopArgs {
     /// Acknowledge required user tasks (required if tasks are present)
     #[arg(long)]
     pub ack_tasks: bool,
+    /// Promotion mode override (none|working-tree|commit)
+    #[arg(long, value_name = "MODE")]
+    pub promotion: Option<String>,
+
+    /// Commit policy override (auto|manual)
+    #[arg(long, value_name = "POLICY")]
+    pub commit_policy: Option<String>,
 }
 
 #[derive(Debug, Args)]

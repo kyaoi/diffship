@@ -29,6 +29,11 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
             ),
             format!("--ack-secrets={}", args.ack_secrets),
             format!("--ack-tasks={}", args.ack_tasks),
+            format!("--promotion={}", args.promotion.as_deref().unwrap_or("")),
+            format!(
+                "--commit-policy={}",
+                args.commit_policy.as_deref().unwrap_or("")
+            ),
         ],
     );
     let _guard = lock::LockGuard::acquire(&lock_path, info)?;
@@ -50,7 +55,8 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         config::OpsConfigOverrides {
             verify_profile: args.profile.clone(),
             target_branch: args.target_branch.clone(),
-            ..Default::default()
+            promotion_mode: args.promotion.clone(),
+            commit_policy: args.commit_policy.clone(),
         },
     )?;
 
@@ -77,6 +83,8 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         git_root,
         &applied.run_id,
         &cfg.target_branch,
+        &cfg.promotion_mode,
+        &cfg.commit_policy,
         args.ack_secrets,
         args.ack_tasks,
         false,

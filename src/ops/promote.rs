@@ -75,6 +75,8 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
         Some(&manifest),
         config::OpsConfigOverrides {
             target_branch: args.target_branch.clone(),
+            promotion_mode: args.promotion.clone(),
+            commit_policy: args.commit_policy.clone(),
             ..Default::default()
         },
     )?;
@@ -83,6 +85,8 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
         git_root,
         &run_id,
         &cfg.target_branch,
+        &cfg.promotion_mode,
+        &cfg.commit_policy,
         args.ack_secrets,
         args.ack_tasks,
         args.keep_sandbox,
@@ -90,10 +94,13 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn promote_locked(
     git_root: &Path,
     run_id: &str,
     target_branch: &str,
+    promotion_mode: &str,
+    commit_policy: &str,
     ack_secrets: bool,
     ack_tasks: bool,
     keep_sandbox: bool,
@@ -176,7 +183,9 @@ pub fn promote_locked(
         .to_string();
     let sandbox_head = match manifest.apply_mode {
         patch_bundle::ApplyMode::GitApply => {
-            ensure_commit_in_sandbox(&sandbox_path, &run_dir, &commit_msg)?;
+            if commit_policy == "auto" {
+                ensure_commit_in_sandbox(&sandbox_path, &run_dir, &commit_msg)?;
+            }
             git::run_git_in(&sandbox_path, ["rev-parse", "HEAD"])?
                 .trim()
                 .to_string()
@@ -194,6 +203,32 @@ pub fn promote_locked(
     }
 
     let effective_target = choose_target_branch(git_root, target_branch)?;
+
+    // Promotion mode switch
+    if promotion_mode == "none" {
+        let summary = PromoteSummary {
+            run_id: run_id.to_string(),
+            created_at: created_at.clone(),
+            target_branch: effective_target.clone(),
+            base_commit: base_commit.clone(),
+            promoted_head: None,
+            commits: vec![],
+            ok: true,
+            error: Some("promotion skipped by policy (promotion=none)".to_string()),
+            secrets_hits: hits.len(),
+            tasks_present,
+            user_tasks_path: if tasks_present {
+                Some(user_tasks_path.display().to_string())
+            } else {
+                None
+            },
+        };
+        write_promote_summary(&run_dir, &summary)?;
+        if !keep_sandbox {
+            worktree::remove_worktree_best_effort(git_root, Path::new(&sb.path));
+        }
+        return Ok(());
+    }
 
     // Promotion safety: require the target branch head to match the sandbox base.
     let target_head = git::rev_parse(git_root, &effective_target)?;
