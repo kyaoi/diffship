@@ -26,6 +26,12 @@ pub enum Command {
     /// Run verification (profile: fast|standard|full) in the latest sandbox
     Verify(VerifyArgs),
 
+    /// Promote a verified sandbox result back to a target branch (default: develop)
+    Promote(PromoteArgs),
+
+    /// Orchestrate apply → verify → promote (commit)
+    Loop(LoopArgs),
+
     /// Internal test helper: acquire the lock and hold it for a duration.
     #[command(name = "__test_hold_lock", hide = true)]
     __TestHoldLock(TestHoldLockArgs),
@@ -95,6 +101,47 @@ pub struct VerifyArgs {
     /// Run id to verify (defaults to the latest run that has a sandbox)
     #[arg(long)]
     pub run_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PromoteArgs {
+    /// Run id to promote (defaults to the latest run that has a successful verify)
+    #[arg(long)]
+    pub run_id: Option<String>,
+
+    /// Target branch to promote into (default: develop; falls back to current branch if develop doesn't exist)
+    #[arg(long, default_value = "develop")]
+    pub target_branch: String,
+
+    /// Acknowledge secrets warnings (required if secrets are detected)
+    #[arg(long)]
+    pub ack_secrets: bool,
+
+    /// Keep the sandbox worktree after promotion (default: false)
+    #[arg(long, default_value_t = false)]
+    pub keep_sandbox: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct LoopArgs {
+    /// Patch bundle path (directory or .zip)
+    pub bundle: String,
+
+    /// Session name (default: "default")
+    #[arg(long, default_value = "default")]
+    pub session: String,
+
+    /// Verification profile (fast|standard|full)
+    #[arg(long, default_value = "standard")]
+    pub profile: String,
+
+    /// Target branch to promote into (default: develop; falls back to current branch if develop doesn't exist)
+    #[arg(long, default_value = "develop")]
+    pub target_branch: String,
+
+    /// Acknowledge secrets warnings (required if secrets are detected)
+    #[arg(long)]
+    pub ack_secrets: bool,
 }
 
 #[derive(Debug, Args)]

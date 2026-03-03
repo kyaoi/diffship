@@ -80,3 +80,37 @@ diffship OS の重要な意思決定ログです。
 - Rationale:
   - diffship 自身（このリポジトリ）では `just` を品質ゲートとして使う
   - 一方で、任意の Git repo でも `verify` 自体は破綻しないようにする
+
+---
+
+## D-007: promotion=commit の実装方針（M2-04）
+
+- Date: 2026-03-01
+- Decision:
+  - promotion は sandbox の結果を **target branch に cherry-pick** して反映する
+  - `apply_mode=git-apply` の場合は sandbox 上で `git commit -F` により **1コミット**を作ってから cherry-pick する
+  - promotion の安全条件として、**target branch の HEAD が sandbox の base_commit と一致**しない場合は拒否する
+- Defaults:
+  - target branch は `develop` を優先し、存在しない場合は現在のブランチへフォールバックする
+- Artifacts:
+  - `.diffship/runs/<run-id>/promotion.json` に promotion 結果を保存する
+
+---
+
+## D-008: loop の実装方針（M2-05）
+
+- Date: 2026-03-01
+- Decision:
+  - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
+  - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
+  - verify 失敗時の `pack-fix` は未実装のため、現状は sandbox を残して終了する（M2-06 で実装する）
+
+---
+
+## D-009: 未来用の exit code 定数は dead_code を許可して保持
+
+- Date: 2026-03-02
+- Decision:
+  - SPEC に先行して exit code を予約する場合、実装が入るまで `#[allow(dead_code)]` を付けて保持する（`-D warnings` 対策）
+- Notes:
+  - 予約コードを消すと SPEC/実装の整合が崩れやすいので、予約コードは残す

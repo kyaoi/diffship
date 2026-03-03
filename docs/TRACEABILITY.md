@@ -155,11 +155,11 @@ Conventions:
 
 ## Commit policy
 
-- **S-COMMIT-001** — Tests: TBD — Code: `src/ops/commit.rs`, `src/config.rs` — Status: Planned
-- **S-COMMIT-002** — Tests: TBD — Code: `src/ops/commit.rs` — Status: Planned
+- **S-COMMIT-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
+- **S-COMMIT-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-COMMIT-003** — Tests: TBD — Code: `src/config.rs` — Status: Planned
-- **S-COMMIT-004** — Tests: TBD — Code: `src/ops/apply.rs` — Status: Planned
-- **S-COMMIT-005** — Tests: TBD — Code: `src/ops/promote.rs`, `src/ops/commit.rs` — Status: Planned
+- **S-COMMIT-004** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Partial
+- **S-COMMIT-005** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
 ---
 
@@ -181,8 +181,8 @@ Conventions:
 
 ## loop
 
-- **S-LOOP-001** — Tests: TBD — Code: `src/ops/loop.rs` — Status: Planned
-- **S-LOOP-002** — Tests: TBD — Code: `src/ops/loop.rs` — Status: Planned
+- **S-LOOP-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
+- **S-LOOP-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
 
 ---
 
@@ -214,16 +214,16 @@ Conventions:
 
 ## Promotion
 
-- **S-PROMOTE-001** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Planned
-- **S-PROMOTE-002** — Tests: TBD — Code: `src/ops/promote.rs`, `src/config.rs` — Status: Planned
-- **S-PROMOTE-003** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Planned
+- **S-PROMOTE-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
+- **S-PROMOTE-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
+- **S-PROMOTE-003** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
 ---
 
 ## Ops secrets & user tasks
 
-- **S-OPS-SECRETS-001** — Tests: TBD — Code: `src/ops/secrets.rs` — Status: Planned
-- **S-OPS-SECRETS-002** — Tests: TBD — Code: `src/ops/secrets.rs` — Status: Planned
+- **S-OPS-SECRETS-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/secrets.rs`, `src/ops/promote.rs` — Status: Implemented
+- **S-OPS-SECRETS-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/secrets.rs` — Status: Implemented
 - **S-OPS-TASKS-001** — Tests: TBD — Code: `src/ops/tasks.rs` — Status: Planned
 
 ---
@@ -266,6 +266,6 @@ Conventions:
 - **S-EXIT-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-009** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
-- **S-EXIT-011** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-011** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-012** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-013** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-013** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs`, `src/ops/promote.rs` — Status: Implemented

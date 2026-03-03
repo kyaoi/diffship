@@ -89,14 +89,15 @@ diffship loop <patch-bundle.zip>
 | M2-01 | done | patch bundle 検証（構造/manifest/path） | 不正bundleを確実に拒否できる |
 | M2-02 | done | `apply`（sandboxで） | apply成功/失敗がrunに記録され、失敗時はrollbackされる |
 | M2-03 | done | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
-| M2-04 | todo | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
-| M2-05 | todo | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
+| M2-04 | done | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
+| M2-05 | done | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
+| M2-06 | todo | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
 
 ### M3: secrets / tasks（止めるべき時に止まる）
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M3-01 | todo | secrets 検知 → promotion停止 | 危険検知時に必ず止まり、明示ackがないと promoteできない |
+| M3-01 | done | secrets 検知 → promotion停止 | 危険検知時に必ず止まり、明示ackがないと promoteできない |
 | M3-02 | todo | tasks 同梱契約 | bundleの tasks/USER_TASKS.md が run に残り、ユーザーが実行すべき作業が見える |
 
 ### M4: 設定（グローバル/プロジェクト/CLI/bundle）
@@ -110,12 +111,15 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M2-04 promotion=commit
-2) M2-05 `loop`（M2結合）
-3) M3-01 secrets 検知 → promotion停止
+1) M3-02 tasks 同梱契約
+2) M2-06 pack-fix（verify失敗時の reprompt zip）
+3) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
 
 ---
 
 ## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
+
+- Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
+  - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。

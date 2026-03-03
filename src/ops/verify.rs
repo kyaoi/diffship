@@ -52,7 +52,38 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
         })?,
     };
 
-    let run_dir = run::run_dir(git_root, &run_id);
+    let out = verify_locked(git_root, &run_id, &args.profile, created_at)?;
+    if out.ok {
+        println!("diffship verify: ok");
+        println!("  run_id  : {}", run_id);
+        println!("  sandbox : {}", out.sandbox_path);
+        println!("  logs    : {}", out.logs_path);
+        Ok(())
+    } else {
+        Err(ExitError::new(
+            EXIT_VERIFY_FAILED,
+            format!("verify failed (run_id={})", run_id),
+        ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VerifyOut {
+    pub ok: bool,
+    pub sandbox_path: String,
+    pub logs_path: String,
+}
+
+/// Internal verify step used by `loop`.
+///
+/// This function assumes the caller already holds the global ops lock.
+pub fn verify_locked(
+    git_root: &Path,
+    run_id: &str,
+    profile: &str,
+    created_at: String,
+) -> Result<VerifyOut, ExitError> {
+    let run_dir = run::run_dir(git_root, run_id);
     if !run_dir.exists() {
         return Err(ExitError::new(
             EXIT_GENERAL,
@@ -60,7 +91,7 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
         ));
     }
 
-    let sb = worktree::read_sandbox_meta(git_root, &run_id).ok_or_else(|| {
+    let sb = worktree::read_sandbox_meta(git_root, run_id).ok_or_else(|| {
         ExitError::new(
             EXIT_GENERAL,
             format!("missing sandbox.json for run_id {}", run_id),
@@ -74,7 +105,7 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
         ));
     }
 
-    let plan = build_verify_plan(&sandbox_path, &args.profile);
+    let plan = build_verify_plan(&sandbox_path, profile);
 
     let out_dir = run_dir.join("verify");
     fs::create_dir_all(&out_dir)
@@ -149,9 +180,9 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
     }
 
     let summary = VerifySummary {
-        run_id: run_id.clone(),
+        run_id: run_id.to_string(),
         created_at,
-        profile: args.profile.clone(),
+        profile: profile.to_string(),
         ok,
         commands: results,
     };
@@ -164,18 +195,11 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
     fs::write(run_dir.join("verify.json"), bytes)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to write verify.json: {e}")))?;
 
-    if ok {
-        println!("diffship verify: ok");
-        println!("  run_id  : {}", run_id);
-        println!("  sandbox : {}", sandbox_path.display());
-        println!("  logs    : {}", out_dir.display());
-        return Ok(());
-    }
-
-    Err(ExitError::new(
-        EXIT_VERIFY_FAILED,
-        format!("verify failed (run_id={})", run_id),
-    ))
+    Ok(VerifyOut {
+        ok,
+        sandbox_path: sandbox_path.display().to_string(),
+        logs_path: out_dir.display().to_string(),
+    })
 }
 
 #[derive(Debug, Clone)]

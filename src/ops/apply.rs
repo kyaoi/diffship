@@ -43,6 +43,39 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
     );
     let _guard = lock::LockGuard::acquire(&lock_path, info)?;
 
+    let out = apply_locked(git_root, args, created_at)?;
+
+    println!("diffship apply: ok");
+    println!("  run_id  : {}", out.run_id);
+    println!("  session : {}", out.session);
+    println!("  sandbox : {}", out.sandbox_path);
+    println!("  bundle  : {}", out.run_bundle_dir);
+    if out.keep_sandbox {
+        println!("  next    : diffship verify --run-id {}", out.run_id);
+    } else {
+        println!("  note    : sandbox cleanup requested; sandbox may be removed best-effort");
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct ApplyOut {
+    pub run_id: String,
+    pub session: String,
+    pub sandbox_path: String,
+    pub run_bundle_dir: String,
+    pub keep_sandbox: bool,
+}
+
+/// Internal apply step used by `loop`.
+///
+/// This function assumes the caller already holds the global ops lock.
+pub fn apply_locked(
+    git_root: &Path,
+    args: ApplyArgs,
+    created_at: String,
+) -> Result<ApplyOut, ExitError> {
     let run_meta = run::create_run(
         git_root,
         "apply",
@@ -132,21 +165,16 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
         ));
     }
 
-    println!("diffship apply: ok");
-    println!("  run_id  : {}", run_meta.run_id);
-    println!("  session : {}", args.session);
-    println!("  sandbox : {}", sandbox.path);
-    println!("  bundle  : {}", bundle.run_bundle_dir.display());
-    if args.keep_sandbox {
-        println!("  next    : diffship verify --run-id {}", run_meta.run_id);
-    } else {
-        println!("  note    : sandbox cleanup requested; sandbox may be removed best-effort");
-    }
-
-    Ok(())
+    Ok(ApplyOut {
+        run_id: run_meta.run_id,
+        session: args.session,
+        sandbox_path: sandbox.path,
+        run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
+        keep_sandbox: args.keep_sandbox,
+    })
 }
 
-fn ensure_clean_worktree(git_root: &Path) -> Result<(), ExitError> {
+pub(crate) fn ensure_clean_worktree(git_root: &Path) -> Result<(), ExitError> {
     let out = git::run_git(git_root, ["status", "--porcelain"]).map_err(|e| {
         ExitError::new(
             EXIT_GENERAL,

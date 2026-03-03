@@ -61,6 +61,19 @@ pub struct PatchBundle {
     pub run_bundle_dir: PathBuf,
 }
 
+/// Load and parse manifest.yaml from a run directory's saved bundle copy.
+pub fn load_manifest_from_run_bundle(run_dir: &Path) -> Result<PatchBundleManifest, ExitError> {
+    let p = run_dir.join("bundle").join("manifest.yaml");
+    let bytes = fs::read(&p).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to read bundle manifest from {}: {e}", p.display()),
+        )
+    })?;
+    let text = String::from_utf8_lossy(&bytes);
+    parse_manifest_yaml(&text)
+}
+
 pub fn load_and_copy_into_run(
     git_root: &Path,
     bundle_path: &Path,

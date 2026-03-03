@@ -12,6 +12,12 @@ pub const EXIT_APPLY_FAILED: i32 = 8;
 pub const EXIT_VERIFY_FAILED: i32 = 9;
 pub const EXIT_LOCK_BUSY: i32 = 10;
 
+// Additional ops-specific codes (see docs/SPEC_V1.md)
+pub const EXIT_SECRETS_ACK_REQUIRED: i32 = 11;
+#[allow(dead_code)]
+pub const EXIT_TASKS_ACK_REQUIRED: i32 = 12;
+pub const EXIT_PROMOTION_FAILED: i32 = 13;
+
 #[derive(Debug)]
 pub struct ExitError {
     pub code: i32,
