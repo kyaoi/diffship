@@ -1,4 +1,5 @@
 mod apply;
+mod config;
 mod init;
 mod lock;
 mod loop_cmd;

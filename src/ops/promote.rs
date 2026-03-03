@@ -5,6 +5,7 @@ use crate::exit::{
 };
 use crate::git;
 use crate::ops::apply;
+use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::patch_bundle;
 use crate::ops::run;
@@ -46,7 +47,10 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
         "promote",
         &[
             format!("--run-id={}", args.run_id.as_deref().unwrap_or("")),
-            format!("--target-branch={}", args.target_branch),
+            format!(
+                "--target-branch={}",
+                args.target_branch.as_deref().unwrap_or("")
+            ),
             format!("--ack-secrets={}", args.ack_secrets),
             format!("--ack-tasks={}", args.ack_tasks),
             format!("--keep-sandbox={}", args.keep_sandbox),
@@ -64,10 +68,21 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
         })?,
     };
 
+    let run_dir = run::run_dir(git_root, &run_id);
+    let manifest = patch_bundle::load_manifest_from_run_bundle(&run_dir)?;
+    let cfg = config::resolve_ops_config(
+        git_root,
+        Some(&manifest),
+        config::OpsConfigOverrides {
+            target_branch: args.target_branch.clone(),
+            ..Default::default()
+        },
+    )?;
+
     promote_locked(
         git_root,
         &run_id,
-        &args.target_branch,
+        &cfg.target_branch,
         args.ack_secrets,
         args.ack_tasks,
         args.keep_sandbox,

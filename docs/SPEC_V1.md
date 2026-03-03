@@ -224,6 +224,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-003**: Forbidden prefixes must include `.git/` and `.diffship/` by default.
 - **S-OPS-004**: Path checks must not allow absolute paths or `..` traversal, and must not rely on following symlinks.
 - **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, file mode changes, and rename/copy metadata.
+- **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
 
 ### 7.1 OS mode sessions & worktrees
 

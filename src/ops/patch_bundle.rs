@@ -33,6 +33,16 @@ pub struct PatchBundleManifest {
     pub tasks_required: Option<bool>,
     #[serde(default)]
     pub secrets_ack_required: Option<bool>,
+
+    // M4: config overrides (optional)
+    #[serde(default)]
+    pub verify_profile: Option<String>,
+    #[serde(default)]
+    pub target_branch: Option<String>,
+    #[serde(default)]
+    pub promotion_mode: Option<String>,
+    #[serde(default)]
+    pub commit_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -153,6 +163,10 @@ fn validate_manifest(m: &PatchBundleManifest) -> Result<(), ExitError> {
     let _ = m.notes.as_deref();
     let _ = m.tasks_required;
     let _ = m.secrets_ack_required;
+    let _ = m.verify_profile.as_deref();
+    let _ = m.target_branch.as_deref();
+    let _ = m.promotion_mode.as_deref();
+    let _ = m.commit_policy.as_deref();
 
     Ok(())
 }
@@ -178,6 +192,10 @@ fn parse_manifest_yaml(s: &str) -> Result<PatchBundleManifest, ExitError> {
     let mut notes: Option<String> = None;
     let mut tasks_required: Option<bool> = None;
     let mut secrets_ack_required: Option<bool> = None;
+    let mut verify_profile: Option<String> = None;
+    let mut target_branch: Option<String> = None;
+    let mut promotion_mode: Option<String> = None;
+    let mut commit_policy: Option<String> = None;
 
     let mut in_touched_files = false;
 
@@ -241,6 +259,10 @@ fn parse_manifest_yaml(s: &str) -> Result<PatchBundleManifest, ExitError> {
             "notes" => notes = Some(unquote(v).to_string()),
             "tasks_required" => tasks_required = parse_bool(v)?,
             "secrets_ack_required" => secrets_ack_required = parse_bool(v)?,
+            "verify_profile" => verify_profile = Some(unquote(v).to_string()),
+            "target_branch" => target_branch = Some(unquote(v).to_string()),
+            "promotion_mode" => promotion_mode = Some(unquote(v).to_string()),
+            "commit_policy" => commit_policy = Some(unquote(v).to_string()),
 
             _ => {
                 // Ignore unknown keys for forward compatibility.
@@ -265,6 +287,10 @@ fn parse_manifest_yaml(s: &str) -> Result<PatchBundleManifest, ExitError> {
         notes,
         tasks_required,
         secrets_ack_required,
+        verify_profile,
+        target_branch,
+        promotion_mode,
+        commit_policy,
     })
 }
 

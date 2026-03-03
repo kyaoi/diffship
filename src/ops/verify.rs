@@ -1,7 +1,9 @@
 use crate::cli::VerifyArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_VERIFY_FAILED, ExitError};
+use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::pack_fix;
+use crate::ops::patch_bundle;
 use crate::ops::run;
 use crate::ops::worktree;
 use serde::Serialize;
@@ -37,7 +39,7 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
         git_root,
         "verify",
         &[
-            format!("--profile={}", args.profile),
+            format!("--profile={}", args.profile.as_deref().unwrap_or("")),
             format!("--run-id={}", args.run_id.as_deref().unwrap_or("")),
         ],
     );
@@ -53,7 +55,18 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
         })?,
     };
 
-    let out = verify_locked(git_root, &run_id, &args.profile, created_at)?;
+    let run_dir = run::run_dir(git_root, &run_id);
+    let manifest = patch_bundle::load_manifest_from_run_bundle(&run_dir)?;
+    let cfg = config::resolve_ops_config(
+        git_root,
+        Some(&manifest),
+        config::OpsConfigOverrides {
+            verify_profile: args.profile.clone(),
+            ..Default::default()
+        },
+    )?;
+
+    let out = verify_locked(git_root, &run_id, &cfg.verify_profile, created_at)?;
     if out.ok {
         println!("diffship verify: ok");
         println!("  run_id  : {}", run_id);

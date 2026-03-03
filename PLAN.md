@@ -104,16 +104,16 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M4-01 | todo | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
+| M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
 | M4-02 | todo | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
 
 ---
 
 ## Next（いま着手する3つ）
 
-1) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
-2) M4-02 commit/promotion切替（--promotion / --commit-policy）
-3) M4-XX（次の候補）: config のテスト/サンプル増強
+1) M4-02 commit/promotion切替（--promotion / --commit-policy）
+2) M4-XX（次の候補）: config のテスト/サンプル増強
+3) M5-XX（次の候補）: verify の config-driven profiles（docs/CONFIG.md の [verify.profiles.*]）
 
 ## メモ（詰まったらここに書く）
 

@@ -127,3 +127,20 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `diffship apply` は tasks のパスを出力し、run dir に保持する
   - `diffship promote/loop` は tasks 未ack時に exit=12 で拒否する
+
+---
+
+## D-011: 設定ロードの優先順位（M4-01）
+
+- Date: 2026-03-03
+- Decision:
+  - 設定は以下の優先順位で **マージ** して確定する
+    - CLI > patch bundle manifest > project > global > default
+  - project 設定は `.diffship/config.toml` を正とし、互換のため `./.diffship.toml` も読み取る（同一キーがあれば `.diffship/config.toml` が勝つ）
+  - global 設定は `~/.config/diffship/config.toml`
+  - bundle 側の上書きは `manifest.yaml` の以下の任意キーで行う
+    - `verify_profile`, `target_branch`, `promotion_mode`, `commit_policy`
+- Rationale:
+  - その場の run（bundle）で明示的に挙動を上書きしつつ、普段は project/global のデフォルトで回せるようにする
+- Notes:
+  - 現状の実装で実際に参照するキーは段階的に増やす（未使用キーは無視される）

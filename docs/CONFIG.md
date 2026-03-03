@@ -1,9 +1,19 @@
 # diffship Configuration
 
-diffship reads configuration from (first found wins):
+diffship resolves configuration by **merging multiple sources** (later overrides earlier):
 
-1. `./.diffship.toml` (repo-local)
-2. `~/.config/diffship/config.toml` (user)
+1. built-in defaults
+2. `~/.config/diffship/config.toml` (global)
+3. `./.diffship.toml` (project, legacy)
+4. `./.diffship/config.toml` (project; written by `diffship init`)
+5. patch bundle `manifest.yaml` (when available)
+6. CLI flags
+
+Precedence summary: **CLI > manifest > project > global > default**.
+
+Notes:
+- `diffship verify/promote` resolve manifest-level settings by reading the run copy at `.diffship/runs/<run-id>/bundle/manifest.yaml`.
+- This file documents more keys than are currently consumed by the implementation; unknown keys are ignored.
 
 All examples below are TOML.
 

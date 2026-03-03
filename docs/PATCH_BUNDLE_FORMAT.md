@@ -57,6 +57,10 @@ Notes:
 - `notes`: string
 - `tasks_required`: bool (if true, the bundle should include `tasks/USER_TASKS.md`)
 - `secrets_ack_required`: bool (if true, ops should require explicit user acknowledgement)
+- `verify_profile`: string (fast|standard|full; bundle-level default)
+- `target_branch`: string (promotion target branch name)
+- `promotion_mode`: string (none|working-tree|commit)
+- `commit_policy`: string (auto|manual)
 
 ### 2.3 Example
 

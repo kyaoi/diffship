@@ -99,8 +99,8 @@ pub struct ApplyArgs {
 #[derive(Debug, Args)]
 pub struct VerifyArgs {
     /// Verification profile (fast|standard|full)
-    #[arg(long, default_value = "standard")]
-    pub profile: String,
+    #[arg(long)]
+    pub profile: Option<String>,
 
     /// Run id to verify (defaults to the latest run that has a sandbox)
     #[arg(long)]
@@ -125,8 +125,8 @@ pub struct PromoteArgs {
     pub run_id: Option<String>,
 
     /// Target branch to promote into (default: develop; falls back to current branch if develop doesn't exist)
-    #[arg(long, default_value = "develop")]
-    pub target_branch: String,
+    #[arg(long)]
+    pub target_branch: Option<String>,
 
     /// Acknowledge secrets warnings (required if secrets are detected)
     #[arg(long)]
@@ -151,12 +151,12 @@ pub struct LoopArgs {
     pub session: String,
 
     /// Verification profile (fast|standard|full)
-    #[arg(long, default_value = "standard")]
-    pub profile: String,
+    #[arg(long)]
+    pub profile: Option<String>,
 
     /// Target branch to promote into (default: develop; falls back to current branch if develop doesn't exist)
-    #[arg(long, default_value = "develop")]
-    pub target_branch: String,
+    #[arg(long)]
+    pub target_branch: Option<String>,
 
     /// Acknowledge secrets warnings (required if secrets are detected)
     #[arg(long)]

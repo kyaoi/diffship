@@ -1,8 +1,11 @@
 use crate::cli::{ApplyArgs, LoopArgs};
 use crate::exit::{EXIT_VERIFY_FAILED, ExitError};
 use crate::ops::apply;
+use crate::ops::config;
 use crate::ops::lock;
+use crate::ops::patch_bundle;
 use crate::ops::promote;
+use crate::ops::run;
 use crate::ops::verify;
 use std::path::Path;
 
@@ -19,8 +22,11 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         "loop",
         &[
             format!("--session={}", args.session),
-            format!("--profile={}", args.profile),
-            format!("--target-branch={}", args.target_branch),
+            format!("--profile={}", args.profile.as_deref().unwrap_or("")),
+            format!(
+                "--target-branch={}",
+                args.target_branch.as_deref().unwrap_or("")
+            ),
             format!("--ack-secrets={}", args.ack_secrets),
             format!("--ack-tasks={}", args.ack_tasks),
         ],
@@ -35,8 +41,26 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
     };
     let applied = apply::apply_locked(git_root, apply_args, created_at.clone())?;
 
+    // Resolve config after apply (bundle manifest is now saved under the run dir).
+    let run_dir = run::run_dir(git_root, &applied.run_id);
+    let manifest = patch_bundle::load_manifest_from_run_bundle(&run_dir)?;
+    let cfg = config::resolve_ops_config(
+        git_root,
+        Some(&manifest),
+        config::OpsConfigOverrides {
+            verify_profile: args.profile.clone(),
+            target_branch: args.target_branch.clone(),
+            ..Default::default()
+        },
+    )?;
+
     // Step 2: verify
-    let v = verify::verify_locked(git_root, &applied.run_id, &args.profile, created_at.clone())?;
+    let v = verify::verify_locked(
+        git_root,
+        &applied.run_id,
+        &cfg.verify_profile,
+        created_at.clone(),
+    )?;
     if !v.ok {
         eprintln!(
             "diffship loop: verify failed (run_id={}). pack-fix is not implemented yet.",
@@ -52,7 +76,7 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
     promote::promote_locked(
         git_root,
         &applied.run_id,
-        &args.target_branch,
+        &cfg.target_branch,
         args.ack_secrets,
         args.ack_tasks,
         false,

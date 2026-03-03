@@ -134,10 +134,7 @@ fn parse_verify(argv: &[String]) -> Option<cli::Cli> {
         i += 1;
     }
 
-    let args = cli::VerifyArgs {
-        profile: profile.unwrap_or_else(|| "standard".to_string()),
-        run_id,
-    };
+    let args = cli::VerifyArgs { profile, run_id };
 
     Some(cli::Cli {
         command: Some(cli::Command::Verify(args)),
@@ -188,7 +185,7 @@ fn parse_promote(argv: &[String]) -> Option<cli::Cli> {
 
     let args = cli::PromoteArgs {
         run_id,
-        target_branch: target_branch.unwrap_or_else(|| "develop".to_string()),
+        target_branch,
         ack_secrets,
         ack_tasks,
         keep_sandbox,
@@ -252,8 +249,8 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
     let args = cli::LoopArgs {
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
-        profile: profile.unwrap_or_else(|| "standard".to_string()),
-        target_branch: target_branch.unwrap_or_else(|| "develop".to_string()),
+        profile,
+        target_branch,
         ack_secrets,
         ack_tasks,
     };
