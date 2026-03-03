@@ -114,3 +114,16 @@ diffship OS の重要な意思決定ログです。
   - SPEC に先行して exit code を予約する場合、実装が入るまで `#[allow(dead_code)]` を付けて保持する（`-D warnings` 対策）
 - Notes:
   - 予約コードを消すと SPEC/実装の整合が崩れやすいので、予約コードは残す
+
+---
+
+## D-010: tasks は promotion を止め、--ack-tasks を要求する
+
+- Date: 2026-03-03
+- Decision:
+  - bundle に `tasks/USER_TASKS.md` が存在する場合、promotion はデフォルトで停止し、ユーザーの明示 `--ack-tasks` が必要
+- Rationale:
+  - 手動作業（env作成/鍵更新/移行など）を飛ばすと壊れるため
+- Implications:
+  - `diffship apply` は tasks のパスを出力し、run dir に保持する
+  - `diffship promote/loop` は tasks 未ack時に exit=12 で拒否する

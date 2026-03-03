@@ -5,6 +5,8 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
+use crate::ops::tasks;
+
 /// Parsed and validated patch bundle.
 ///
 /// This module is intentionally strict: validation happens before touching any worktree.
@@ -98,6 +100,8 @@ pub fn load_and_copy_into_run(
 
     validate_manifest(&manifest)?;
     validate_touched_files(&manifest.touched_files)?;
+
+    tasks::validate_tasks_contract(&manifest, &root)?;
 
     let patches = collect_patches(&root)?;
     validate_patches(git_root, &patches)?;

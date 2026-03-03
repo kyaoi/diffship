@@ -111,4 +111,4 @@ Recommended files:
 - `tasks/TASKS.yaml`: machine-readable tasks (optional)
 - `tasks/ENV_TEMPLATE.env`: optional template for environment variables (never include real secrets)
 
-diffship should surface these tasks prominently during `apply/loop`, and may block promotion depending on policy.
+diffship should surface these tasks prominently during `apply/loop`, and blocks promotion by default until the user acknowledges (use `--ack-tasks`).

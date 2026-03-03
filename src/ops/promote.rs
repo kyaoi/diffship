@@ -1,5 +1,8 @@
 use crate::cli::PromoteArgs;
-use crate::exit::{EXIT_GENERAL, EXIT_PROMOTION_FAILED, EXIT_SECRETS_ACK_REQUIRED, ExitError};
+use crate::exit::{
+    EXIT_GENERAL, EXIT_PROMOTION_FAILED, EXIT_SECRETS_ACK_REQUIRED, EXIT_TASKS_ACK_REQUIRED,
+    ExitError,
+};
 use crate::git;
 use crate::ops::apply;
 use crate::ops::lock;
@@ -7,6 +10,7 @@ use crate::ops::patch_bundle;
 use crate::ops::run;
 use crate::ops::secrets;
 use crate::ops::session;
+use crate::ops::tasks;
 use crate::ops::worktree;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -29,6 +33,8 @@ struct PromoteSummary {
     ok: bool,
     error: Option<String>,
     secrets_hits: usize,
+    tasks_present: bool,
+    user_tasks_path: Option<String>,
 }
 
 pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
@@ -42,6 +48,7 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
             format!("--run-id={}", args.run_id.as_deref().unwrap_or("")),
             format!("--target-branch={}", args.target_branch),
             format!("--ack-secrets={}", args.ack_secrets),
+            format!("--ack-tasks={}", args.ack_tasks),
             format!("--keep-sandbox={}", args.keep_sandbox),
         ],
     );
@@ -62,6 +69,7 @@ pub fn cmd(git_root: &Path, args: PromoteArgs) -> Result<(), ExitError> {
         &run_id,
         &args.target_branch,
         args.ack_secrets,
+        args.ack_tasks,
         args.keep_sandbox,
         created_at,
     )
@@ -72,6 +80,7 @@ pub fn promote_locked(
     run_id: &str,
     target_branch: &str,
     ack_secrets: bool,
+    ack_tasks: bool,
     keep_sandbox: bool,
     created_at: String,
 ) -> Result<(), ExitError> {
@@ -105,6 +114,19 @@ pub fn promote_locked(
         return Err(ExitError::new(
             EXIT_GENERAL,
             format!("sandbox path missing on disk: {}", sandbox_path.display()),
+        ));
+    }
+
+    // Surface required user tasks and block promotion by default until acknowledged.
+    let user_tasks_path = tasks::user_tasks_path_in_run(&run_dir);
+    let tasks_present = user_tasks_path.is_file();
+    if tasks_present && !ack_tasks {
+        return Err(ExitError::new(
+            EXIT_TASKS_ACK_REQUIRED,
+            format!(
+                "refused: required user tasks must be acknowledged before promotion\nsee: {}\nrerun with --ack-tasks after completing them",
+                user_tasks_path.display()
+            ),
         ));
     }
 
@@ -174,6 +196,12 @@ pub fn promote_locked(
                 effective_target, target_head, base_commit
             )),
             secrets_hits: hits.len(),
+            tasks_present,
+            user_tasks_path: if tasks_present {
+                Some(user_tasks_path.display().to_string())
+            } else {
+                None
+            },
         };
         write_promote_summary(&run_dir, &summary)?;
         return Err(ExitError::new(
@@ -202,6 +230,12 @@ pub fn promote_locked(
             ok: false,
             error: Some(e.clone()),
             secrets_hits: hits.len(),
+            tasks_present,
+            user_tasks_path: if tasks_present {
+                Some(user_tasks_path.display().to_string())
+            } else {
+                None
+            },
         };
         write_promote_summary(&run_dir, &summary)?;
 
@@ -231,6 +265,12 @@ pub fn promote_locked(
         ok: true,
         error: None,
         secrets_hits: hits.len(),
+        tasks_present,
+        user_tasks_path: if tasks_present {
+            Some(user_tasks_path.display().to_string())
+        } else {
+            None
+        },
     };
     write_promote_summary(&run_dir, &summary)?;
 

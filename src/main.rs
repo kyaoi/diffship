@@ -149,6 +149,7 @@ fn parse_promote(argv: &[String]) -> Option<cli::Cli> {
     let mut run_id: Option<String> = None;
     let mut target_branch: Option<String> = None;
     let mut ack_secrets = false;
+    let mut ack_tasks = false;
     let mut keep_sandbox = false;
 
     let mut i = 2;
@@ -172,6 +173,8 @@ fn parse_promote(argv: &[String]) -> Option<cli::Cli> {
             target_branch = Some(v.to_string());
         } else if a == "--ack-secrets" {
             ack_secrets = true;
+        } else if a == "--ack-tasks" {
+            ack_tasks = true;
         } else if a == "--keep-sandbox" {
             keep_sandbox = true;
         } else if a.starts_with('-') {
@@ -187,6 +190,7 @@ fn parse_promote(argv: &[String]) -> Option<cli::Cli> {
         run_id,
         target_branch: target_branch.unwrap_or_else(|| "develop".to_string()),
         ack_secrets,
+        ack_tasks,
         keep_sandbox,
     };
     Some(cli::Cli {
@@ -201,6 +205,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
     let mut profile: Option<String> = None;
     let mut target_branch: Option<String> = None;
     let mut ack_secrets = false;
+    let mut ack_tasks = false;
 
     let mut i = 2;
     while i < argv.len() {
@@ -231,6 +236,8 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
             target_branch = Some(v.to_string());
         } else if a == "--ack-secrets" {
             ack_secrets = true;
+        } else if a == "--ack-tasks" {
+            ack_tasks = true;
         } else if a.starts_with('-') {
             return None;
         } else if bundle.is_none() {
@@ -248,6 +255,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
         profile: profile.unwrap_or_else(|| "standard".to_string()),
         target_branch: target_branch.unwrap_or_else(|| "develop".to_string()),
         ack_secrets,
+        ack_tasks,
     };
     Some(cli::Cli {
         command: Some(cli::Command::Loop(args)),

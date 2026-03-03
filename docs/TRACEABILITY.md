@@ -224,7 +224,7 @@ Conventions:
 
 - **S-OPS-SECRETS-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/secrets.rs`, `src/ops/promote.rs` — Status: Implemented
 - **S-OPS-SECRETS-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/secrets.rs` — Status: Implemented
-- **S-OPS-TASKS-001** — Tests: TBD — Code: `src/ops/tasks.rs` — Status: Planned
+- **S-OPS-TASKS-001** — Tests: `tests/m3_tasks.rs` — Code: `src/ops/tasks.rs`, `src/ops/patch_bundle.rs`, `src/ops/apply.rs`, `src/ops/promote.rs` — Status: Implemented
 
 ---
 

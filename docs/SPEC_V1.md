@@ -242,7 +242,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 
 - **S-OPS-SECRETS-001**: Ops MUST scan patch bundle contents and produced diffs/logs for likely secrets and MUST block promotion by default until user acknowledges.
 - **S-OPS-SECRETS-002**: Ops MUST never print secret values; only paths and reasons.
-- **S-OPS-TASKS-001**: If a patch bundle declares required user tasks, diffship MUST surface them prominently and MAY block promotion depending on policy.
+- **S-OPS-TASKS-001**: If a patch bundle declares required user tasks, diffship MUST surface them prominently and MUST block promotion by default until the user acknowledges (use --ack-tasks).
 
 ---
 

@@ -117,6 +117,10 @@ pub struct PromoteArgs {
     #[arg(long)]
     pub ack_secrets: bool,
 
+    /// Acknowledge required user tasks (required if tasks are present)
+    #[arg(long)]
+    pub ack_tasks: bool,
+
     /// Keep the sandbox worktree after promotion (default: false)
     #[arg(long, default_value_t = false)]
     pub keep_sandbox: bool,
@@ -142,6 +146,10 @@ pub struct LoopArgs {
     /// Acknowledge secrets warnings (required if secrets are detected)
     #[arg(long)]
     pub ack_secrets: bool,
+
+    /// Acknowledge required user tasks (required if tasks are present)
+    #[arg(long)]
+    pub ack_tasks: bool,
 }
 
 #[derive(Debug, Args)]

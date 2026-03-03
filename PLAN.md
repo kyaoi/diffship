@@ -98,7 +98,7 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M3-01 | done | secrets 検知 → promotion停止 | 危険検知時に必ず止まり、明示ackがないと promoteできない |
-| M3-02 | todo | tasks 同梱契約 | bundleの tasks/USER_TASKS.md が run に残り、ユーザーが実行すべき作業が見える |
+| M3-02 | done | tasks 同梱契約 | bundleの tasks/USER_TASKS.md が run に残り、ユーザーが実行すべき作業が見える |
 
 ### M4: 設定（グローバル/プロジェクト/CLI/bundle）
 
@@ -111,11 +111,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（いま着手する3つ）
 
-1) M3-02 tasks 同梱契約
-2) M2-06 pack-fix（verify失敗時の reprompt zip）
-3) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
-
----
+1) M2-06 pack-fix（verify失敗時の reprompt zip）
+2) M4-01 設定ロード優先順位（CLI > bundle > project > global > default）
+3) M4-02 commit/promotion切替（--promotion / --commit-policy）
 
 ## メモ（詰まったらここに書く）
 

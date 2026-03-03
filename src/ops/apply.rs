@@ -7,6 +7,7 @@ use crate::ops::lock;
 use crate::ops::patch_bundle;
 use crate::ops::run;
 use crate::ops::session;
+use crate::ops::tasks;
 use crate::ops::worktree;
 use serde::Serialize;
 use std::fs;
@@ -22,6 +23,8 @@ struct ApplySummary {
     bundle_root: String,
     run_bundle_dir: String,
     apply_mode: String,
+    tasks_required: bool,
+    user_tasks_path: Option<String>,
     ok: bool,
     error: Option<String>,
 }
@@ -50,6 +53,12 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
     println!("  session : {}", out.session);
     println!("  sandbox : {}", out.sandbox_path);
     println!("  bundle  : {}", out.run_bundle_dir);
+    if let Some(p) = &out.user_tasks_path {
+        println!("  tasks   : {}", p);
+        println!(
+            "  note    : promotion will be blocked until tasks are acknowledged (use --ack-tasks)"
+        );
+    }
     if out.keep_sandbox {
         println!("  next    : diffship verify --run-id {}", out.run_id);
     } else {
@@ -65,6 +74,7 @@ pub struct ApplyOut {
     pub session: String,
     pub sandbox_path: String,
     pub run_bundle_dir: String,
+    pub user_tasks_path: Option<String>,
     pub keep_sandbox: bool,
 }
 
@@ -98,6 +108,17 @@ pub fn apply_locked(
     let bundle_path = PathBuf::from(&args.bundle);
     let bundle = patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir)?;
 
+    // Surface required user tasks (copied into run_dir by load_and_copy_into_run).
+    let tasks_required = bundle.manifest.tasks_required.unwrap_or(false);
+    let user_tasks = {
+        let p = tasks::user_tasks_path_in_run(&run_dir);
+        if p.is_file() {
+            Some(p.display().to_string())
+        } else {
+            None
+        }
+    };
+
     // base_commit must match the session head (resolved to full SHA).
     let declared = git::rev_parse(git_root, bundle.manifest.base_commit.trim()).map_err(|e| {
         ExitError::new(
@@ -115,6 +136,8 @@ pub fn apply_locked(
             bundle_root: bundle.root.display().to_string(),
             run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
             apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
+            tasks_required,
+            user_tasks_path: user_tasks.clone(),
             ok: false,
             error: Some(format!(
                 "base_commit mismatch: manifest={} session_head={}",
@@ -146,6 +169,8 @@ pub fn apply_locked(
         bundle_root: bundle.root.display().to_string(),
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
         apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
+        tasks_required,
+        user_tasks_path: user_tasks.clone(),
         ok: apply_res.is_ok,
         error: apply_res.error.clone(),
     };
@@ -170,6 +195,7 @@ pub fn apply_locked(
         session: args.session,
         sandbox_path: sandbox.path,
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
+        user_tasks_path: user_tasks,
         keep_sandbox: args.keep_sandbox,
     })
 }

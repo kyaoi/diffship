@@ -9,6 +9,7 @@ mod runs;
 mod secrets;
 mod session;
 mod status;
+mod tasks;
 mod verify;
 mod worktree;
 

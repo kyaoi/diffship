@@ -22,6 +22,7 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
             format!("--profile={}", args.profile),
             format!("--target-branch={}", args.target_branch),
             format!("--ack-secrets={}", args.ack_secrets),
+            format!("--ack-tasks={}", args.ack_tasks),
         ],
     );
     let _guard = lock::LockGuard::acquire(&lock_path, info)?;
@@ -53,6 +54,7 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         &applied.run_id,
         &args.target_branch,
         args.ack_secrets,
+        args.ack_tasks,
         false,
         created_at.clone(),
     )?;
