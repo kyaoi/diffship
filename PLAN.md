@@ -91,7 +91,7 @@ diffship loop <patch-bundle.zip>
 | M2-03 | done | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
 | M2-04 | done | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
 | M2-05 | done | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
-| M2-06 | todo | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
+| M2-06 | done | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
 
 ### M3: secrets / tasks（止めるべき時に止まる）
 
@@ -104,16 +104,17 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M4-01 | todo | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
+| M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
+| M4-02 | todo | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
 
 ---
 
 ## Next（いま着手する3つ）
 
-1) M4-XX（候補）: config のテスト/サンプル増強（docs/CONFIG.md の充実）
-2) M5-XX（候補）: verify の config-driven profiles（[verify.profiles.*]）
-3) M6-XX（候補）: pack-fix のテンプレ強化（プロンプト最適化/添付物整理）
+1) M4-02 commit/promotion切替（--promotion / --commit-policy）
+2) M4-XX（次の候補）: config のテスト/サンプル増強
+3) M5-XX（次の候補）: verify の config-driven profiles（docs/CONFIG.md の [verify.profiles.*]）
+
 ## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
