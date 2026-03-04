@@ -82,14 +82,19 @@ pub fn is_tty() -> bool {
     io::stdin().is_terminal() && io::stdout().is_terminal()
 }
 
-pub fn should_start_tui() -> bool {
-    if !is_tty() {
+fn should_start_tui_impl(is_tty: bool, env_v: &str) -> bool {
+    if !is_tty {
         return false;
     }
 
     // Safety escape hatch for scripts.
-    let v = std::env::var("DIFFSHIP_NO_TUI").unwrap_or_default();
+    let v = env_v.trim().to_ascii_lowercase();
     !matches!(v.as_str(), "1" | "true" | "yes" | "on")
+}
+
+pub fn should_start_tui() -> bool {
+    let v = std::env::var("DIFFSHIP_NO_TUI").unwrap_or_default();
+    should_start_tui_impl(is_tty(), &v)
 }
 
 pub fn run(git_root: &Path) -> Result<(), ExitError> {
@@ -837,4 +842,32 @@ fn clip_to_width(s: &str, w: u16) -> String {
 
 fn line(ch: char, w: u16) -> String {
     std::iter::repeat_n(ch, w as usize).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_start_tui_impl;
+
+    #[test]
+    fn should_start_tui_impl_requires_tty() {
+        assert!(!should_start_tui_impl(false, ""));
+        assert!(!should_start_tui_impl(false, "1"));
+    }
+
+    #[test]
+    fn should_start_tui_impl_disables_on_common_truthy_values() {
+        for v in ["1", "true", "yes", "on", " TRUE ", "Yes"] {
+            assert!(
+                !should_start_tui_impl(true, v),
+                "expected disabled for: {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_start_tui_impl_allows_other_values() {
+        for v in ["", "0", "false", "no", "off", "random"] {
+            assert!(should_start_tui_impl(true, v), "expected enabled for: {v}");
+        }
+    }
 }

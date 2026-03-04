@@ -118,15 +118,14 @@ diffship loop <patch-bundle.zip>
 | M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
 | M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
 | M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
-| M5-05 | done | TUI描画の安定化（raw mode改行/端末互換） | raw modeでも行が崩れず、端末差（のCR扱い）に依存しない描画になる。 |
-| M5-05 | todo | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
+| M5-05 | done | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
 
 
 ## Next（いま着手する3つ）
 
-1) M5-05 CLI parity / テスト（TUIの起動/画面遷移/表示の最低限テスト）
-2) loop 実行の出力を run detail から辿れるように改善（ログビュー強化）
-3) キー一覧ヘルプ/コピー導線（pathsのコピーなど）
+1) M5-03 Runアーティファクト導線（paths/tasks）
+2) TUI: Run detail の情報密度改善（apply/verify/promotion の要約 + exit code 表示を強化）
+3) TUI: Loop 実行後の結果表示を強化（成功/失敗/停止理由の強調、再実行導線）
 
 （候補）
 - config のテスト/サンプル増強
@@ -135,8 +134,6 @@ diffship loop <patch-bundle.zip>
 ## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
-
-- 2026-03-04: TUIのclippy警告（-D warnings）を解消（unused field削除 / let-chain / useless_format / repeat_n）。
 
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。

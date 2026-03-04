@@ -174,45 +174,52 @@ diffship OS の重要な意思決定ログです。
 
 ---
 
-## D-014: TUI v0 の実装は crossterm で最小依存、loop は子プロセス実行でパリティ維持
+## D-014: raw mode の描画は CRLF に寄せて端末差を吸収する
 
 - Date: 2026-03-04
 - Decision:
-  - TUI v0 は `crossterm` を使った最小構成で実装する（画面描画 + キー入力）
-  - `loop` 実行は **同一バイナリを子プロセスとして起動**して実行し、挙動をCLIと一致させる
-  - `loop` 実行中は一時的にTUIをサスペンドし、子プロセスの標準出力/標準エラーをそのまま表示する（進捗を見える化）
+  - crossterm の raw mode 下では `\n` のみだと行頭に戻らず描画が崩れる端末があるため、
+    TUI の 1行出力は `\r\n`（CRLF）で明示的に改行する。
 - Rationale:
-  - TUI固有の実装分岐を最小化して CLI parity を守るため
-  - 既存の `diffship loop` のログ/UXをそのまま利用するため
+  - “次の行が前行の続き列から始まる”崩れを確実に防ぐため。
 - Implications:
-  - まずは run/artifacts の導線を整え、ログビュー/コピー機能は後続で強化する
-
-
----
-
-## D-015: TUI実装は -D warnings を満たす（unusedは削除を優先）
-
-- Date: 2026-03-04
-- Decision:
-  - TUI実装は `just ci`（= `-D warnings`）を常に通すことを必須とする
-  - 将来用のフィールドを温存するより、**未使用になったら削除**を優先する（必要になったら再導入する）
-- Rationale:
-  - CIがfailすると運用が止まるため
-  - 未使用データを読み込むとI/Oコストも増えるため
-
+  - 出力ヘルパ（writeln_trunc）は CRLF を使う前提で統一する。
 
 ---
 
-## D-016: TUIは raw mode の改行挙動に依存しない（CRLF or MoveTo で行頭復帰）
+## D-015: TUI 起動のデフォルトは TTY のみ、環境変数で無効化できる
 
 - Date: 2026-03-04
 - Decision:
-  - TUIの描画では `
-` だけに頼らず、**CRLF（`
-`）** もしくは `MoveTo` 等で行頭復帰を明示する
-  - 端末や設定によって `
-` がCRを伴わない場合でも、レイアウトが崩れないようにする
+  - `diffship`（引数なし）は **TTY のときのみ** TUI を起動する（非TTYは従来どおりヘルプ/エラー）。
+  - `diffship tui` を明示サブコマンドとして用意する。
+  - `DIFFSHIP_NO_TUI=1` 等で自動TUIを無効化できる。
 - Rationale:
-  - `enable_raw_mode()` 下では出力処理が変わり、`
-` がCRLFとして扱われない端末があるため
-  - 端末差でUIが崩れると、運用ツールとして致命的なため
+  - CI / パイプ / スクリプト実行を壊さず、対話時だけ可視化したい。
+- Implications:
+  - “TUIにしかない挙動”を持たない（CLI parity を保つ）。
+
+---
+
+## D-016: TUI の CLI parity は非TTY前提のスモークテストで固定する
+
+- Date: 2026-03-04
+- Decision:
+  - テストでは非TTY環境で、
+    - `diffship`（引数なし）は help を出して即終了する
+    - `diffship tui` は “requires a TTY” で失敗する
+    を確認する。
+  - ハング防止のため timeout を必ず付ける。
+- Notes:
+  - `assert_cmd::Command::cargo_bin` は deprecated（custom build-dir 非互換）なので `assert_cmd::cargo::cargo_bin_cmd!` を使う。
+
+---
+
+## D-017: `-D warnings` 運用下ではテストの import も最小化する
+
+- Date: 2026-03-04
+- Decision:
+  - `assert_cmd::prelude::*` のような未使用 import を避け、必要なものだけを import する。
+- Rationale:
+  - `-D warnings` で CI が落ちるのを防ぐ（テストも同じ品質ゲートを通す）。
+
