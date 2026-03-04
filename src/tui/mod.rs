@@ -811,7 +811,10 @@ fn summarize_step(v: Option<&Value>) -> String {
 
 fn writeln_trunc(out: &mut impl Write, s: &str, w: u16) -> Result<(), ExitError> {
     let clipped = clip_to_width(s, w);
-    writeln!(out, "{}", clipped)
+
+    // In raw mode, `\n` is not guaranteed to imply carriage return on all terminals.
+    // Use CRLF explicitly to keep the layout stable across emulators.
+    write!(out, "{}\r\n", clipped)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to write to terminal: {e}")))
 }
 

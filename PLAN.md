@@ -118,6 +118,7 @@ diffship loop <patch-bundle.zip>
 | M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
 | M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
 | M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
+| M5-05 | done | TUI描画の安定化（raw mode改行/端末互換） | raw modeでも行が崩れず、端末差（のCR扱い）に依存しない描画になる。 |
 | M5-05 | todo | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
 
 
