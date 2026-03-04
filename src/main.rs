@@ -2,6 +2,7 @@ mod cli;
 mod exit;
 mod git;
 mod ops;
+mod tui;
 
 use clap::Parser;
 

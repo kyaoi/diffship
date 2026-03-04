@@ -1,35 +1,51 @@
 mod apply;
 mod config;
 mod init;
-mod lock;
+pub(crate) mod lock;
 mod loop_cmd;
 mod pack_fix;
 mod patch_bundle;
 mod promote;
-mod run;
+pub(crate) mod run;
 mod runs;
 mod secrets;
-mod session;
+pub(crate) mod session;
 mod status;
-mod tasks;
+pub(crate) mod tasks;
 mod verify;
-mod worktree;
+pub(crate) mod worktree;
 
 use crate::cli::{Cli, Command};
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
+use clap::CommandFactory;
 
 pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
     let Some(cmd) = cli.command else {
-        return Err(ExitError::new(
-            EXIT_GENERAL,
-            "no command specified (TUI is not implemented yet); try: diffship init | status | runs | apply | verify | promote | loop",
-        ));
+        if crate::tui::should_start_tui() {
+            let git_root = git::git_root()?;
+            return crate::tui::run(&git_root);
+        }
+
+        // Non-TTY (or explicitly disabled): preserve the classic CLI behavior and just show help.
+        let mut c = crate::cli::Cli::command();
+        let _ = c.print_help();
+        println!();
+        return Ok(());
     };
 
     let git_root = git::git_root()?;
 
     match cmd {
+        Command::Tui(_args) => {
+            if !crate::tui::is_tty() {
+                return Err(ExitError::new(
+                    EXIT_GENERAL,
+                    "diffship tui requires a TTY (try running it in an interactive terminal)",
+                ));
+            }
+            crate::tui::run(&git_root)
+        }
         Command::Init(args) => init::cmd(&git_root, args),
         Command::Status(args) => status::cmd(&git_root, args),
         Command::Runs(args) => runs::cmd(&git_root, args),

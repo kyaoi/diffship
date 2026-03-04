@@ -171,3 +171,31 @@ diffship OS の重要な意思決定ログです。
   - 自動化（CLI/loop）を壊さずに、運用中の「いま何が起きたか」を見える化したい
 - Implications:
   - 画面は「Runs」「Status」「Run detail/log」「Loop」の最小セットから始める
+
+---
+
+## D-014: TUI v0 の実装は crossterm で最小依存、loop は子プロセス実行でパリティ維持
+
+- Date: 2026-03-04
+- Decision:
+  - TUI v0 は `crossterm` を使った最小構成で実装する（画面描画 + キー入力）
+  - `loop` 実行は **同一バイナリを子プロセスとして起動**して実行し、挙動をCLIと一致させる
+  - `loop` 実行中は一時的にTUIをサスペンドし、子プロセスの標準出力/標準エラーをそのまま表示する（進捗を見える化）
+- Rationale:
+  - TUI固有の実装分岐を最小化して CLI parity を守るため
+  - 既存の `diffship loop` のログ/UXをそのまま利用するため
+- Implications:
+  - まずは run/artifacts の導線を整え、ログビュー/コピー機能は後続で強化する
+
+
+---
+
+## D-015: TUI実装は -D warnings を満たす（unusedは削除を優先）
+
+- Date: 2026-03-04
+- Decision:
+  - TUI実装は `just ci`（= `-D warnings`）を常に通すことを必須とする
+  - 将来用のフィールドを温存するより、**未使用になったら削除**を優先する（必要になったら再導入する）
+- Rationale:
+  - CIがfailすると運用が止まるため
+  - 未使用データを読み込むとI/Oコストも増えるため

@@ -38,7 +38,7 @@ Conventions:
 
 ## TUI
 
-- **S-TUI-001** — Tests: TBD — Code: `src/tui/*` — Status: Planned
+- **S-TUI-001** — Tests: TBD — Code: `src/tui/*` — Status: Partial
 - **S-TUI-002** — Tests: TBD — Code: `src/tui/*` — Status: Planned
 - **S-TUI-003** — Tests: TBD — Code: `src/tui/viewer.rs` — Status: Planned
 - **S-TUI-004** — Tests: TBD — Code: `src/plan.rs`, `src/tui/*` — Status: Planned

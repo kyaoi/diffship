@@ -11,6 +11,9 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Start the interactive TUI (status/runs viewer + loop launcher)
+    Tui(TuiArgs),
+
     /// Generate a ChatGPT Project kit under .diffship/
     Init(InitArgs),
 
@@ -52,6 +55,9 @@ pub enum Command {
     #[command(name = "__test_m1_cleanup_sandbox", hide = true)]
     __TestM1CleanupSandbox(TestM1CleanupSandboxArgs),
 }
+
+#[derive(Debug, Args, Default)]
+pub struct TuiArgs {}
 
 #[derive(Debug, Args)]
 pub struct InitArgs {

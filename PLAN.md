@@ -114,26 +114,28 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M5-01 | todo | TUI骨格（起動/終了/画面遷移） | `diffship`（引数なし）でTUIが起動し、q/ESCで安全に終了できる。非TTYでは従来通りヘルプを出す。 |
-| M5-02 | todo | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
-| M5-03 | todo | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
-| M5-04 | todo | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
+| M5-01 | done | TUI骨格（起動/終了/画面遷移） | `diffship`（引数なし）でTUIが起動し、q/ESCで安全に終了できる。非TTYでは従来通りヘルプを出す。 |
+| M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
+| M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
+| M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
 | M5-05 | todo | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
 
 
 ## Next（いま着手する3つ）
 
-1) M5-01 TUI骨格（起動/終了/画面遷移）
-2) M5-02 status/runs ビューア（run詳細/エラー表示）
-3) M5-04 TUIから `loop` 実行（既存ops呼び出し + 進捗表示）
+1) M5-05 CLI parity / テスト（TUIの起動/画面遷移/表示の最低限テスト）
+2) loop 実行の出力を run detail から辿れるように改善（ログビュー強化）
+3) キー一覧ヘルプ/コピー導線（pathsのコピーなど）
 
 （候補）
 - config のテスト/サンプル増強
 - verify の config-driven profiles（`[verify.profiles.*]`）
 
-## メモ（詰まったらここに書く）## メモ（詰まったらここに書く）
+## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
+
+- 2026-03-04: TUIのclippy警告（-D warnings）を解消（unused field削除 / let-chain / useless_format / repeat_n）。
 
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。

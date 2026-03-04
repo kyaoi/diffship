@@ -9,7 +9,8 @@ It focuses on the *ops* side of an AI workflow:
 - **promote** the result back to your target branch (or skip / no-commit)
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
-> Note: The *handoff* (diff → AI bundle) / TUI workflow is **specified** but not yet implemented as user-facing commands.
+> Note: The *handoff* (diff → AI bundle) workflow is **specified** but not yet implemented.
+> The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
 
 ---
@@ -62,6 +63,9 @@ If verification fails, use `diffship pack-fix` to build a reprompt zip for the r
 ## Commands
 
 All commands below are implemented.
+
+- `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
+- `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher)
 
 - `diffship init` — generate `.diffship/` project kit files
 - `diffship status` — show lock state and recent runs (`--json` available)
