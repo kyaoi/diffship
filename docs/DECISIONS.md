@@ -223,3 +223,16 @@ diffship OS の重要な意思決定ログです。
 - Rationale:
   - `-D warnings` で CI が落ちるのを防ぐ（テストも同じ品質ゲートを通す）。
 
+---
+## D-018: Handoff は `diffship build` から実装を開始し、まずは committed-only を MVP にする
+
+- Date: 2026-03-05
+- Decision:
+  - Handoff bundle の生成コマンドは `diffship build` とし、出力は `docs/BUNDLE_FORMAT.md` / `docs/HANDOFF_TEMPLATE.md` に準拠する
+  - 初期MVPは committed range の bundle 化を最優先し、staged/unstaged/untracked は段階的に追加する
+- Rationale:
+  - 仕様既定のコマンド/契約に合わせ、後戻りを減らす
+  - range指定 + determinism + split を先に固めると拡張が容易
+- Implications:
+  - 既存の `diffship tui`（ops可視化/loop支援）は維持し、handoffのTUI/previewは後続で扱う
+

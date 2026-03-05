@@ -19,17 +19,25 @@
 ユーザーが基本的に何も気にせず、
 
 ```bash
+# 1) handoff（diff → AI bundle）
+diffship build [options...]
+
+# 2) ops（AI patch bundle → apply/verify/promote）
 diffship loop <patch-bundle.zip>
 ```
 
-を繰り返すだけで、
+を回せる状態を作る。
 
+### 成立させたいこと（Ops 側）
 - **作業ツリーを汚さず**（worktree / session / sandbox）
 - **verify を回し**（fast/standard/full）
 - 成功したら **自動で promotion（commit）**
 - 危険（secrets / 要ユーザー作業）なら **必ず止まって警告**
 
-が成立する状態を作る。
+### 成立させたいこと（Handoff 側）
+- Git の差分（committed/staged/unstaged/untracked）を **アップロード制限に合わせて分割**し、
+  **AI が読める入口（HANDOFF.md）**付きの bundle にする
+- `.diffshipignore` / secrets warning を尊重し、**危険/巨大/バイナリ**は除外 or attachments として扱う
 
 ---
 
@@ -118,18 +126,34 @@ diffship loop <patch-bundle.zip>
 | M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
 | M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
 | M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
-| M5-05 | done | CLI parity / テスト | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加する。 |
+| M5-05 | blocked | CLI parity / テスト（CI green） | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加し、`clippy -D warnings` が通る（unused import を解消）こと。 |
 
 
+
+### M6: Handoff（diff → AI bundle）
+
+| ID | Status | 内容 | Done条件 |
+|---|---|---|---|
+| M6-01 | todo | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
+| M6-02 | todo | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
+| M6-03 | todo | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
+| M6-04 | todo | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
+| M6-05 | todo | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
+| M6-06 | todo | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
+
+---
 ## Next（いま着手する3つ）
 
-1) M5-03 Runアーティファクト導線（paths/tasks）
-2) TUI: Run detail の情報密度改善（apply/verify/promotion の要約 + exit code 表示を強化）
-3) TUI: Loop 実行後の結果表示を強化（成功/失敗/停止理由の強調、再実行導線）
+1) M5-05: CI を green に戻す（`tests/m5_tui_cli_parity.rs` の unused import を解消）
+2) M6-01: `diffship build` の骨格（出力ディレクトリ/zip、`HANDOFF.md` と `parts/` を最低限生成）
+3) M6-02: “committed-only” から始めて diff を bundle 化（range指定 + `HANDOFF.md` に基準情報を残す）
 
 （候補）
-- config のテスト/サンプル増強
-- verify の config-driven profiles（`[verify.profiles.*]`）
+- M6: staged/unstaged/untracked の取り込み拡張
+- M6: profile制限に合わせた split / excluded / attachments
+- Handoff TUI（インタラクティブ選択）/ preview
+- verify の config-driven profiles（`[verify.profiles.*]`）強化
+
 
 ## メモ（詰まったらここに書く）
 
