@@ -236,3 +236,44 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - 既存の `diffship tui`（ops可視化/loop支援）は維持し、handoffのTUI/previewは後続で扱う
 
+
+---
+
+## D-019: `diffship build` MVP は「committed-only + 1 part」から始め、出力を安定させる
+
+- Date: 2026-03-05
+- Decision:
+  - `diffship build` の最初の実装は committed range のみ（staged/unstaged/untracked は後続）。
+  - まずは `parts/part_01.patch` の 1part 固定で bundle レイアウト（`HANDOFF.md` + `parts/`）を確立する。
+  - `--range-mode` は `direct|merge-base|last|root` を受け付け、デフォルトは `last`。
+  - デフォルト出力は `./diffship_YYYY-MM-DD_HHMM/`（同名が存在する場合は失敗）。
+  - `--zip` はディレクトリ出力と同じレイアウトで `.zip` を生成する。
+- Rationale:
+  - まず “AI に渡す入口（HANDOFF.md）と diff の置き場” を固定すると、split / attachments / preview を安全に積み増せる。
+  - range の選択肢は先に揃えておくと、コミット単位 split 等へ繋げやすい。
+
+---
+
+## D-020: 長い render 関数の引数は Context struct にまとめて clippy を通す
+
+- Date: 2026-03-05
+- Decision:
+  - `clippy::too-many-arguments` を避けるため、doc レンダリング等の引数が多い関数は `*Inputs` のような Context struct にまとめて渡す。
+  - テストは標準ライブラリの `str::contains` で足りる場合、predicates の `Predicate` trait を持ち込まない。
+- Rationale:
+  - `-D warnings` 運用下で、実装都合の `#[allow(..)]` を増やさずに品質ゲートを維持するため。
+- Implications:
+  - 「引数が多い関数」は “構造化して渡す” をデフォルトにし、局所 allow は最後の手段にする。
+
+---
+
+## D-021: テストは default branch 名を仮定しない（main/master を自動検出）
+
+- Date: 2026-03-05
+- Decision:
+  - 一時リポジトリを使う統合テストでは、`master` などの固定ブランチ名を前提にしない。
+  - 必要な場合は `git rev-parse --abbrev-ref HEAD` で現在ブランチ名を取得し、それを checkout や CLI 引数に使う。
+- Rationale:
+  - Git の初期ブランチ名は環境設定で変わり得て、CI/ユーザー環境で `master` が存在しないケースがある。
+- Implications:
+  - テストが環境依存で落ちないようにし、`just ci` を安定させる。

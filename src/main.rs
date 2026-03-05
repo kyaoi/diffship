@@ -1,6 +1,7 @@
 mod cli;
 mod exit;
 mod git;
+mod handoff;
 mod ops;
 mod tui;
 

@@ -14,6 +14,9 @@ pub enum Command {
     /// Start the interactive TUI (status/runs viewer + loop launcher)
     Tui(TuiArgs),
 
+    /// Build an AI handoff bundle from committed diffs (M6, MVP: committed-only)
+    Build(BuildArgs),
+
     /// Generate a ChatGPT Project kit under .diffship/
     Init(InitArgs),
 
@@ -58,6 +61,37 @@ pub enum Command {
 
 #[derive(Debug, Args, Default)]
 pub struct TuiArgs {}
+
+#[derive(Debug, Args)]
+pub struct BuildArgs {
+    /// Committed range mode (direct|merge-base|last|root)
+    #[arg(long, default_value = "last", value_name = "MODE")]
+    pub range_mode: String,
+
+    /// Range start revision (for range-mode=direct)
+    #[arg(long)]
+    pub from: Option<String>,
+
+    /// Range end revision (for range-mode=direct/root; default: HEAD)
+    #[arg(long)]
+    pub to: Option<String>,
+
+    /// Range A revision (for range-mode=merge-base)
+    #[arg(long)]
+    pub a: Option<String>,
+
+    /// Range B revision (for range-mode=merge-base)
+    #[arg(long)]
+    pub b: Option<String>,
+
+    /// Output directory path (default: ./diffship_<timestamp>/)
+    #[arg(long)]
+    pub out: Option<String>,
+
+    /// Also create a zip bundle next to the output directory
+    #[arg(long, default_value_t = false)]
+    pub zip: bool,
+}
 
 #[derive(Debug, Args)]
 pub struct InitArgs {

@@ -49,15 +49,15 @@ Conventions:
 
 - **S-SOURCES-001** — Tests: TBD — Code: `src/sources.rs` — Status: Planned
 - **S-SOURCES-002** — Tests: TBD — Code: `src/sources.rs` — Status: Planned
-- **S-SOURCES-003** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
+- **S-SOURCES-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
 ## Range modes
 
-- **S-RANGE-001** — Tests: TBD — Code: `src/range.rs` — Status: Planned
+- **S-RANGE-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-RANGE-002** — Tests: TBD — Code: `src/cli.rs` — Status: Planned
-- **S-RANGE-003** — Tests: TBD — Code: `src/cli.rs` — Status: Planned
+- **S-RANGE-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -97,10 +97,10 @@ Conventions:
 
 ## Output
 
-- **S-OUT-001** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
+- **S-OUT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-002** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
-- **S-OUT-003** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
-- **S-OUT-004** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
+- **S-OUT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -116,9 +116,9 @@ Conventions:
 
 ## Handoff
 
-- **S-HANDOFF-001** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
-- **S-HANDOFF-002** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
-- **S-HANDOFF-003** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
+- **S-HANDOFF-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-HANDOFF-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-HANDOFF-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-HANDOFF-004** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
 
 ---
