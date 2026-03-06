@@ -57,20 +57,23 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
             target_branch: args.target_branch.clone(),
             promotion_mode: args.promotion.clone(),
             commit_policy: args.commit_policy.clone(),
+            ..Default::default()
         },
     )?;
+    let verify_commands = cfg.verify_commands_for_selected_profile();
 
     // Step 2: verify
     let v = verify::verify_locked(
         git_root,
         &applied.run_id,
         &cfg.verify_profile,
+        verify_commands.as_deref(),
         created_at.clone(),
     )?;
     if !v.ok {
         eprintln!(
-            "diffship loop: verify failed (run_id={}). pack-fix is not implemented yet.",
-            applied.run_id
+            "diffship loop: verify failed (run_id={}). pack-fix saved under .diffship/runs/{}/pack-fix.zip.",
+            applied.run_id, applied.run_id
         );
         return Err(ExitError::new(
             EXIT_VERIFY_FAILED,

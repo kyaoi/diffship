@@ -1,6 +1,8 @@
 use crate::cli::BuildArgs;
-use crate::exit::{EXIT_GENERAL, EXIT_SECRETS_WARNING, ExitError};
+use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
+use crate::filter::PathFilter;
 use crate::git;
+use crate::plan::HandoffPlan;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -11,6 +13,8 @@ use zip::write::FileOptions;
 use zip::{CompressionMethod, DateTime as ZipDateTime, ZipWriter};
 
 const AUTO_PATCH_MAX_BYTES: usize = 64 * 1024;
+const DEFAULT_MAX_PARTS: usize = 20;
+const DEFAULT_MAX_BYTES_PER_PART: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RangeMode {
@@ -34,6 +38,13 @@ enum UntrackedMode {
     Meta,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryMode {
+    Raw,
+    Patch,
+    Meta,
+}
+
 #[derive(Debug, Clone)]
 struct RangePlan {
     mode: RangeMode,
@@ -53,6 +64,40 @@ struct SourceSelection {
     include_staged: bool,
     include_unstaged: bool,
     include_untracked: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BinaryPolicy {
+    include_binary: bool,
+    binary_mode: BinaryMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PackingLimits {
+    max_parts: usize,
+    max_bytes_per_part: u64,
+}
+
+impl PackingLimits {
+    fn from_args(args: &BuildArgs) -> Result<Self, ExitError> {
+        let max_parts = args.max_parts.unwrap_or(DEFAULT_MAX_PARTS);
+        let max_bytes_per_part = args
+            .max_bytes_per_part
+            .unwrap_or(DEFAULT_MAX_BYTES_PER_PART);
+        if max_parts == 0 {
+            return Err(ExitError::new(EXIT_GENERAL, "--max-parts must be >= 1"));
+        }
+        if max_bytes_per_part == 0 {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                "--max-bytes-per-part must be >= 1",
+            ));
+        }
+        Ok(Self {
+            max_parts,
+            max_bytes_per_part,
+        })
+    }
 }
 
 impl SourceSelection {
@@ -143,61 +188,11 @@ struct SecretHit {
     reason: String,
 }
 
-#[derive(Debug, Clone, Default)]
-struct IgnoreMatcher {
-    rules: Vec<IgnoreRule>,
-}
-
-#[derive(Debug, Clone)]
-struct IgnoreRule {
-    pattern: String,
-    dir_only: bool,
-}
-
-impl IgnoreMatcher {
-    fn load(git_root: &Path) -> Result<Self, ExitError> {
-        let path = git_root.join(".diffshipignore");
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let text = fs::read_to_string(&path).map_err(|e| {
-            ExitError::new(
-                EXIT_GENERAL,
-                format!("failed to read {}: {e}", path.display()),
-            )
-        })?;
-        let mut rules = Vec::new();
-        for raw in text.lines() {
-            let line = raw.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let dir_only = line.ends_with('/');
-            let pat = line.trim_start_matches('/').trim_end_matches('/');
-            if pat.is_empty() {
-                continue;
-            }
-            rules.push(IgnoreRule {
-                pattern: pat.replace('\\', "/"),
-                dir_only,
-            });
-        }
-        Ok(Self { rules })
-    }
-
-    fn is_ignored(&self, rel: &str) -> bool {
-        let rel = rel.replace('\\', "/");
-        self.rules.iter().any(|r| rule_matches(r, &rel))
-    }
-
-    fn has_rules(&self) -> bool {
-        !self.rules.is_empty()
-    }
-}
-
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let args = resolve_build_args(&cwd, args)?;
+    let resolved_plan = HandoffPlan::from_build_args(&args);
 
     let out_dir = match &args.out {
         Some(o) => {
@@ -219,7 +214,8 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
 
     let sources = SourceSelection::from_args(&args)?;
-    let ignore = IgnoreMatcher::load(git_root)?;
+    let packing_limits = PackingLimits::from_args(&args)?;
+    let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
     let head = git::rev_parse(git_root, "HEAD")?;
     let plan = if sources.include_committed {
         Some(build_range_plan(git_root, &args)?)
@@ -228,6 +224,10 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     };
     let split_by = effective_split_by(args.split_by.as_deref(), plan.as_ref())?;
     let untracked_mode = parse_untracked_mode(&args.untracked_mode)?;
+    let binary_policy = BinaryPolicy {
+        include_binary: args.include_binary,
+        binary_mode: parse_binary_mode(&args.binary_mode)?,
+    };
 
     let mut parts = Vec::<PartOutput>::new();
     let mut rows = Vec::<FileRow>::new();
@@ -240,17 +240,37 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
             for cp in committed_parts {
                 let part_name = format!("part_{:02}.patch", parts.len() + 1);
-                let mut segment = filter_segment_output(cp.segment, &ignore);
-                if segment.rows.is_empty() || segment.patch.trim().is_empty() {
+                let segment = filter_segment_output(cp.segment, &filters);
+                let mut segment = apply_tracked_binary_policy(
+                    git_root,
+                    segment,
+                    binary_policy,
+                    TrackedBinarySource::Commit(&cp.rev),
+                )?;
+                attachments.append(&mut segment.attachments);
+                exclusions.append(&mut segment.exclusions);
+                let mut segment = segment.segment;
+                if segment.rows.is_empty() && segment.patch.trim().is_empty() {
                     continue;
                 }
                 for row in &mut segment.rows {
-                    row.part = part_name.clone();
+                    if row.part.is_empty() {
+                        row.part = part_name.clone();
+                    }
                 }
                 let mut commit_files = segment
                     .rows
                     .iter()
-                    .map(|r| (r.path.clone(), part_name.clone()))
+                    .map(|r| {
+                        (
+                            r.path.clone(),
+                            if r.part.is_empty() {
+                                part_name.clone()
+                            } else {
+                                r.part.clone()
+                            },
+                        )
+                    })
                     .collect::<Vec<_>>();
                 commit_files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
                 commit_views.push(CommitView {
@@ -262,25 +282,38 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                     del: sum_opt(segment.rows.iter().map(|r| r.del)),
                 });
                 rows.extend(segment.rows.clone());
-                parts.push(PartOutput {
-                    name: part_name,
-                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                    segments: vec![segment.name],
-                });
+                if !segment.patch.trim().is_empty() {
+                    parts.push(PartOutput {
+                        name: part_name,
+                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                        segments: vec![segment.name],
+                    });
+                }
             }
         } else {
             let part_name = format!("part_{:02}.patch", parts.len() + 1);
             let segment = filter_segment_output(
                 build_committed_segment(git_root, plan, &part_name)?,
-                &ignore,
+                &filters,
             );
-            if !segment.rows.is_empty() && !segment.patch.trim().is_empty() {
+            let mut segment = apply_tracked_binary_policy(
+                git_root,
+                segment,
+                binary_policy,
+                TrackedBinarySource::Commit(&plan.target),
+            )?;
+            attachments.append(&mut segment.attachments);
+            exclusions.append(&mut segment.exclusions);
+            let segment = segment.segment;
+            if !segment.rows.is_empty() || !segment.patch.trim().is_empty() {
                 rows.extend(segment.rows.clone());
-                parts.push(PartOutput {
-                    name: part_name,
-                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                    segments: vec![segment.name],
-                });
+                if !segment.patch.trim().is_empty() {
+                    parts.push(PartOutput {
+                        name: part_name,
+                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                        segments: vec![segment.name],
+                    });
+                }
             }
         }
     }
@@ -288,19 +321,33 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let mut worktree_segments = Vec::<SegmentOutput>::new();
     let mut extra_rows = Vec::<FileRow>::new();
     if sources.include_staged {
-        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &ignore);
-        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &filters);
+        let mut seg =
+            apply_tracked_binary_policy(git_root, seg, binary_policy, TrackedBinarySource::Index)?;
+        attachments.append(&mut seg.attachments);
+        exclusions.append(&mut seg.exclusions);
+        let seg = seg.segment;
+        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
             worktree_segments.push(seg);
         }
     }
     if sources.include_unstaged {
-        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &ignore);
-        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &filters);
+        let mut seg = apply_tracked_binary_policy(
+            git_root,
+            seg,
+            binary_policy,
+            TrackedBinarySource::Worktree,
+        )?;
+        attachments.append(&mut seg.attachments);
+        exclusions.append(&mut seg.exclusions);
+        let seg = seg.segment;
+        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
             worktree_segments.push(seg);
         }
     }
     if sources.include_untracked {
-        let built = build_untracked_segment(git_root, untracked_mode, &ignore)?;
+        let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &filters)?;
         if let Some(seg) = built.segment {
             worktree_segments.push(seg);
         }
@@ -313,7 +360,8 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         exclusions.extend(built.exclusions);
     }
 
-    if !worktree_segments.is_empty() {
+    let worktree_has_patch = worktree_segments.iter().any(|s| !s.patch.trim().is_empty());
+    if !worktree_segments.is_empty() && worktree_has_patch {
         let part_name = format!("part_{:02}.patch", parts.len() + 1);
         for seg in &mut worktree_segments {
             for row in &mut seg.rows {
@@ -337,6 +385,9 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             segments,
         });
     }
+    for seg in &worktree_segments {
+        rows.extend(seg.rows.clone());
+    }
 
     rows.extend(extra_rows);
     sort_file_rows(&mut rows);
@@ -348,6 +399,16 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             segments: vec!["meta".to_string()],
         });
     }
+
+    apply_packing_fallback(
+        &mut parts,
+        &mut rows,
+        &mut commit_views,
+        &mut exclusions,
+        packing_limits,
+    )?;
+
+    enforce_packing_limits(&parts, packing_limits)?;
 
     for part in &parts {
         write_text_file(&parts_dir.join(&part.name), &part.patch)?;
@@ -384,6 +445,8 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         plan: plan.as_ref(),
         head: &head,
         split_by,
+        packing_limits,
+        binary_policy,
         sources,
         untracked_mode,
         changed_tree: &changed_tree,
@@ -395,10 +458,19 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         commit_views: &commit_views,
         attachments: &attachments,
         exclusions: &exclusions,
-        ignore_enabled: ignore.has_rules(),
+        ignore_enabled: filters.has_ignore_rules(),
+        include_patterns: filters.includes(),
+        exclude_patterns: filters.excludes(),
         secret_hits: &secret_hits,
     });
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
+
+    if let Some(plan_out) = args.plan_out.as_deref() {
+        let plan_path = resolve_plan_path(&cwd, plan_out);
+        resolved_plan
+            .write_to_path(&plan_path)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+    }
 
     handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;
 
@@ -429,8 +501,58 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     Ok(())
 }
 
+fn resolve_build_args(cwd: &Path, args: BuildArgs) -> Result<BuildArgs, ExitError> {
+    let Some(plan_path) = args.plan.clone() else {
+        return Ok(args);
+    };
+    if build_args_conflict_with_plan(&args) {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "--plan cannot be combined with other explicit handoff selection flags; export a new plan or replay the plan as-is",
+        ));
+    }
+    let path = resolve_plan_path(cwd, &plan_path);
+    let plan = HandoffPlan::from_file(&path).map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+    let mut effective = plan.into_build_args(args.plan, args.plan_out);
+    effective.out = args.out;
+    effective.zip = args.zip;
+    effective.yes = args.yes;
+    effective.fail_on_secrets = args.fail_on_secrets;
+    Ok(effective)
+}
+
+fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
+    args.range_mode != "last"
+        || args.from.is_some()
+        || args.to.is_some()
+        || args.a.is_some()
+        || args.b.is_some()
+        || args.no_committed
+        || !args.include.is_empty()
+        || !args.exclude.is_empty()
+        || args.include_staged
+        || args.include_unstaged
+        || args.include_untracked
+        || args.split_by.as_deref() != Some("auto")
+        || args.untracked_mode != "auto"
+        || args.include_binary
+        || args.binary_mode != "raw"
+        || args.max_parts.is_some()
+        || args.max_bytes_per_part.is_some()
+}
+
+fn resolve_plan_path(cwd: &Path, raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CommitSegmentBuild {
+    rev: String,
     hash7: String,
     subject: String,
     date: String,
@@ -482,6 +604,7 @@ fn build_committed_parts_by_commit(
         }
 
         out.push(CommitSegmentBuild {
+            rev: rev.to_string(),
             hash7,
             subject,
             date,
@@ -617,7 +740,8 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
 fn build_untracked_segment(
     git_root: &Path,
     mode: UntrackedMode,
-    ignore: &IgnoreMatcher,
+    binary_policy: BinaryPolicy,
+    filters: &PathFilter,
 ) -> Result<SegmentBuildResult, ExitError> {
     let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
     let mut paths = list
@@ -634,7 +758,7 @@ fn build_untracked_segment(
     let mut exclusions = vec![];
 
     for rel in paths {
-        if ignore.is_ignored(&rel) {
+        if !filters.allows(&rel) {
             continue;
         }
         let abs = git_root.join(&rel);
@@ -649,13 +773,24 @@ fn build_untracked_segment(
         let text_patch_ok = decoded
             .as_ref()
             .is_some_and(|_| bytes.len() <= AUTO_PATCH_MAX_BYTES);
+        let is_binary = decoded.is_none();
 
         let policy = match mode {
             UntrackedMode::Patch => UntrackedDisposition::Patch,
             UntrackedMode::Raw => UntrackedDisposition::Raw,
             UntrackedMode::Meta => UntrackedDisposition::Meta,
             UntrackedMode::Auto => {
-                if text_patch_ok {
+                if is_binary {
+                    if !binary_policy.include_binary {
+                        UntrackedDisposition::Meta
+                    } else {
+                        match binary_policy.binary_mode {
+                            BinaryMode::Raw => UntrackedDisposition::Raw,
+                            BinaryMode::Patch => UntrackedDisposition::Patch,
+                            BinaryMode::Meta => UntrackedDisposition::Meta,
+                        }
+                    }
+                } else if text_patch_ok {
                     UntrackedDisposition::Patch
                 } else {
                     UntrackedDisposition::Raw
@@ -665,16 +800,19 @@ fn build_untracked_segment(
 
         match policy {
             UntrackedDisposition::Patch => {
-                let text = decoded.ok_or_else(|| {
-                    ExitError::new(
+                if decoded.is_none()
+                    && (!binary_policy.include_binary
+                        || binary_policy.binary_mode != BinaryMode::Patch)
+                {
+                    return Err(ExitError::new(
                         EXIT_GENERAL,
                         format!(
-                            "untracked file '{}' is not valid UTF-8; use --untracked-mode raw|meta",
+                            "untracked binary file '{}' requires --include-binary --binary-mode patch/raw/meta",
                             rel
                         ),
-                    )
-                })?;
-                if bytes.len() > AUTO_PATCH_MAX_BYTES {
+                    ));
+                }
+                if decoded.is_some() && bytes.len() > AUTO_PATCH_MAX_BYTES {
                     return Err(ExitError::new(
                         EXIT_GENERAL,
                         format!(
@@ -692,6 +830,7 @@ fn build_untracked_segment(
                         "--no-ext-diff",
                         "--patch",
                         "--full-index",
+                        "--binary",
                         "--",
                         "/dev/null",
                         rel.as_str(),
@@ -707,8 +846,8 @@ fn build_untracked_segment(
                     status: "A".to_string(),
                     path: rel,
                     note: String::new(),
-                    ins: Some(count_text_lines(&text)),
-                    del: Some(0),
+                    ins: decoded.as_ref().map(|s| count_text_lines(s)),
+                    del: if decoded.is_some() { Some(0) } else { None },
                     bytes: Some(size),
                     part: String::new(),
                 });
@@ -736,11 +875,18 @@ fn build_untracked_segment(
                 });
             }
             UntrackedDisposition::Meta => {
+                let reason = if is_binary && !binary_policy.include_binary {
+                    "binary file excluded by default".to_string()
+                } else if is_binary {
+                    "binary file excluded by binary-mode=meta".to_string()
+                } else {
+                    "meta-only untracked file".to_string()
+                };
                 exclusions.push(ExclusionEntry {
                     path: rel.clone(),
-                    reason: "meta-only untracked file".to_string(),
+                    reason,
                     guidance:
-                        "Re-run with --untracked-mode raw or patch if the AI needs file contents"
+                        "Re-run with --untracked-mode raw/patch or --include-binary --binary-mode raw/patch when contents are needed"
                             .to_string(),
                 });
                 rows.push(FileRow {
@@ -860,6 +1006,769 @@ fn parse_untracked_mode(raw: &str) -> Result<UntrackedMode, ExitError> {
             format!("invalid --untracked-mode '{other}' (expected: auto|patch|raw|meta)"),
         )),
     }
+}
+
+fn parse_binary_mode(raw: &str) -> Result<BinaryMode, ExitError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "raw" => Ok(BinaryMode::Raw),
+        "patch" => Ok(BinaryMode::Patch),
+        "meta" => Ok(BinaryMode::Meta),
+        other => Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("invalid --binary-mode '{other}' (expected: raw|patch|meta)"),
+        )),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PackUnit {
+    origin_part: String,
+    path: String,
+    segment: String,
+    chunk: String,
+    bytes: u64,
+    context_level: usize,
+}
+
+fn apply_packing_fallback(
+    parts: &mut Vec<PartOutput>,
+    rows: &mut [FileRow],
+    commit_views: &mut [CommitView],
+    exclusions: &mut Vec<ExclusionEntry>,
+    limits: PackingLimits,
+) -> Result<(), ExitError> {
+    if !parts_exceed_limits(parts, limits) {
+        return Ok(());
+    }
+
+    let units = collect_pack_units(parts);
+    if units.is_empty() {
+        return Ok(());
+    }
+
+    let mut sorted_units = units;
+    sorted_units.sort_by(|a, b| {
+        b.bytes
+            .cmp(&a.bytes)
+            .then(a.path.cmp(&b.path))
+            .then(a.origin_part.cmp(&b.origin_part))
+    });
+
+    let mut bins: Vec<Vec<PackUnit>> = vec![];
+    let mut bin_bytes: Vec<u64> = vec![];
+    let mut dropped: Vec<(PackUnit, String, String)> = vec![];
+
+    for unit in sorted_units {
+        let unit = reduce_pack_unit_to_capacity(unit, limits.max_bytes_per_part);
+        let mut cost = pack_unit_cost(&unit);
+        if cost > limits.max_bytes_per_part {
+            dropped.push((
+                unit,
+                format!(
+                    "diff unit exceeds max_bytes_per_part={} even after context reduction (U3→U1→U0)",
+                    limits.max_bytes_per_part
+                ),
+                "Increase --max-bytes-per-part or narrow selected sources/range; context reduction was already attempted".to_string(),
+            ));
+            continue;
+        }
+
+        let mut placed = false;
+        for (idx, used) in bin_bytes.iter_mut().enumerate() {
+            if *used + cost <= limits.max_bytes_per_part {
+                *used += cost;
+                bins[idx].push(unit.clone());
+                placed = true;
+                break;
+            }
+        }
+
+        if placed {
+            continue;
+        }
+
+        if bins.len() < limits.max_parts {
+            bin_bytes.push(cost);
+            bins.push(vec![unit]);
+        } else {
+            let max_remaining = bin_bytes
+                .iter()
+                .map(|used| limits.max_bytes_per_part.saturating_sub(*used))
+                .max()
+                .unwrap_or(0);
+            let reduced = reduce_pack_unit_to_capacity(unit.clone(), max_remaining);
+            cost = pack_unit_cost(&reduced);
+            if cost <= max_remaining {
+                for (idx, used) in bin_bytes.iter_mut().enumerate() {
+                    if *used + cost <= limits.max_bytes_per_part {
+                        *used += cost;
+                        bins[idx].push(reduced.clone());
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+            if placed {
+                continue;
+            }
+            dropped.push((
+                reduced,
+                format!(
+                    "max_parts={} reached during fallback packing even after context reduction",
+                    limits.max_parts
+                ),
+                "Increase --max-parts or narrow selected sources/range; context reduction was already attempted".to_string(),
+            ));
+        }
+    }
+
+    let total_units = bins.iter().map(Vec::len).sum::<usize>() + dropped.len();
+    if total_units > 0 && dropped.len() == total_units {
+        return Err(ExitError::new(
+            EXIT_PACKING_LIMITS,
+            format!(
+                "packing limits exceeded: all diff units were excluded by fallback (max_parts={}, max_bytes_per_part={})",
+                limits.max_parts, limits.max_bytes_per_part
+            ),
+        ));
+    }
+
+    let mut rebuilt = Vec::new();
+    let mut part_remap: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut reduced_map: BTreeMap<(String, String), usize> = BTreeMap::new();
+    for (idx, bin) in bins.into_iter().enumerate() {
+        if bin.is_empty() {
+            continue;
+        }
+
+        let part_name = format!("part_{:02}.patch", idx + 1);
+        let mut units = bin;
+        units.sort_by(|a, b| {
+            segment_rank(&a.segment)
+                .cmp(&segment_rank(&b.segment))
+                .then(a.path.cmp(&b.path))
+                .then(a.origin_part.cmp(&b.origin_part))
+        });
+
+        let mut patch = String::new();
+        let mut segs = Vec::<String>::new();
+        let mut current_seg: Option<String> = None;
+        for u in units {
+            if current_seg.as_deref() != Some(u.segment.as_str()) {
+                if !patch.is_empty() && !patch.ends_with('\n') {
+                    patch.push('\n');
+                }
+                patch.push_str(&format!("# === diffship segment: {} ===\n", u.segment));
+                current_seg = Some(u.segment.clone());
+                segs.push(u.segment.clone());
+            }
+            patch.push_str(u.chunk.trim_end());
+            patch.push('\n');
+            if u.context_level < 3 {
+                reduced_map.insert((u.origin_part.clone(), u.path.clone()), u.context_level);
+            }
+            part_remap.insert((u.origin_part, u.path), part_name.clone());
+        }
+
+        segs.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)).then(a.cmp(b)));
+        segs.dedup();
+
+        rebuilt.push(PartOutput {
+            name: part_name,
+            patch,
+            segments: segs,
+        });
+    }
+
+    let mut drop_map: BTreeMap<(String, String), (String, String)> = BTreeMap::new();
+    for (u, reason, guidance) in dropped {
+        drop_map.insert((u.origin_part, u.path), (reason, guidance));
+    }
+
+    let mut seen_exclusions = BTreeSet::new();
+    for row in rows.iter_mut() {
+        if !row.part.starts_with("part_") {
+            continue;
+        }
+        let old_part = row.part.clone();
+        let key = (old_part, row.path.clone());
+        if let Some(new_part) = part_remap.get(&key) {
+            row.part = new_part.clone();
+            if let Some(context_level) = reduced_map.get(&key) {
+                append_row_note(
+                    row,
+                    &format!(
+                        "packing fallback reduced diff context to U{}",
+                        context_level
+                    ),
+                );
+            }
+            continue;
+        }
+        if let Some((reason, guidance)) = drop_map.get(&key) {
+            row.part = "-".to_string();
+            if row.note.is_empty() {
+                row.note = "excluded by packing fallback (see excluded.md)".to_string();
+            }
+            let uniq = format!("{}::{}", row.path, reason);
+            if seen_exclusions.insert(uniq) {
+                exclusions.push(ExclusionEntry {
+                    path: row.path.clone(),
+                    reason: reason.clone(),
+                    guidance: guidance.clone(),
+                });
+            }
+        }
+    }
+
+    for cv in commit_views.iter_mut() {
+        for (path, part) in &mut cv.files {
+            let key = (part.clone(), path.clone());
+            if let Some(new_part) = part_remap.get(&key) {
+                *part = new_part.clone();
+            } else if drop_map.contains_key(&key) {
+                *part = "-".to_string();
+            }
+        }
+        cv.files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    }
+
+    if rebuilt.is_empty() {
+        rebuilt.push(PartOutput {
+            name: "part_01.patch".to_string(),
+            patch: "# (no changes)\n".to_string(),
+            segments: vec!["meta".to_string()],
+        });
+    }
+    *parts = rebuilt;
+
+    Ok(())
+}
+
+fn parts_exceed_limits(parts: &[PartOutput], limits: PackingLimits) -> bool {
+    if parts.len() > limits.max_parts {
+        return true;
+    }
+    parts
+        .iter()
+        .any(|p| p.patch.len() as u64 > limits.max_bytes_per_part)
+}
+
+fn collect_pack_units(parts: &[PartOutput]) -> Vec<PackUnit> {
+    let mut out = Vec::new();
+
+    for part in parts {
+        let mut current_seg = "meta".to_string();
+        let mut current_chunk = String::new();
+
+        for line in part.patch.lines() {
+            if let Some(seg) = line
+                .strip_prefix("# === diffship segment: ")
+                .and_then(|s| s.strip_suffix(" ==="))
+            {
+                if !current_chunk.is_empty() {
+                    push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+                    current_chunk.clear();
+                }
+                current_seg = seg.to_string();
+                continue;
+            }
+
+            if line.starts_with("diff --git ") {
+                if !current_chunk.is_empty() {
+                    push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+                    current_chunk.clear();
+                }
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+                continue;
+            }
+
+            if !current_chunk.is_empty() {
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+            }
+        }
+
+        if !current_chunk.is_empty() {
+            push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+        }
+    }
+
+    out
+}
+
+fn push_pack_unit(out: &mut Vec<PackUnit>, part: &PartOutput, segment: &str, chunk: &str) {
+    if let Some(path) = patch_chunk_path(chunk) {
+        out.push(PackUnit {
+            origin_part: part.name.clone(),
+            path,
+            segment: segment.to_string(),
+            chunk: chunk.to_string(),
+            bytes: chunk.len() as u64,
+            context_level: 3,
+        });
+    }
+}
+
+fn append_row_note(row: &mut FileRow, note: &str) {
+    if row.note.is_empty() {
+        row.note = note.to_string();
+    } else if !row.note.contains(note) {
+        row.note.push_str("; ");
+        row.note.push_str(note);
+    }
+}
+
+fn pack_unit_cost(unit: &PackUnit) -> u64 {
+    // Safety margin for segment headers and separators added during rebuild.
+    unit.bytes + 48
+}
+
+fn reduce_pack_unit_to_capacity(unit: PackUnit, max_capacity: u64) -> PackUnit {
+    if max_capacity == 0 || pack_unit_cost(&unit) <= max_capacity {
+        return unit;
+    }
+
+    let mut current = unit;
+    for context_level in [1usize, 0usize] {
+        if current.context_level <= context_level {
+            continue;
+        }
+        let Some(chunk) = reduce_patch_chunk_context(&current.chunk, context_level) else {
+            continue;
+        };
+        if chunk.len() >= current.chunk.len() {
+            continue;
+        }
+        current.chunk = chunk;
+        current.bytes = current.chunk.len() as u64;
+        current.context_level = context_level;
+        if pack_unit_cost(&current) <= max_capacity {
+            break;
+        }
+    }
+    current
+}
+
+#[derive(Debug, Clone)]
+struct UnifiedHunkHeader {
+    old_start: i64,
+    old_count: i64,
+    new_start: i64,
+    new_count: i64,
+    suffix: String,
+}
+
+#[derive(Debug, Clone)]
+struct HunkItem {
+    line: String,
+    old_delta: i64,
+    new_delta: i64,
+    trailing: Vec<String>,
+}
+
+fn reduce_patch_chunk_context(chunk: &str, max_context: usize) -> Option<String> {
+    if chunk.contains("GIT binary patch") {
+        return None;
+    }
+
+    let lines = chunk.lines().collect::<Vec<_>>();
+    let first_hunk = lines.iter().position(|line| line.starts_with("@@ "))?;
+
+    let mut out = Vec::<String>::new();
+    out.extend(lines[..first_hunk].iter().map(|line| (*line).to_string()));
+
+    let mut i = first_hunk;
+    while i < lines.len() {
+        let header = parse_unified_hunk_header(lines[i])?;
+        i += 1;
+
+        let start = i;
+        while i < lines.len() && !lines[i].starts_with("@@ ") {
+            i += 1;
+        }
+        let body = lines[start..i]
+            .iter()
+            .map(|line| (*line).to_string())
+            .collect::<Vec<_>>();
+        let reduced = reduce_hunk_context(&header, &body, max_context)?;
+        for (header, body) in reduced {
+            out.push(format_unified_hunk_header(&header));
+            out.extend(body);
+        }
+    }
+
+    if out.is_empty() {
+        return None;
+    }
+
+    let mut rendered = out.join("\n");
+    rendered.push('\n');
+    Some(rendered)
+}
+
+fn reduce_hunk_context(
+    header: &UnifiedHunkHeader,
+    body: &[String],
+    max_context: usize,
+) -> Option<Vec<(UnifiedHunkHeader, Vec<String>)>> {
+    let mut items = Vec::<HunkItem>::new();
+    for line in body {
+        if line.starts_with('\\') {
+            if let Some(last) = items.last_mut() {
+                last.trailing.push(line.clone());
+            }
+            continue;
+        }
+        let (old_delta, new_delta) = hunk_line_deltas(line);
+        items.push(HunkItem {
+            line: line.clone(),
+            old_delta,
+            new_delta,
+            trailing: vec![],
+        });
+    }
+
+    let change_indices = items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| {
+            if item.old_delta == 0 || item.new_delta == 0 {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if change_indices.is_empty() {
+        return None;
+    }
+
+    let mut old_positions = vec![0_i64; items.len()];
+    let mut new_positions = vec![0_i64; items.len()];
+    let mut old_line = header.old_start;
+    let mut new_line = header.new_start;
+    for (idx, item) in items.iter().enumerate() {
+        old_positions[idx] = old_line;
+        new_positions[idx] = new_line;
+        old_line += item.old_delta;
+        new_line += item.new_delta;
+    }
+
+    let mut ranges = change_indices
+        .into_iter()
+        .map(|idx| {
+            (
+                expand_hunk_start(&items, idx, max_context),
+                expand_hunk_end(&items, idx, max_context),
+            )
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+    let mut merged = Vec::<(usize, usize)>::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.0 <= last.1 + 1
+        {
+            last.1 = last.1.max(range.1);
+            continue;
+        }
+        merged.push(range);
+    }
+
+    let mut out = Vec::<(UnifiedHunkHeader, Vec<String>)>::new();
+    for (start, end) in merged {
+        let old_start = old_positions[start];
+        let new_start = new_positions[start];
+        let old_count = items[start..=end]
+            .iter()
+            .map(|item| item.old_delta)
+            .sum::<i64>();
+        let new_count = items[start..=end]
+            .iter()
+            .map(|item| item.new_delta)
+            .sum::<i64>();
+        let mut reduced_body = Vec::<String>::new();
+        for item in &items[start..=end] {
+            reduced_body.push(item.line.clone());
+            reduced_body.extend(item.trailing.clone());
+        }
+        out.push((
+            UnifiedHunkHeader {
+                old_start,
+                old_count,
+                new_start,
+                new_count,
+                suffix: header.suffix.clone(),
+            },
+            reduced_body,
+        ));
+    }
+    Some(out)
+}
+
+fn expand_hunk_start(items: &[HunkItem], idx: usize, max_context: usize) -> usize {
+    let mut start = idx;
+    let mut seen_context = 0usize;
+    while start > 0 {
+        let prev = start - 1;
+        if items[prev].old_delta == 1 && items[prev].new_delta == 1 {
+            if seen_context == max_context {
+                break;
+            }
+            seen_context += 1;
+        }
+        start = prev;
+    }
+    start
+}
+
+fn expand_hunk_end(items: &[HunkItem], idx: usize, max_context: usize) -> usize {
+    let mut end = idx;
+    let mut seen_context = 0usize;
+    while end + 1 < items.len() {
+        let next = end + 1;
+        if items[next].old_delta == 1 && items[next].new_delta == 1 {
+            if seen_context == max_context {
+                break;
+            }
+            seen_context += 1;
+        }
+        end = next;
+    }
+    end
+}
+
+fn parse_unified_hunk_header(line: &str) -> Option<UnifiedHunkHeader> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old_raw, rest) = rest.split_once(" +")?;
+    let (new_raw, suffix) = rest.split_once(" @@")?;
+    let (old_start, old_count) = parse_hunk_range(old_raw)?;
+    let (new_start, new_count) = parse_hunk_range(new_raw)?;
+    Some(UnifiedHunkHeader {
+        old_start,
+        old_count,
+        new_start,
+        new_count,
+        suffix: suffix.to_string(),
+    })
+}
+
+fn parse_hunk_range(raw: &str) -> Option<(i64, i64)> {
+    let (start, count) = match raw.split_once(',') {
+        Some((start, count)) => (start, count),
+        None => (raw, "1"),
+    };
+    Some((start.parse().ok()?, count.parse().ok()?))
+}
+
+fn format_unified_hunk_header(header: &UnifiedHunkHeader) -> String {
+    format!(
+        "@@ -{} +{} @@{}",
+        format_hunk_range(header.old_start, header.old_count),
+        format_hunk_range(header.new_start, header.new_count),
+        header.suffix
+    )
+}
+
+fn format_hunk_range(start: i64, count: i64) -> String {
+    if count == 1 {
+        start.to_string()
+    } else {
+        format!("{start},{count}")
+    }
+}
+
+fn hunk_line_deltas(line: &str) -> (i64, i64) {
+    match line.as_bytes().first().copied() {
+        Some(b' ') => (1, 1),
+        Some(b'-') => (1, 0),
+        Some(b'+') => (0, 1),
+        _ => (0, 0),
+    }
+}
+
+fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {
+    if parts.len() > limits.max_parts {
+        return Err(ExitError::new(
+            EXIT_PACKING_LIMITS,
+            format!(
+                "packing limits exceeded: parts={} > max_parts={}",
+                parts.len(),
+                limits.max_parts
+            ),
+        ));
+    }
+
+    for part in parts {
+        let bytes = part.patch.len() as u64;
+        if bytes > limits.max_bytes_per_part {
+            return Err(ExitError::new(
+                EXIT_PACKING_LIMITS,
+                format!(
+                    "packing limits exceeded: {} bytes={} > max_bytes_per_part={}",
+                    part.name, bytes, limits.max_bytes_per_part
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TrackedBinarySource<'a> {
+    Commit(&'a str),
+    Index,
+    Worktree,
+}
+
+#[derive(Debug)]
+struct BinaryPolicyResult {
+    segment: SegmentOutput,
+    attachments: Vec<AttachmentEntry>,
+    exclusions: Vec<ExclusionEntry>,
+}
+
+fn apply_tracked_binary_policy(
+    git_root: &Path,
+    segment: SegmentOutput,
+    policy: BinaryPolicy,
+    source: TrackedBinarySource<'_>,
+) -> Result<BinaryPolicyResult, ExitError> {
+    if segment.rows.is_empty() {
+        return Ok(BinaryPolicyResult {
+            segment,
+            attachments: vec![],
+            exclusions: vec![],
+        });
+    }
+
+    let mut keep_paths = BTreeSet::new();
+    let mut rows = Vec::new();
+    let mut attachments = Vec::new();
+    let mut exclusions = Vec::new();
+
+    for mut row in segment.rows {
+        let is_binary = row.ins.is_none() && row.del.is_none();
+        if !is_binary || (policy.include_binary && policy.binary_mode == BinaryMode::Patch) {
+            keep_paths.insert(row.path.clone());
+            rows.push(row);
+            continue;
+        }
+
+        let (reason, guidance, note) = if !policy.include_binary {
+            (
+                "binary file excluded by default",
+                "Re-run with --include-binary and choose --binary-mode raw|patch|meta",
+                "excluded binary (default policy; see excluded.md)",
+            )
+        } else if policy.binary_mode == BinaryMode::Meta {
+            (
+                "binary file excluded by binary-mode=meta",
+                "Re-run with --binary-mode raw or patch if the AI needs binary contents",
+                "excluded binary (binary-mode=meta; see excluded.md)",
+            )
+        } else {
+            ("", "", "")
+        };
+
+        if !reason.is_empty() {
+            row.note = note.to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: reason.to_string(),
+                guidance: guidance.to_string(),
+            });
+            rows.push(row);
+            continue;
+        }
+
+        // binary-mode=raw
+        if row.status == "D" {
+            row.note = "excluded binary deletion (see excluded.md)".to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: "binary deletion cannot be attached as raw snapshot".to_string(),
+                guidance: "Use --binary-mode patch if deletion hunks are needed".to_string(),
+            });
+            rows.push(row);
+            continue;
+        }
+
+        let bytes = read_tracked_binary_bytes(git_root, source, &row.path)?;
+        if let Some(bytes) = bytes {
+            attachments.push(AttachmentEntry {
+                zip_path: format!("binary/{}", row.path),
+                bytes,
+                reason: "stored as raw attachment (binary-mode=raw)".to_string(),
+            });
+            row.note = "stored in attachments.zip".to_string();
+            row.part = "attachments.zip".to_string();
+            rows.push(row);
+        } else {
+            row.note = "excluded binary (snapshot unavailable; see excluded.md)".to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: "binary snapshot unavailable".to_string(),
+                guidance: "Use --binary-mode patch if snapshot extraction fails".to_string(),
+            });
+            rows.push(row);
+        }
+    }
+
+    sort_file_rows(&mut rows);
+    let patch = filter_patch_by_paths(&segment.patch, &keep_paths);
+    Ok(BinaryPolicyResult {
+        segment: SegmentOutput {
+            name: segment.name,
+            patch,
+            rows,
+        },
+        attachments,
+        exclusions,
+    })
+}
+
+fn read_tracked_binary_bytes(
+    git_root: &Path,
+    source: TrackedBinarySource<'_>,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ExitError> {
+    match source {
+        TrackedBinarySource::Commit(rev) => git_show_blob_bytes(git_root, rev, path),
+        TrackedBinarySource::Index => git_show_blob_bytes(git_root, ":", path),
+        TrackedBinarySource::Worktree => Ok(fs::read(git_root.join(path)).ok()),
+    }
+}
+
+fn git_show_blob_bytes(
+    git_root: &Path,
+    rev: &str,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ExitError> {
+    let spec = if rev == ":" {
+        format!(":{path}")
+    } else {
+        format!("{rev}:{path}")
+    };
+    let out = Command::new("git")
+        .args(["show", spec.as_str()])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git show: {e}")))?;
+
+    if out.status.success() {
+        return Ok(Some(out.stdout));
+    }
+
+    // Missing blob/path is expected in some edge cases (e.g., deletions).
+    Ok(None)
 }
 
 fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, ExitError> {
@@ -1272,14 +2181,15 @@ fn detect_secret_reasons(s: &str) -> Vec<String> {
     reasons
 }
 
-fn filter_segment_output(segment: SegmentOutput, ignore: &IgnoreMatcher) -> SegmentOutput {
-    if !ignore.has_rules() {
+fn filter_segment_output(segment: SegmentOutput, filters: &PathFilter) -> SegmentOutput {
+    if !filters.has_ignore_rules() && filters.includes().is_empty() && filters.excludes().is_empty()
+    {
         return segment;
     }
     let keep = segment
         .rows
         .iter()
-        .filter(|r| !ignore.is_ignored(&r.path))
+        .filter(|r| filters.allows(&r.path))
         .map(|r| r.path.clone())
         .collect::<BTreeSet<_>>();
     let rows = segment
@@ -1337,37 +2247,6 @@ fn patch_chunk_path(chunk: &str) -> Option<String> {
     let b = parts.next()?.strip_prefix("b/").unwrap_or("");
     let path = if b.is_empty() { a } else { b };
     Some(path.to_string())
-}
-
-fn rule_matches(rule: &IgnoreRule, rel: &str) -> bool {
-    if rule.dir_only {
-        return rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern));
-    }
-    if simple_glob_match(&rule.pattern, rel) {
-        return true;
-    }
-    if !rule.pattern.contains('/') {
-        for part in rel.split('/') {
-            if simple_glob_match(&rule.pattern, part) {
-                return true;
-            }
-        }
-    }
-    rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern))
-}
-
-fn simple_glob_match(pattern: &str, text: &str) -> bool {
-    fn inner(p: &[u8], t: &[u8]) -> bool {
-        if p.is_empty() {
-            return t.is_empty();
-        }
-        match p[0] {
-            b'*' => inner(&p[1..], t) || (!t.is_empty() && inner(p, &t[1..])),
-            b'?' => !t.is_empty() && inner(&p[1..], &t[1..]),
-            c => !t.is_empty() && c == t[0] && inner(&p[1..], &t[1..]),
-        }
-    }
-    inner(pattern.as_bytes(), text.as_bytes())
 }
 
 fn contains_private_key_block(s: &str) -> bool {
@@ -1672,6 +2551,8 @@ struct HandoffDocInputs<'a> {
     plan: Option<&'a RangePlan>,
     head: &'a str,
     split_by: SplitBy,
+    packing_limits: PackingLimits,
+    binary_policy: BinaryPolicy,
     sources: SourceSelection,
     untracked_mode: UntrackedMode,
     changed_tree: &'a str,
@@ -1684,6 +2565,8 @@ struct HandoffDocInputs<'a> {
     attachments: &'a [AttachmentEntry],
     exclusions: &'a [ExclusionEntry],
     ignore_enabled: bool,
+    include_patterns: &'a [String],
+    exclude_patterns: &'a [String],
     secret_hits: &'a [SecretHit],
 }
 
@@ -1752,8 +2635,15 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
     s.push_str(&format!(
-        "- Profile: `m6` (split-by=`{}`)\n",
-        split_label(inp.split_by)
+        "- Profile: `m6` (`max_parts={}`, `max_bytes_per_part={}`; split-by=`{}`)\n",
+        inp.packing_limits.max_parts,
+        inp.packing_limits.max_bytes_per_part,
+        split_label(inp.split_by),
+    ));
+    s.push_str(&format!(
+        "- Binary policy: include=`{}`, mode=`{}`\n",
+        yes_no(inp.binary_policy.include_binary),
+        binary_mode_label(inp.binary_policy.binary_mode)
     ));
     s.push_str(&format!(
         "- Segments included: committed=`{}`, staged=`{}`, unstaged=`{}`, untracked=`{}`\n",
@@ -1779,6 +2669,18 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- Ignore rules: `.diffshipignore` = `{}`\n",
         yes_no(inp.ignore_enabled)
     ));
+    if !inp.include_patterns.is_empty() {
+        s.push_str(&format!(
+            "- Include filters: `{}`\n",
+            inp.include_patterns.join("`, `")
+        ));
+    }
+    if !inp.exclude_patterns.is_empty() {
+        s.push_str(&format!(
+            "- Exclude filters: `{}`\n",
+            inp.exclude_patterns.join("`, `")
+        ));
+    }
     if !inp.attachments.is_empty() {
         s.push_str(&format!(
             "- Attachments: `attachments.zip` ({} file(s))\n",
@@ -1835,9 +2737,26 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         untracked_label(inp.untracked_mode)
     ));
     s.push_str(&format!(
+        "- binary include: `{}` (mode: `{}`)\n",
+        yes_no(inp.binary_policy.include_binary),
+        binary_mode_label(inp.binary_policy.binary_mode)
+    ));
+    s.push_str(&format!(
         "- .diffshipignore active: `{}`\n",
         yes_no(inp.ignore_enabled)
     ));
+    if !inp.include_patterns.is_empty() {
+        s.push_str(&format!(
+            "- include filters: `{}`\n",
+            inp.include_patterns.join("`, `")
+        ));
+    }
+    if !inp.exclude_patterns.is_empty() {
+        s.push_str(&format!(
+            "- exclude filters: `{}`\n",
+            inp.exclude_patterns.join("`, `")
+        ));
+    }
 
     s.push_str("\n---\n\n## 2) Change Map\n\n");
     s.push_str("### 2.1 Changed Tree (changed files only)\n```text\n");
@@ -1923,8 +2842,9 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
 
     s.push_str("\n---\n\n## Notes\n");
     s.push_str("- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.\n");
-    s.push_str("- Binary/unreadable untracked files default to raw attachments in auto mode.\n");
+    s.push_str("- Binary/unreadable files are excluded by default; use `--include-binary --binary-mode raw|patch|meta` to include them.\n");
     s.push_str("- `.diffshipignore` is applied before writing parts / attachments / exclusions.\n");
+    s.push_str("- Explicit `--include` / `--exclude` path filters apply consistently to all selected segments.\n");
     s
 }
 
@@ -1946,6 +2866,14 @@ fn untracked_label(v: UntrackedMode) -> &'static str {
 
 fn yes_no(v: bool) -> &'static str {
     if v { "yes" } else { "no" }
+}
+
+fn binary_mode_label(v: BinaryMode) -> &'static str {
+    match v {
+        BinaryMode::Raw => "raw",
+        BinaryMode::Patch => "patch",
+        BinaryMode::Meta => "meta",
+    }
 }
 
 fn sum_opt<I>(vals: I) -> Option<u64>

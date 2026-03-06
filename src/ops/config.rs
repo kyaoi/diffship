@@ -1,5 +1,6 @@
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::patch_bundle::PatchBundleManifest;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Default)]
 pub struct OpsConfigOverrides {
     pub verify_profile: Option<String>,
+    pub verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     pub target_branch: Option<String>,
     pub promotion_mode: Option<String>,
     pub commit_policy: Option<String>,
@@ -19,6 +21,7 @@ pub struct OpsConfig {
     pub target_branch: String,
     pub promotion_mode: String,
     pub commit_policy: String,
+    verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl OpsConfig {
@@ -28,6 +31,7 @@ impl OpsConfig {
             target_branch: "develop".to_string(),
             promotion_mode: "commit".to_string(),
             commit_policy: "auto".to_string(),
+            verify_profiles: BTreeMap::new(),
         }
     }
 
@@ -44,6 +48,24 @@ impl OpsConfig {
         if let Some(v) = o.commit_policy {
             self.commit_policy = v;
         }
+        for (profile, commands) in o.verify_profiles {
+            self.verify_profiles.insert(profile, commands);
+        }
+    }
+
+    pub fn verify_commands_for_selected_profile(&self) -> Option<Vec<String>> {
+        let m = self.verify_profiles.get(&self.verify_profile)?;
+        let mut items = m
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<_>>();
+        items.sort_by_key(|(k, _)| profile_command_sort_key(k));
+        let cmds = items
+            .into_iter()
+            .map(|(_, v)| v)
+            .filter(|v| !v.trim().is_empty())
+            .collect::<Vec<_>>();
+        if cmds.is_empty() { None } else { Some(cmds) }
     }
 }
 
@@ -86,14 +108,16 @@ pub fn resolve_ops_config(
 }
 
 fn validate(cfg: &OpsConfig) -> Result<(), ExitError> {
-    match cfg.verify_profile.as_str() {
-        "fast" | "standard" | "full" => {}
-        other => {
-            return Err(ExitError::new(
-                EXIT_GENERAL,
-                format!("invalid verify profile: {other} (expected fast|standard|full)"),
-            ));
-        }
+    let verify_profile_ok = matches!(cfg.verify_profile.as_str(), "fast" | "standard" | "full")
+        || cfg.verify_profiles.contains_key(&cfg.verify_profile);
+    if !verify_profile_ok {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "invalid verify profile: {} (expected fast|standard|full or [verify.profiles.<name>])",
+                cfg.verify_profile
+            ),
+        ));
     }
 
     match cfg.promotion_mode.as_str() {
@@ -132,6 +156,7 @@ fn overrides_from_manifest(m: &PatchBundleManifest) -> OpsConfigOverrides {
         target_branch: m.target_branch.clone(),
         promotion_mode: m.promotion_mode.clone(),
         commit_policy: m.commit_policy.clone(),
+        ..Default::default()
     }
 }
 
@@ -211,6 +236,12 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
                     out.verify_profile = Some(val);
                 }
             }
+            ["verify", "profiles", profile] => {
+                out.verify_profiles
+                    .entry((*profile).to_string())
+                    .or_default()
+                    .insert(key.to_string(), val);
+            }
             ["ops"] => {
                 if key == "verify_profile" {
                     out.verify_profile = Some(val);
@@ -249,4 +280,13 @@ fn unquote(s: &str) -> &str {
         return &s[1..s.len() - 1];
     }
     s
+}
+
+fn profile_command_sort_key(key: &str) -> (u8, u32, String) {
+    if let Some(rest) = key.strip_prefix("cmd")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return (0, n, key.to_string());
+    }
+    (1, 0, key.to_string())
 }

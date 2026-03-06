@@ -15,6 +15,7 @@ use crate::ops::tasks;
 use crate::ops::worktree;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -176,6 +177,86 @@ pub fn promote_locked(
 
     let manifest = patch_bundle::load_manifest_from_run_bundle(&run_dir)?;
     let commit_msg = load_commit_message(&run_dir, &manifest, run_id);
+    let base_commit = sb.base_commit.clone();
+
+    let effective_target = choose_target_branch(git_root, target_branch)?;
+
+    if promotion_mode == "working-tree" {
+        // Safety: only apply onto the expected target base.
+        let target_head = git::rev_parse(git_root, &effective_target)?;
+        if target_head != base_commit {
+            let summary = PromoteSummary {
+                run_id: run_id.to_string(),
+                created_at: created_at.clone(),
+                target_branch: effective_target.clone(),
+                base_commit: base_commit.clone(),
+                promoted_head: None,
+                commits: vec![],
+                ok: false,
+                error: Some(format!(
+                    "target branch head mismatch: target={} head={} expected_base={}",
+                    effective_target, target_head, base_commit
+                )),
+                secrets_hits: hits.len(),
+                tasks_present,
+                user_tasks_path: if tasks_present {
+                    Some(user_tasks_path.display().to_string())
+                } else {
+                    None
+                },
+            };
+            write_promote_summary(&run_dir, &summary)?;
+            return Err(ExitError::new(
+                EXIT_PROMOTION_FAILED,
+                format!(
+                    "refused: target branch head mismatch (target={} head={} expected_base={})",
+                    effective_target, target_head, base_commit
+                ),
+            ));
+        }
+
+        checkout_branch(git_root, &effective_target)?;
+
+        let patch = export_result_patch_from_sandbox(&sandbox_path, &base_commit)?;
+        if patch.trim().is_empty() {
+            return Err(ExitError::new(
+                EXIT_PROMOTION_FAILED,
+                "promotion produced no patch content for working-tree mode",
+            ));
+        }
+        apply_patch_to_working_tree(git_root, &patch)?;
+
+        if !keep_sandbox {
+            worktree::remove_worktree_best_effort(git_root, Path::new(&sb.path));
+        }
+
+        let promoted_head = git::rev_parse(git_root, "HEAD")?;
+        let summary = PromoteSummary {
+            run_id: run_id.to_string(),
+            created_at,
+            target_branch: effective_target,
+            base_commit,
+            promoted_head: Some(promoted_head),
+            commits: vec![],
+            ok: true,
+            error: None,
+            secrets_hits: hits.len(),
+            tasks_present,
+            user_tasks_path: if tasks_present {
+                Some(user_tasks_path.display().to_string())
+            } else {
+                None
+            },
+        };
+        write_promote_summary(&run_dir, &summary)?;
+
+        println!("diffship promote: ok");
+        println!("  run_id  : {}", run_id);
+        println!("  target : {}", summary.target_branch);
+        println!("  mode   : working-tree");
+
+        return Ok(());
+    }
 
     // Ensure we have commits in the sandbox to promote.
     let sandbox_head_before = git::run_git_in(&sandbox_path, ["rev-parse", "HEAD"])?
@@ -193,7 +274,6 @@ pub fn promote_locked(
         patch_bundle::ApplyMode::GitAm => sandbox_head_before,
     };
 
-    let base_commit = sb.base_commit.clone();
     let commits = list_commits_to_promote(&sandbox_path, &base_commit, &sandbox_head)?;
     if commits.is_empty() {
         return Err(ExitError::new(
@@ -201,8 +281,6 @@ pub fn promote_locked(
             "promotion had no commits to apply (unexpected)",
         ));
     }
-
-    let effective_target = choose_target_branch(git_root, target_branch)?;
 
     // Promotion mode switch
     if promotion_mode == "none" {
@@ -573,4 +651,70 @@ fn cherry_pick_commits(git_root: &Path, commits: &[String]) -> Result<(), String
         stdout.trim().to_string()
     };
     Err(msg)
+}
+
+fn export_result_patch_from_sandbox(
+    sandbox_path: &Path,
+    base_commit: &str,
+) -> Result<String, ExitError> {
+    git::run_git_in(
+        sandbox_path,
+        [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+            "--binary",
+            base_commit,
+        ],
+    )
+}
+
+fn apply_patch_to_working_tree(git_root: &Path, patch: &str) -> Result<(), ExitError> {
+    let mut child = Command::new("git")
+        .arg("apply")
+        .arg("--whitespace=nowarn")
+        .current_dir(git_root)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            ExitError::new(
+                EXIT_PROMOTION_FAILED,
+                format!("failed to run git apply: {e}"),
+            )
+        })?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin.write_all(patch.as_bytes()).map_err(|e| {
+            ExitError::new(
+                EXIT_PROMOTION_FAILED,
+                format!("failed to write patch to git apply stdin: {e}"),
+            )
+        })?;
+    }
+
+    let out = child.wait_with_output().map_err(|e| {
+        ExitError::new(
+            EXIT_PROMOTION_FAILED,
+            format!("failed to wait for git apply: {e}"),
+        )
+    })?;
+    if out.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let msg = if !stderr.trim().is_empty() {
+        stderr.trim().to_string()
+    } else {
+        stdout.trim().to_string()
+    };
+    Err(ExitError::new(
+        EXIT_PROMOTION_FAILED,
+        format!("promotion failed: working-tree apply failed: {}", msg),
+    ))
 }

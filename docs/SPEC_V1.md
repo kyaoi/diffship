@@ -100,7 +100,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 - **S-UNTRACKED-001**: Untracked is OFF by default; enabled via include-untracked (or TUI toggle).
 - **S-UNTRACKED-002**: Support `--untracked-mode auto|patch|raw|meta`.
-- **S-UNTRACKED-003**: In `auto`, text/small files become patch; binary/large become raw attachment.
+- **S-UNTRACKED-003**: In `auto`, text/small files become patch; large text files become raw attachment; binary files follow section 4.2.5 (default excluded unless `--include-binary`).
 - **S-UNTRACKED-004**: In `patch`, untracked should be represented as add-diffs (e.g., `/dev/null → file`) when possible.
 - **S-UNTRACKED-005**: In `raw`, untracked is bundled into `attachments.zip` under a stable path prefix.
 
@@ -128,14 +128,24 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PACK-001**: Packing is deterministic for the same inputs.
 - **S-PACK-002**: Units are sorted by (1) bytes desc, (2) path/commit asc.
 - **S-PACK-003**: Pack uses First-Fit Decreasing under profile constraints.
-- **S-PACK-004**: If a single unit cannot fit within `max_bytes_per_part`, fallback order:
-  1) reduce unified context for that unit (e.g., U3 → U1)
-  2) if still too large: exclude the unit with reason, and optionally attach snapshot (default OFF)
+- **S-PACK-004**: If a unit cannot fit within `max_bytes_per_part`, fallback MUST attempt lower unified diff context levels (`U1`, then `U0`) before excluding it.
 - **S-PACK-005**: Exclusions must be recorded in `excluded.md` with reasons and guidance.
+
+#### 4.2.9 Plan export / replay
+
+- **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
+- **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format.
 
 ### 4.3 `diffship preview <handoff-bundle>`
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.
+- **S-PREVIEW-002**: Support `--json` output for bundle summary (`--list`) and entry text (`HANDOFF.md` / `--part`) so CI can consume preview results.
+
+### 4.3.1 `diffship compare <bundle-a> <bundle-b>`
+
+- **S-COMPARE-001**: Compare two handoff bundles and report structural/content differences.
+- **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` byte-level mode.
+- **S-COMPARE-003**: Support `--json` output for machine-readable compare results while preserving non-zero exit on differences.
 
 ### 4.4 Patch bundle format (input contract)
 

@@ -284,7 +284,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `diffship build` は committed をデフォルト ON としつつ、`--include-staged` / `--include-unstaged` / `--include-untracked` で uncommitted sources を追加できるようにする。
   - committed を外したい場合は `--no-committed` を使う。
-  - untracked はまず text add-diff のみを扱い、binary/unreadable は File Table に skip note を残す。raw attachments は M6-03 で導入する。
+  - （段階導入の初期案）untracked はまず text add-diff を扱い、binary/unreadable の扱いは次段階で拡張する。
 - Rationale:
   - まず AI に渡す差分の出どころ（segment）を明示できるようにし、後続の attachments/excluded/split を安全に積み増すため。
 - Implications:
@@ -406,3 +406,171 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - placeholder 置換は char 境界で進める。
   - golden は「実出力差」だけを検出し、正規化起因の差分を混ぜない。
+
+---
+
+## D-031: 2026-03-06 棚卸し結果に基づく計画補正
+
+- Date: 2026-03-06
+- Decision:
+  - M4-02（promotion/commit-policy切替）を `doing` に戻す。理由: `working-tree` は現在 `commit` と同じ経路で、専用 no-commit 挙動が未実装。
+  - M6-03（profiles + packing limits）を `doing` に戻す。理由: split/attachments/excluded は実装済みだが、profile上限（max parts / max bytes）と `EXIT_PACKING_LIMITS` 実動が未実装。
+  - `pack-fix` は実装済みとして扱うが、専用統合テスト不足を残課題として明示する。
+- Rationale:
+  - 「done」を実装実態と一致させ、README / PLAN / TRACEABILITY の過大表現を避けるため。
+- Implications:
+  - 次優先は E2E運用ドキュメント、packing limits / binary policy、promotion `working-tree` 分離、preview導線。
+
+---
+
+## D-032: `promotion=working-tree` は no-commit で target working tree に反映する
+
+- Date: 2026-03-06
+- Decision:
+  - `promotion=working-tree` では、sandbox の結果差分を target branch の working tree に適用し、commit は作らない。
+  - `promotion=commit` は従来どおり commit を作成して反映する。
+  - `promotion=none` は反映自体を行わない。
+- Rationale:
+  - `none|working-tree|commit` の3モードを意味的に分離し、CLI契約（spec）と挙動を一致させるため。
+- Implications:
+  - `working-tree` 実行後は target branch の HEAD は不変で、working tree が変更状態になる。
+  - 事前の base_commit 一致チェックは `commit` と同様に維持する。
+
+---
+
+## D-033: handoff build で packing limits を実動化する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship build` に `--max-parts` / `--max-bytes-per-part` を追加し、生成 part が上限を超える場合は exit code 3（`EXIT_PACKING_LIMITS`）で停止する。
+  - デフォルト上限は `max_parts=20`, `max_bytes_per_part=536870912`（512 MiB）とする。
+- Rationale:
+  - アップロード制限の超過を build 時点で機械的に検知し、handoff 失敗理由を明確化するため。
+- Implications:
+  - `EXIT_PACKING_LIMITS` は予約コードから実使用コードへ移行する。
+  - この段階では「上限超過時の再分割/自動縮退」ではなく、明示エラー停止を優先する。
+
+---
+
+## D-034: binary policy は default exclude + 明示 opt-in とする
+
+- Date: 2026-03-06
+- Decision:
+  - handoff の binary content はデフォルトで除外する（`--include-binary` がない限り同梱しない）。
+  - `--include-binary` 指定時は `--binary-mode raw|patch|meta`（default: `raw`）で扱いを切り替える。
+  - `auto` untracked の解釈は「text/small → patch、large text → raw、binary は binary policy に従う」に統一する。
+- Rationale:
+  - デフォルト共有時の情報露出を抑えつつ、必要時のみ明示的に binary を同梱できるようにするため。
+  - `S-UNTRACKED-003` と `S-BINARY-001` の衝突を避け、説明可能な1つの方針に寄せるため。
+- Implications:
+  - `docs/SPEC_V1.md` / `docs/BUNDLE_FORMAT.md` / `docs/TRACEABILITY.md` はこの方針を前提に更新する。
+  - `HANDOFF.md` には binary policy（include/mode）を明示し、bundle 利用者が同梱有無を即時判断できるようにする。
+
+---
+
+## D-035: handoff の確認系コマンドとして `preview` / `compare` を追加する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship preview <bundle>` を実装し、directory/zip どちらの bundle でも `HANDOFF.md` と part を確認できるようにする（`--list`, `--part`）。
+  - `diffship compare <a> <b>` を実装し、determinism 運用向けに normalized 比較（default）と byte-level strict 比較（`--strict`）を提供する。
+- Rationale:
+  - handoff の実運用で「共有前の確認」と「再現比較」をCLI単体で完結させるため。
+- Implications:
+  - README / OPS_WORKFLOW に handoff→AI→ops の導線を明記する。
+
+---
+
+## D-036: verify profile は `[verify.profiles.*]` の local config command で拡張する
+
+- Date: 2026-03-06
+- Decision:
+  - `verify` は `fast|standard|full` に加えて、`[verify.profiles.<name>]` で定義された custom profile を実行可能にする。
+  - custom profile command は sandbox で `sh -lc` 実行する（bundle 由来コマンドは使わない）。
+- Rationale:
+  - リポジトリごとの品質ゲート差を profile 名で吸収し、`loop` の再利用性を高めるため。
+- Implications:
+  - `docs/CONFIG.md` に custom profile の実装済み仕様を追記する。
+
+---
+
+## D-037: packing overflow は First-Fit Decreasing + exclusion で縮退する
+
+- Date: 2026-03-06
+- Decision:
+  - `build` の packing limit 超過時は diff unit を bytes desc で並べ、FFD で再パックする。
+  - 収まらない unit は `excluded.md` に理由/ガイダンスを残して除外する。
+  - すべての unit が除外される場合のみ `EXIT_PACKING_LIMITS` で失敗させる。
+- Rationale:
+  - 単純な即時失敗よりも、読める bundle を可能な範囲で生成し、再実行指針を残すため。
+- Implications:
+  - `S-PACK-002..004` の実装・テストを `src/handoff.rs` / `tests/m6_handoff_build.rs` に寄せる。
+
+---
+
+## D-038: TUI に handoff screen を追加し、build の等価 CLI を常に表示する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship tui` に handoff screen を追加し、range/sources/split/binary/out を切り替えながら preview/build できるようにする。
+  - TUI は handoff 専用ロジックを持たず、`src/plan.rs` の `HandoffPlan` から CLI 引数を再構成して既存 `diffship build` を呼ぶ。
+  - internal preview は一時 bundle を生成して最初の patch part を色付きで表示する。
+- Rationale:
+  - handoff 導線を TUI でも辿れるようにしつつ、CLI parity を壊さないため。
+- Implications:
+  - plan export/replay 自体は後続タスクとして残し、現段階では「等価 CLI の表示」までを先行実装する。
+
+---
+
+## D-039: explicit path filter は `.diffshipignore` と併用し、全 segment に同じ条件を適用する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship build` に repeatable `--include <glob>` / `--exclude <glob>` を追加する。
+  - 判定順は `.diffshipignore` と `--exclude` を優先し、その後 `--include` が空なら許可、指定ありなら一致した path のみ許可とする。
+  - 同じ filter 条件を committed/staged/unstaged/untracked の全 segment に適用し、`HANDOFF.md` に選択条件を記録する。
+- Rationale:
+  - handoff の bundle 内容を説明可能にしつつ、source category ごとに filter 挙動がズレるのを防ぐため。
+- Implications:
+  - TUI handoff screen でも include/exclude を編集可能にし、CLI と同じ bundle を再現できるようにする。
+
+---
+
+## D-040: packing overflow では context reduction を exclusion より先に試す
+
+- Date: 2026-03-07
+- Decision:
+  - packing fallback で unit が byte limit に収まらない場合、まず unified diff context を `U1`、必要なら `U0` に縮退させる。
+  - context reduction 後も収まらない unit だけを `excluded.md` に送る。
+  - reduction が発生した file row には `HANDOFF.md` 上でその旨を残す。
+- Rationale:
+  - 完全除外より先に diff の保持率を上げ、AI に最低限必要な変更行を残したい。
+- Implications:
+  - `docs/SPEC_V1.md` の packing fallback 契約を future work から current behavior に更新する。
+
+---
+
+## D-041: `preview` / `compare` の `--json` は stdout に固定し、compare の差分時も exit code は維持する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship preview --json` は summary/entry content を pretty JSON で stdout に出す。
+  - `diffship compare --json` は compare report を stdout に出し、差分ありの場合でも non-zero exit を維持する。
+- Rationale:
+  - CI から stdout をそのまま parse できるようにしつつ、失敗判定は exit code で扱いたいため。
+- Implications:
+  - README / OPS_WORKFLOW に CI 向けの `--json` 利用例を追記する。
+
+---
+
+## D-042: plan.toml は handoff selection を保持し、output/runtime flags は replay 時に重ねる
+
+- Date: 2026-03-07
+- Decision:
+  - `plan.toml` には range/sources/filters/split/binary/packing limits などの handoff selection を保存する。
+  - `out` / `zip` / `yes` / `fail-on-secrets` は plan に固定せず、`diffship build --plan <file> ...` の replay 時に CLI から重ねる。
+  - TUI の replay command 表示は、この runtime flags を含めた実行例を出す。
+- Rationale:
+  - export 元 bundle path を plan に焼き込むと replay 先が固定されて扱いにくくなるため。
+- Implications:
+  - `docs/BUNDLE_FORMAT.md` には「output path は replay 時に与えられる」前提を明記する。

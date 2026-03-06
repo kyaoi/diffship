@@ -105,6 +105,61 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 }
 
 #[test]
+fn build_can_export_and_replay_plan_toml() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("tracked.txt"), "next\n").unwrap();
+    commit_all(root, "next");
+    fs::write(root.join("note.txt"), "hello\n").unwrap();
+
+    let out_a = root.join("bundle_plan_a");
+    let plan_a = out_a.join("plan.toml");
+    let mut build_a = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_a
+        .current_dir(root)
+        .args([
+            "build",
+            "--include-untracked",
+            "--include",
+            "*.txt",
+            "--yes",
+            "--plan-out",
+        ])
+        .arg(&plan_a)
+        .args(["--out"])
+        .arg(&out_a)
+        .assert()
+        .success();
+    assert!(plan_a.exists());
+
+    let out_b = root.join("bundle_plan_b");
+    let plan_b = out_b.join("plan.toml");
+    let mut build_b = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_b
+        .current_dir(root)
+        .args(["build", "--plan"])
+        .arg(&plan_a)
+        .args(["--yes", "--plan-out"])
+        .arg(&plan_b)
+        .args(["--out"])
+        .arg(&out_b)
+        .assert()
+        .success();
+    assert!(plan_b.exists());
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.current_dir(root)
+        .args(["compare"])
+        .arg(&out_a)
+        .arg(&out_b)
+        .assert()
+        .success();
+}
+
+#[test]
 fn build_range_mode_direct_accepts_from_to() {
     let td = init_repo();
     let root = td.path();
@@ -373,6 +428,156 @@ fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
 }
 
 #[test]
+fn build_max_parts_overflow_falls_back_by_merging_commit_units() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "feat a");
+
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    commit_all(root, "feat b");
+
+    let out = root.join("bundle_max_parts");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--range-mode",
+            "direct",
+            "--from",
+            "HEAD~2",
+            "--to",
+            "HEAD",
+            "--split-by",
+            "commit",
+            "--max-parts",
+            "1",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("parts").join("part_01.patch").exists());
+    assert!(!out.join("parts").join("part_02.patch").exists());
+    assert!(!out.join("excluded.md").exists());
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("a.txt"));
+    assert!(part.contains("b.txt"));
+}
+
+#[test]
+fn build_fails_with_exit_3_when_part_bytes_limit_is_exceeded() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let out = root.join("bundle_max_bytes");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", "1", "--out"])
+        .arg(&out);
+    cmd.assert()
+        .failure()
+        .code(3)
+        .stderr(predicates::str::contains("max_bytes_per_part=1"));
+}
+
+#[test]
+fn build_part_bytes_overflow_repacks_into_multiple_parts() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    fs::write(root.join("b.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let baseline = root.join("bundle_baseline");
+    let mut base_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    base_cmd
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&baseline)
+        .assert()
+        .success();
+    let part = fs::read_to_string(baseline.join("parts").join("part_01.patch")).unwrap();
+    let limit = (part.len() as u64).saturating_sub(10);
+    assert!(limit > 0);
+
+    let out = root.join("bundle_repacked");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", &limit.to_string(), "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("parts").join("part_01.patch").exists());
+    assert!(out.join("parts").join("part_02.patch").exists());
+    assert!(!out.join("excluded.md").exists());
+}
+
+#[test]
+fn build_reduces_diff_context_before_excluding_an_oversized_unit() {
+    let td = init_repo();
+    let root = td.path();
+
+    let mut base = String::new();
+    for i in 1..=20 {
+        base.push_str(&format!("line_{i:02} {}\n", "x".repeat(80)));
+    }
+    fs::write(root.join("big.txt"), &base).unwrap();
+    commit_all(root, "base");
+
+    let mut changed = base.clone();
+    changed = changed.replace(
+        &format!("line_{:02} {}\n", 10, "x".repeat(80)),
+        &format!("line_{:02} {}\n", 10, "y".repeat(80)),
+    );
+    fs::write(root.join("big.txt"), changed).unwrap();
+    commit_all(root, "change");
+
+    let baseline = root.join("bundle_context_baseline");
+    let mut baseline_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    baseline_cmd
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&baseline);
+    baseline_cmd.assert().success();
+    let baseline_part = fs::read_to_string(baseline.join("parts").join("part_01.patch")).unwrap();
+    assert!(baseline_part.contains("line_07"));
+
+    let limit = (baseline_part.len() as u64).saturating_sub(250);
+    assert!(limit > 0);
+
+    let out = root.join("bundle_context_reduced");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", &limit.to_string(), "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let reduced_part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(reduced_part.contains("line_10"));
+    assert!(!reduced_part.contains("line_07"));
+    assert!(!out.join("excluded.md").exists());
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("packing fallback reduced diff context"));
+}
+
+#[test]
 fn build_untracked_auto_stores_binary_in_attachments_zip() {
     let td = init_repo();
     let root = td.path();
@@ -384,7 +589,13 @@ fn build_untracked_auto_stores_binary_in_attachments_zip() {
     let out = root.join("bundle_auto_untracked");
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
-        .args(["build", "--no-committed", "--include-untracked", "--out"])
+        .args([
+            "build",
+            "--no-committed",
+            "--include-untracked",
+            "--include-binary",
+            "--out",
+        ])
         .arg(&out);
     cmd.assert().success();
 
@@ -400,6 +611,118 @@ fn build_untracked_auto_stores_binary_in_attachments_zip() {
     assert!(handoff.contains("## 5) Attachments"));
     assert!(handoff.contains("`untracked/bin.dat`"));
     assert!(handoff.contains("stored in attachments.zip"));
+}
+
+#[test]
+fn build_untracked_binary_is_excluded_by_default() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [0_u8, 159, 146, 150]).unwrap();
+
+    let out = root.join("bundle_auto_untracked_default_binary");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--no-committed", "--include-untracked", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(out.join("excluded.md").exists());
+    let excluded = fs::read_to_string(out.join("excluded.md")).unwrap();
+    assert!(excluded.contains("`bin.dat`"));
+    assert!(excluded.contains("binary file excluded by default"));
+}
+
+#[test]
+fn build_committed_binary_with_raw_mode_goes_to_attachments() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_raw");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--include-binary", "--binary-mode", "raw", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("attachments.zip").exists());
+    let zip_file = fs::File::open(out.join("attachments.zip")).unwrap();
+    let mut zip = ZipArchive::new(zip_file).unwrap();
+    let mut names = vec![];
+    for i in 0..zip.len() {
+        names.push(zip.by_index(i).unwrap().name().to_string());
+    }
+    assert!(names.contains(&"binary/bin.dat".to_string()));
+}
+
+#[test]
+fn build_committed_binary_with_patch_mode_keeps_patch_text() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_patch");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include-binary",
+            "--binary-mode",
+            "patch",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(!out.join("excluded.md").exists());
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("bin.dat"));
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("| committed | M | `bin.dat` |"));
+    assert!(handoff.contains("| part_01.patch |"));
+}
+
+#[test]
+fn build_committed_binary_with_meta_mode_creates_excluded_md() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_meta");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include-binary",
+            "--binary-mode",
+            "meta",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(out.join("excluded.md").exists());
+    let excluded = fs::read_to_string(out.join("excluded.md")).unwrap();
+    assert!(excluded.contains("`bin.dat`"));
+    assert!(excluded.contains("binary file excluded by binary-mode=meta"));
 }
 
 #[test]
@@ -474,6 +797,65 @@ fn build_respects_diffshipignore_for_committed_and_untracked() {
     assert!(handoff.contains("Ignore rules: `.diffshipignore` = `yes`"));
     assert!(handoff.contains("visible.txt"));
     assert!(!handoff.contains("secret.txt"));
+}
+
+#[test]
+fn build_include_and_exclude_filters_apply_to_all_segments() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("keep.rs"), "fn keep() {}\n").unwrap();
+    fs::write(root.join("skip.rs"), "fn skip() {}\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("keep.rs"), "fn keep() { println!(\"ok\"); }\n").unwrap();
+    fs::write(root.join("skip.rs"), "fn skip() { println!(\"no\"); }\n").unwrap();
+    commit_all(root, "second");
+
+    fs::write(root.join("staged.rs"), "fn staged() {}\n").unwrap();
+    Command::new("git")
+        .args(["add", "staged.rs"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    fs::write(root.join("note.txt"), "keep me\n").unwrap();
+    fs::write(root.join("notes.md"), "drop me\n").unwrap();
+
+    let out = root.join("bundle_filters");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include",
+            "*.rs",
+            "--include",
+            "*.txt",
+            "--exclude",
+            "skip.rs",
+            "--include-staged",
+            "--include-untracked",
+            "--yes",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    let mut patch_all = String::new();
+    for ent in fs::read_dir(out.join("parts")).unwrap() {
+        let path = ent.unwrap().path();
+        patch_all.push_str(&fs::read_to_string(path).unwrap());
+    }
+
+    assert!(patch_all.contains("keep.rs"));
+    assert!(patch_all.contains("staged.rs"));
+    assert!(patch_all.contains("note.txt"));
+    assert!(!patch_all.contains("skip.rs"));
+    assert!(!patch_all.contains("notes.md"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("Include filters: `*.rs`, `*.txt`"));
+    assert!(handoff.contains("Exclude filters: `skip.rs`"));
 }
 
 #[test]

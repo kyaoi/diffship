@@ -8,9 +8,12 @@
 ## TL;DR
 - Bundle: `<name>`
 - Profile: `<profile>` (`<max_parts>` parts × `<max_bytes_per_part>` bytes)
+- Binary policy: include=`<yes/no>`, mode=`<raw|patch|meta>`
 - Segments included: committed=`<yes/no>`, staged=`<yes/no>`, unstaged=`<yes/no>`, untracked=`<yes/no>`
 - Committed range: `<mode>` `<from/to or a/b>` (commits: `<n>`)
 - Current HEAD (for staged/unstaged/untracked): `<head>`
+- Include filters (optional): `<glob1>`, `<glob2>`
+- Exclude filters (optional): `<glob3>`
 - Reading order:
   1) Docs changes: `<parts/files>`
   2) Config/build changes: `<parts/files>`
@@ -31,6 +34,10 @@
 - staged: `<included?>`
 - unstaged: `<included?>`
 - untracked: `<included?>` (mode: `<auto|patch|raw|meta>`)
+- binary include: `<yes/no>` (mode: `<raw|patch|meta>`)
+- `.diffshipignore` active: `<yes/no>`
+- include filters (optional): `<...>`
+- exclude filters (optional): `<...>`
 
 ---
 
@@ -88,3 +95,11 @@
 
 ## 6) Exclusions (only if excluded.md exists)
 See `excluded.md`.
+
+---
+
+## Notes
+- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.
+- Binary/unreadable files are excluded by default unless explicitly included.
+- `.diffshipignore` and optional include/exclude filters are applied before writing parts / attachments / exclusions.
+- Packing fallback may reduce diff context (`U1` / `U0`) before excluding an oversized unit.

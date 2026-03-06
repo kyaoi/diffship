@@ -18,16 +18,16 @@ Conventions:
 
 ## Goals / non-goals
 
-- **S-GOAL-001** — Tests: TBD — Code: TBD — Status: Planned
+- **S-GOAL-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-GOAL-002** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-003** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-004** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-GOAL-005** — Tests: TBD — Code: TBD — Status: Planned
+- **S-GOAL-005** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-GOAL-006** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-007** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-008** — Tests: TBD — Code: `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Planned
-- **S-GOAL-009** — Tests: TBD — Code: `src/ops/commit.rs`, `src/ops/config.rs` — Status: Planned
-- **S-GOAL-010** — Tests: TBD — Code: `src/ops/init.rs` — Status: Planned
+- **S-GOAL-009** — Tests: TBD — Code: `src/ops/config.rs`, `src/ops/promote.rs` — Status: Planned
+- **S-GOAL-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 
 - **S-NONGOAL-001** — Tests: N/A — Code: N/A — Status: N/A
 - **S-NONGOAL-002** — Tests: N/A — Code: N/A — Status: N/A
@@ -38,10 +38,10 @@ Conventions:
 
 ## TUI
 
-- **S-TUI-001** — Tests: TBD — Code: `src/tui/*` — Status: Partial
-- **S-TUI-002** — Tests: TBD — Code: `src/tui/*` — Status: Planned
-- **S-TUI-003** — Tests: TBD — Code: `src/tui/viewer.rs` — Status: Planned
-- **S-TUI-004** — Tests: TBD — Code: `src/plan.rs`, `src/tui/*` — Status: Planned
+- **S-TUI-001** — Tests: `tests/m5_tui_cli_parity.rs` — Code: `src/tui/mod.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-TUI-002** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs`, `src/plan.rs` — Status: Implemented
+- **S-TUI-003** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
+- **S-TUI-004** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -63,9 +63,9 @@ Conventions:
 
 ## Filters
 
-- **S-FILTER-001** — Tests: TBD — Code: `src/filter.rs` — Status: Planned
+- **S-FILTER-001** — Tests: `tests/m6_handoff_build.rs`, `src/filter.rs` — Code: `src/filter.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-FILTER-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-FILTER-003** — Tests: TBD — Code: `src/filter.rs` — Status: Planned
+- **S-FILTER-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/filter.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -81,8 +81,8 @@ Conventions:
 
 ## Binary
 
-- **S-BINARY-001** — Tests: TBD — Code: `src/binary.rs` — Status: Planned
-- **S-BINARY-002** — Tests: TBD — Code: `src/binary.rs` — Status: Planned
+- **S-BINARY-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-BINARY-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-BINARY-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
@@ -107,10 +107,17 @@ Conventions:
 ## Packing / fallback
 
 - **S-PACK-001** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-PACK-002** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
-- **S-PACK-003** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
-- **S-PACK-004** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
+- **S-PACK-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-PACK-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-PACK-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-PACK-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+
+---
+
+## Plan export / replay
+
+- **S-PLAN-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-PLAN-002** — Tests: `tests/m6_handoff_build.rs`, `src/plan.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -125,7 +132,16 @@ Conventions:
 
 ## Preview
 
-- **S-PREVIEW-001** — Tests: TBD — Code: `src/preview.rs` — Status: Planned
+- **S-PREVIEW-001** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
+- **S-PREVIEW-002** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
+
+---
+
+## Compare
+
+- **S-COMPARE-001** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
+- **S-COMPARE-002** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
+- **S-COMPARE-003** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -136,7 +152,7 @@ Conventions:
 - **S-PBUNDLE-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
-- **S-PBUNDLE-006** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
+- **S-PBUNDLE-006** — Tests: `tests/m3_tasks.rs` — Code: `src/ops/patch_bundle.rs`, `src/ops/tasks.rs` — Status: Implemented
 
 ---
 
@@ -157,7 +173,7 @@ Conventions:
 
 - **S-COMMIT-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-COMMIT-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
-- **S-COMMIT-003** — Tests: TBD — Code: `src/ops/config.rs` — Status: Planned
+- **S-COMMIT-003** — Tests: `tests/m4_config_precedence.rs` — Code: `src/ops/config.rs` — Status: Implemented
 - **S-COMMIT-004** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Partial
 - **S-COMMIT-005** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
@@ -165,7 +181,7 @@ Conventions:
 
 ## Verify
 
-- **S-VERIFY-001** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
+- **S-VERIFY-001** — Tests: `tests/m2_apply_verify.rs`, `tests/m4_verify_profiles.rs` — Code: `src/ops/verify.rs`, `src/ops/config.rs` — Status: Implemented
 - **S-VERIFY-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
 - **S-VERIFY-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
 - **S-VERIFY-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
@@ -174,8 +190,8 @@ Conventions:
 
 ## pack-fix
 
-- **S-PACKFIX-001** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Planned
-- **S-PACKFIX-002** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Planned
+- **S-PACKFIX-001** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-PACKFIX-002** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -214,7 +230,7 @@ Conventions:
 
 ## Promotion
 
-- **S-PROMOTE-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
+- **S-PROMOTE-001** — Tests: `tests/m2_promotion_loop.rs`, `tests/m4_02_promotion_switch.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-PROMOTE-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-PROMOTE-003** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
@@ -242,7 +258,7 @@ Conventions:
 
 - **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
-- **S-RUN-003** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
+- **S-RUN-003** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -259,8 +275,8 @@ Conventions:
 - **S-EXIT-000** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-001** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
-- **S-EXIT-003** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
-- **S-EXIT-004** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/exit.rs`, `src/handoff.rs` — Status: Implemented
+- **S-EXIT-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/exit.rs`, `src/handoff.rs` — Status: Implemented
 - **S-EXIT-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
@@ -268,5 +284,5 @@ Conventions:
 - **S-EXIT-009** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-011** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs` — Status: Implemented
-- **S-EXIT-012** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-012** — Tests: `tests/m3_tasks.rs` — Code: `src/exit.rs`, `src/ops/promote.rs` — Status: Implemented
 - **S-EXIT-013** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs`, `src/ops/promote.rs` — Status: Implemented

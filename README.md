@@ -6,12 +6,18 @@ It focuses on the *ops* side of an AI workflow:
 
 - safely **apply** an AI-produced patch bundle in an isolated sandbox
 - **verify** it with local quality gates
-- **promote** the result back to your target branch (or skip / no-commit)
+- **promote** the result back to your target branch (or skip promotion)
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
-> Preview and richer binary policies are still planned.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
+> Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
+> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks.
+> The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
+> `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
+> Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
+> `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.
+> Remaining handoff work is mainly future-extension territory (for example named profile presets / extra UX polish), not the current v1 handoff core.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -59,7 +65,8 @@ If promotion is blocked:
 - secrets were detected → rerun with `--ack-secrets`
 - required user tasks exist → complete them, then rerun with `--ack-tasks`
 
-If verification fails, use `diffship pack-fix` to build a reprompt zip for the run and send it back to the AI.
+If verification fails, diffship writes a default reprompt zip under `.diffship/runs/` in the run directory.
+You can also run `diffship pack-fix --run-id <run-id>` manually.
 
 ---
 
@@ -68,7 +75,7 @@ If verification fails, use `diffship pack-fix` to build a reprompt zip for the r
 All commands below are implemented.
 
 - `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
-- `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher)
+- `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher + handoff screen)
 
 - `diffship init` — generate `.diffship/` project kit files
 - `diffship status` — show lock state and recent runs (`--json` available)
@@ -77,7 +84,9 @@ All commands below are implemented.
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
-- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md)
+- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
+- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`)
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches
@@ -86,6 +95,10 @@ Both `promote` and `loop` accept overrides:
 
 - `--promotion <none|working-tree|commit>`
 - `--commit-policy <auto|manual>`
+
+Current note:
+- `none` is implemented and tested.
+- `working-tree` is implemented as no-commit promotion (applies patch result onto target working tree).
 
 For details and examples, see `docs/OPS_WORKFLOW.md`.
 
@@ -104,14 +117,38 @@ diffship build --no-committed --include-staged --include-unstaged --include-untr
 # commit-oriented split for a multi-commit committed range
 diffship build --range-mode direct --from HEAD~3 --to HEAD --split-by commit
 
+# keep only selected paths across all segments
+diffship build --include 'src/*.rs' --include '*.txt' --exclude 'src/generated.rs'
+
+# tighten packing limits for CI/runtime checks
+diffship build --max-parts 10 --max-bytes-per-part 104857600
+
 # keep untracked files as metadata only
 diffship build --no-committed --include-untracked --untracked-mode meta
+
+# binary content is excluded by default
+# include binary files as raw attachments
+diffship build --include-binary --binary-mode raw
 
 # continue after a secrets warning (non-interactive)
 diffship build --yes
 
 # fail in CI when secrets-like content is detected
 diffship build --fail-on-secrets
+
+# inspect a generated bundle
+diffship preview ./diffship_2026-03-06_1200 --list
+
+# compare two bundles for reproducibility checks
+diffship compare ./bundle_a ./bundle_b.zip
+
+# CI-friendly machine-readable checks
+diffship preview ./diffship_2026-03-06_1200 --list --json
+diffship compare ./bundle_a ./bundle_b.zip --json
+
+# export and replay a build plan
+diffship build --include-untracked --plan-out ./diffship_plan.toml
+diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 ```
 
 Output layout:

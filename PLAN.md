@@ -114,7 +114,7 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
+| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる（`none` / `working-tree` / `commit` を個別動作で確認済み） |
 
 ---
 
@@ -134,23 +134,30 @@ diffship loop <patch-bundle.zip>
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
 | M6-02 | done | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | done | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
+| M6-03 | done | 分割（profiles）+ excluded/attachments | split/attachments/excluded は実装済み。`--max-parts` / `--max-bytes-per-part` 超過時は `EXIT_PACKING_LIMITS` で停止できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
 | M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
 | M6-06 | done | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
 
 ---
 
-## Next（いま着手する3つ）
+## 棚卸しメモ（2026-03-06）
 
-1) handoff / ops の end-to-end 運用ドキュメント整理（`build` → AI → `loop` の一連フロー）
-2) packing limits / binary policy の具体化（`EXIT_PACKING_LIMITS` を実動させる仕様整理）
-3) handoff preview / TUI 導線の検討（bundle を作る前に含有物を確認できる導線）
+- ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
+- `pack-fix` は専用統合テスト込みで実装済み。
+- handoff は build + source収集 + split-by + packing fallback + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
+- packing fallback は context reduction（`U3 -> U1 -> U0`）まで実装済み。
+- handoff の `preview` / `compare` は実装済み。
+- handoff の explicit path filter（`--include` / `--exclude`）は実装済み。TUI handoff screen からも編集できる。
+- handoff plan export / replay（`--plan-out` / `--plan`）は実装済み。TUI からも export できる。
+- verify は `[verify.profiles.*]` の custom command profile を実装済み。
+- TUI には handoff screen（range/sources/filters/split/preview/build + equivalent CLI command 表示）が入り、plan export まで実装済み。
 
-（候補）
-- verify の config-driven profiles（`[verify.profiles.*]`）強化
-- handoff の split policy 改良（profile別のサイズ上限 / 再分割戦略）
-- bundle 比較/再現確認コマンド
+## Next（優先順）
+
+1) named handoff profile presets / config wiring の設計
+2) compare の差分分類を増やすかの判断（future UX）
+3) TUI の入力 UX 改良（将来拡張）
 
 ## メモ（詰まったらここに書く）
 

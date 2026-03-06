@@ -6,6 +6,53 @@ It is intentionally human-oriented (what to run, what happens, where to look).
 
 ---
 
+## End-to-end flow (build → AI → loop)
+
+When you start from local Git diffs (not from a pre-made patch bundle), use this sequence:
+
+1) Build a handoff bundle for AI:
+
+```bash
+diffship build --include-staged --include-unstaged --include-untracked
+```
+
+2) Inspect before sharing:
+
+```bash
+diffship preview ./diffship_YYYY-MM-DD_HHMM --list
+diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
+```
+
+Optional: export a replayable handoff plan:
+
+```bash
+diffship build --include-staged --include-unstaged --include-untracked --plan-out ./diffship_plan.toml
+diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
+```
+
+3) Send the handoff bundle to AI and receive an AI-produced patch bundle (`patch-bundle.zip`).
+
+4) Apply+verify+promote in one step:
+
+```bash
+diffship loop ./patch-bundle.zip
+```
+
+5) If you need reproducibility checks across two handoff outputs:
+
+```bash
+diffship compare ./bundle_a ./bundle_b.zip
+```
+
+For CI / automation, use JSON output:
+
+```bash
+diffship preview ./diffship_YYYY-MM-DD_HHMM --list --json
+diffship compare ./bundle_a ./bundle_b.zip --json
+```
+
+---
+
 ## Concepts
 
 - **session**: a persistent worktree used to avoid touching your main working tree
@@ -41,16 +88,15 @@ What `loop` does:
 
 ### Verify failed → create a reprompt bundle
 
-`loop` will keep a run directory with logs.
-To create a reprompt zip you can send back to the AI:
+When verify fails, diffship writes a default reprompt zip at:
+
+- `.diffship/runs/<run-id>/pack-fix.zip`
+
+You can also create or re-create it explicitly:
 
 ```bash
 diffship pack-fix --run-id <run-id>
 ```
-
-The default output is:
-
-- `.diffship/runs/<run-id>/pack-fix.zip`
 
 ### Promotion blocked: secrets
 
@@ -86,7 +132,8 @@ You can override promotion behavior per run:
   - useful for “apply + verify only” or debugging
 
 - `--promotion working-tree`:
-  - apply results onto the target branch **without committing**
+  - apply results onto the target branch working tree **without creating a commit**
+  - useful when you want to inspect/edit before committing manually
 
 - `--promotion commit` (default):
   - apply results onto the target branch and create a commit
@@ -102,7 +149,7 @@ Examples:
 # verify only
 $ diffship loop bundle.zip --promotion none
 
-# no-commit promotion
+# no-commit promotion (working tree only)
 $ diffship loop bundle.zip --promotion working-tree
 
 # require the AI to craft the commit inside the sandbox (advanced)

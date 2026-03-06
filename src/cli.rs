@@ -17,6 +17,12 @@ pub enum Command {
     /// Build an AI handoff bundle from committed and optional uncommitted diffs
     Build(BuildArgs),
 
+    /// Preview a handoff bundle (HANDOFF.md / parts)
+    Preview(PreviewArgs),
+
+    /// Compare two handoff bundles for reproducibility checks
+    Compare(CompareArgs),
+
     /// Generate a ChatGPT Project kit under .diffship/
     Init(InitArgs),
 
@@ -63,6 +69,41 @@ pub enum Command {
 pub struct TuiArgs {}
 
 #[derive(Debug, Args)]
+pub struct CompareArgs {
+    /// Left bundle path (directory or .zip)
+    pub bundle_a: String,
+
+    /// Right bundle path (directory or .zip)
+    pub bundle_b: String,
+
+    /// Compare raw bytes without normalization
+    #[arg(long, default_value_t = false)]
+    pub strict: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PreviewArgs {
+    /// Handoff bundle path (directory or .zip)
+    pub bundle: String,
+
+    /// Show only a specific part file (e.g. part_01.patch)
+    #[arg(long)]
+    pub part: Option<String>,
+
+    /// List bundle contents and available parts
+    #[arg(long, default_value_t = false)]
+    pub list: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct BuildArgs {
     /// Committed range mode (direct|merge-base|last|root)
     #[arg(long, default_value = "last", value_name = "MODE")]
@@ -88,6 +129,14 @@ pub struct BuildArgs {
     #[arg(long, default_value_t = false)]
     pub no_committed: bool,
 
+    /// Include only paths matching this glob (repeatable)
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+
+    /// Exclude paths matching this glob (repeatable)
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
+
     /// Include staged changes (based on current HEAD)
     #[arg(long, default_value_t = false)]
     pub include_staged: bool,
@@ -107,6 +156,30 @@ pub struct BuildArgs {
     /// How to handle untracked files: auto|patch|raw|meta
     #[arg(long, default_value = "auto")]
     pub untracked_mode: String,
+
+    /// Include binary content in handoff output (default: false)
+    #[arg(long, default_value_t = false)]
+    pub include_binary: bool,
+
+    /// How to represent binary content when --include-binary is enabled: raw|patch|meta
+    #[arg(long, default_value = "raw")]
+    pub binary_mode: String,
+
+    /// Maximum number of patch parts allowed (default: 20)
+    #[arg(long)]
+    pub max_parts: Option<usize>,
+
+    /// Maximum bytes per patch part (default: 536870912 = 512 MiB)
+    #[arg(long)]
+    pub max_bytes_per_part: Option<u64>,
+
+    /// Replay a serialized handoff plan.toml
+    #[arg(long)]
+    pub plan: Option<String>,
+
+    /// Export the resolved handoff plan to a plan.toml path
+    #[arg(long)]
+    pub plan_out: Option<String>,
 
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]

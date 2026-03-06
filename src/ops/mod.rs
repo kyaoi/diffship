@@ -46,6 +46,8 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
             }
             crate::tui::run(&git_root)
         }
+        Command::Preview(args) => crate::preview::cmd(args),
+        Command::Compare(args) => crate::bundle_compare::cmd(args),
         Command::Build(args) => crate::handoff::cmd(&git_root, args),
         Command::Init(args) => init::cmd(&git_root, args),
         Command::Status(args) => status::cmd(&git_root, args),
