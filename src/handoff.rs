@@ -2,6 +2,7 @@ use crate::cli::BuildArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
 use crate::filter::PathFilter;
 use crate::git;
+use crate::plan::HandoffPlan;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -190,6 +191,8 @@ struct SecretHit {
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let args = resolve_build_args(&cwd, args)?;
+    let resolved_plan = HandoffPlan::from_build_args(&args);
 
     let out_dir = match &args.out {
         Some(o) => {
@@ -462,6 +465,13 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     });
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
 
+    if let Some(plan_out) = args.plan_out.as_deref() {
+        let plan_path = resolve_plan_path(&cwd, plan_out);
+        resolved_plan
+            .write_to_path(&plan_path)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+    }
+
     handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;
 
     let mut zip_path = None;
@@ -489,6 +499,55 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     }
 
     Ok(())
+}
+
+fn resolve_build_args(cwd: &Path, args: BuildArgs) -> Result<BuildArgs, ExitError> {
+    let Some(plan_path) = args.plan.clone() else {
+        return Ok(args);
+    };
+    if build_args_conflict_with_plan(&args) {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "--plan cannot be combined with other explicit handoff selection flags; export a new plan or replay the plan as-is",
+        ));
+    }
+    let path = resolve_plan_path(cwd, &plan_path);
+    let plan = HandoffPlan::from_file(&path).map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+    let mut effective = plan.into_build_args(args.plan, args.plan_out);
+    effective.out = args.out;
+    effective.zip = args.zip;
+    effective.yes = args.yes;
+    effective.fail_on_secrets = args.fail_on_secrets;
+    Ok(effective)
+}
+
+fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
+    args.range_mode != "last"
+        || args.from.is_some()
+        || args.to.is_some()
+        || args.a.is_some()
+        || args.b.is_some()
+        || args.no_committed
+        || !args.include.is_empty()
+        || !args.exclude.is_empty()
+        || args.include_staged
+        || args.include_unstaged
+        || args.include_untracked
+        || args.split_by.as_deref() != Some("auto")
+        || args.untracked_mode != "auto"
+        || args.include_binary
+        || args.binary_mode != "raw"
+        || args.max_parts.is_some()
+        || args.max_bytes_per_part.is_some()
+}
+
+fn resolve_plan_path(cwd: &Path, raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    }
 }
 
 #[derive(Debug, Clone)]

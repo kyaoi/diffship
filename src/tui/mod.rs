@@ -73,6 +73,7 @@ struct RunDetail {
 #[derive(Debug, Clone)]
 struct HandoffState {
     plan: crate::plan::HandoffPlan,
+    plan_path: String,
     message: String,
     preview_title: String,
     preview_lines: Vec<String>,
@@ -186,6 +187,7 @@ impl App {
 
             handoff: HandoffState {
                 plan: crate::plan::HandoffPlan::default(),
+                plan_path: "diffship_plan.toml".to_string(),
                 message: "Press v to preview the current handoff selection, or g to build."
                     .to_string(),
                 preview_title: "(no preview yet)".to_string(),
@@ -786,6 +788,9 @@ impl App {
             KeyCode::Char('v') => {
                 self.run_handoff_preview(git_root, guard)?;
             }
+            KeyCode::Char('P') => {
+                self.export_handoff_plan(git_root)?;
+            }
             KeyCode::Char('g') | KeyCode::Enter => {
                 self.run_handoff_build(git_root, guard)?;
             }
@@ -850,6 +855,23 @@ impl App {
     fn start_edit(&mut self, target: EditTarget, initial: String) {
         self.edit_buffer = initial;
         self.input_mode = InputMode::Editing(target);
+    }
+
+    fn export_handoff_plan(&mut self, git_root: &Path) -> Result<(), ExitError> {
+        let path = git_root.join(current_plan_export_path(&self.handoff));
+        self.handoff
+            .plan
+            .write_to_path(&path)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+        self.handoff.message = format!(
+            "Plan exported: {}\nReplay: {}",
+            path.display(),
+            crate::plan::HandoffPlan::replay_shell_command_with_overrides(
+                &path.display().to_string(),
+                &self.handoff.plan,
+            )
+        );
+        Ok(())
     }
 
     fn apply_edit_value(&mut self, target: EditTarget, value: String) {
@@ -1235,10 +1257,21 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     };
     vec![
         "Handoff".to_string(),
-        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  ↑/↓=scroll preview".to_string(),
+        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
         String::new(),
         format!("mode        : {mode}"),
         format!("build cmd   : {}", handoff.plan.to_shell_command()),
+        format!(
+            "plan file   : {}",
+            current_plan_export_path(handoff)
+        ),
+        format!(
+            "replay cmd  : {}",
+            crate::plan::HandoffPlan::replay_shell_command_with_overrides(
+                &current_plan_export_path(handoff),
+                &handoff.plan,
+            )
+        ),
         String::new(),
         "1) Range".to_string(),
         format!("  - mode: {}", handoff.plan.range_mode),
@@ -1291,6 +1324,14 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
         String::new(),
         format!("5) Preview: {}", handoff.preview_title),
     ]
+}
+
+fn current_plan_export_path(handoff: &HandoffState) -> String {
+    if let Some(out) = handoff.plan.out.as_deref() {
+        format!("{}/plan.toml", out.trim_end_matches('/'))
+    } else {
+        handoff.plan_path.clone()
+    }
 }
 
 fn preview_line_style(s: &str) -> PreviewLineStyle {
@@ -1359,9 +1400,10 @@ fn line(ch: char, w: u16) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle, cycle_value,
-        handoff_overview_lines, parse_pattern_list, preview_line_style, should_start_tui_impl,
-        summarize_child_failure, summarize_child_success,
+        ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle,
+        current_plan_export_path, cycle_value, handoff_overview_lines, parse_pattern_list,
+        preview_line_style, should_start_tui_impl, summarize_child_failure,
+        summarize_child_success,
     };
 
     #[test]
@@ -1429,6 +1471,7 @@ mod tests {
                 split_by: "commit".to_string(),
                 ..crate::plan::HandoffPlan::default()
             },
+            plan_path: "diffship_plan.toml".to_string(),
             message: String::new(),
             preview_title: "parts/part_01.patch".to_string(),
             preview_lines: vec![],
@@ -1464,5 +1507,21 @@ mod tests {
             parse_pattern_list("src/*.rs, docs/*.md\nnotes.txt"),
             vec!["src/*.rs", "docs/*.md", "notes.txt"]
         );
+    }
+
+    #[test]
+    fn current_plan_export_path_prefers_bundle_plan_when_out_is_set() {
+        let handoff = HandoffState {
+            plan: crate::plan::HandoffPlan {
+                out: Some("bundle_out".to_string()),
+                ..crate::plan::HandoffPlan::default()
+            },
+            plan_path: "diffship_plan.toml".to_string(),
+            message: String::new(),
+            preview_title: String::new(),
+            preview_lines: vec![],
+            preview_scroll: 0,
+        };
+        assert_eq!(current_plan_export_path(&handoff), "bundle_out/plan.toml");
     }
 }

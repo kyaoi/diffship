@@ -22,7 +22,7 @@ Conventions:
 - **S-GOAL-002** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-003** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-004** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-GOAL-005** — Tests: TBD — Code: `src/plan.rs`, `src/tui/mod.rs` — Status: Partial
+- **S-GOAL-005** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-GOAL-006** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-007** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-008** — Tests: TBD — Code: `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Planned
@@ -41,7 +41,7 @@ Conventions:
 - **S-TUI-001** — Tests: `tests/m5_tui_cli_parity.rs` — Code: `src/tui/mod.rs`, `src/ops/mod.rs` — Status: Implemented
 - **S-TUI-002** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs`, `src/plan.rs` — Status: Implemented
 - **S-TUI-003** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
-- **S-TUI-004** — Tests: TBD — Code: `src/plan.rs`, `src/tui/mod.rs` — Status: Partial
+- **S-TUI-004** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -111,6 +111,13 @@ Conventions:
 - **S-PACK-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-PACK-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-PACK-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+
+---
+
+## Plan export / replay
+
+- **S-PLAN-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-PLAN-002** — Tests: `tests/m6_handoff_build.rs`, `src/plan.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

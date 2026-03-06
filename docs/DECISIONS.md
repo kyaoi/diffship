@@ -560,3 +560,17 @@ diffship OS の重要な意思決定ログです。
   - CI から stdout をそのまま parse できるようにしつつ、失敗判定は exit code で扱いたいため。
 - Implications:
   - README / OPS_WORKFLOW に CI 向けの `--json` 利用例を追記する。
+
+---
+
+## D-042: plan.toml は handoff selection を保持し、output/runtime flags は replay 時に重ねる
+
+- Date: 2026-03-07
+- Decision:
+  - `plan.toml` には range/sources/filters/split/binary/packing limits などの handoff selection を保存する。
+  - `out` / `zip` / `yes` / `fail-on-secrets` は plan に固定せず、`diffship build --plan <file> ...` の replay 時に CLI から重ねる。
+  - TUI の replay command 表示は、この runtime flags を含めた実行例を出す。
+- Rationale:
+  - export 元 bundle path を plan に焼き込むと replay 先が固定されて扱いにくくなるため。
+- Implications:
+  - `docs/BUNDLE_FORMAT.md` には「output path は replay 時に与えられる」前提を明記する。

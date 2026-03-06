@@ -72,5 +72,7 @@ Must list excluded units with:
 
 ## 6. `plan.toml` (optional)
 
-- A replayable description of the selection/options used to build the bundle.
-- TUI should be able to export it; CLI should accept it.
+- A replayable description of the handoff selection/options used to build the bundle.
+- Export with `diffship build --plan-out <path>` (for example `<bundle>/plan.toml`).
+- Replay with `diffship build --plan <path>`.
+- Output path / zip emission are CLI-time concerns and may be supplied when replaying the plan.

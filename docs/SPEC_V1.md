@@ -131,6 +131,11 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PACK-004**: If a unit cannot fit within `max_bytes_per_part`, fallback MUST attempt lower unified diff context levels (`U1`, then `U0`) before excluding it.
 - **S-PACK-005**: Exclusions must be recorded in `excluded.md` with reasons and guidance.
 
+#### 4.2.9 Plan export / replay
+
+- **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
+- **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format.
+
 ### 4.3 `diffship preview <handoff-bundle>`
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.

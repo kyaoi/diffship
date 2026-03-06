@@ -105,6 +105,61 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 }
 
 #[test]
+fn build_can_export_and_replay_plan_toml() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("tracked.txt"), "next\n").unwrap();
+    commit_all(root, "next");
+    fs::write(root.join("note.txt"), "hello\n").unwrap();
+
+    let out_a = root.join("bundle_plan_a");
+    let plan_a = out_a.join("plan.toml");
+    let mut build_a = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_a
+        .current_dir(root)
+        .args([
+            "build",
+            "--include-untracked",
+            "--include",
+            "*.txt",
+            "--yes",
+            "--plan-out",
+        ])
+        .arg(&plan_a)
+        .args(["--out"])
+        .arg(&out_a)
+        .assert()
+        .success();
+    assert!(plan_a.exists());
+
+    let out_b = root.join("bundle_plan_b");
+    let plan_b = out_b.join("plan.toml");
+    let mut build_b = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_b
+        .current_dir(root)
+        .args(["build", "--plan"])
+        .arg(&plan_a)
+        .args(["--yes", "--plan-out"])
+        .arg(&plan_b)
+        .args(["--out"])
+        .arg(&out_b)
+        .assert()
+        .success();
+    assert!(plan_b.exists());
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.current_dir(root)
+        .args(["compare"])
+        .arg(&out_a)
+        .arg(&out_b)
+        .assert()
+        .success();
+}
+
+#[test]
 fn build_range_mode_direct_accepts_from_to() {
     let td = init_repo();
     let root = td.path();

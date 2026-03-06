@@ -23,6 +23,13 @@ diffship preview ./diffship_YYYY-MM-DD_HHMM --list
 diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
 ```
 
+Optional: export a replayable handoff plan:
+
+```bash
+diffship build --include-staged --include-unstaged --include-untracked --plan-out ./diffship_plan.toml
+diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
+```
+
 3) Send the handoff bundle to AI and receive an AI-produced patch bundle (`patch-bundle.zip`).
 
 4) Apply+verify+promote in one step:

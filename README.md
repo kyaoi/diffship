@@ -16,7 +16,8 @@ It focuses on the *ops* side of an AI workflow:
 > The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
-> Remaining handoff gaps are mainly JSON output for preview/compare and plan export/replay.
+> `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.
+> Remaining handoff work is mainly future-extension territory (for example named profile presets / extra UX polish), not the current v1 handoff core.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -83,7 +84,7 @@ All commands below are implemented.
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
-- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md)
+- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
 - `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
 - `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`)
 - `diffship loop <bundle>` — apply → verify → promote
@@ -144,6 +145,10 @@ diffship compare ./bundle_a ./bundle_b.zip
 # CI-friendly machine-readable checks
 diffship preview ./diffship_2026-03-06_1200 --list --json
 diffship compare ./bundle_a ./bundle_b.zip --json
+
+# export and replay a build plan
+diffship build --include-untracked --plan-out ./diffship_plan.toml
+diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 ```
 
 Output layout:

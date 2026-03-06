@@ -173,6 +173,14 @@ pub struct BuildArgs {
     #[arg(long)]
     pub max_bytes_per_part: Option<u64>,
 
+    /// Replay a serialized handoff plan.toml
+    #[arg(long)]
+    pub plan: Option<String>,
+
+    /// Export the resolved handoff plan to a plan.toml path
+    #[arg(long)]
+    pub plan_out: Option<String>,
+
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]
     pub out: Option<String>,

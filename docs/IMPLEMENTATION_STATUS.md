@@ -43,13 +43,14 @@ This is the current implementation inventory based on:
 | determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
 | `preview` command | Implemented | `src/preview.rs`, `src/cli.rs`; directory/zip bundles and `--json` output are supported; covered by `tests/m6_preview.rs` |
 | `compare` command (bundle reproducibility check) | Implemented | `src/bundle_compare.rs`, `src/cli.rs`; normalized/strict compare and `--json` output are covered by `tests/m6_compare.rs` |
+| plan export / replay | Implemented | `src/plan.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/plan.rs` unit tests |
 | packing limits / binary policy (runtime) | Implemented | `--max-parts` / `--max-bytes-per-part` and `EXIT_PACKING_LIMITS` are implemented (`src/cli.rs`, `src/handoff.rs`, `src/exit.rs`); `--include-binary` / `--binary-mode raw|patch|meta`, fallback repacking, and context reduction (`U3 -> U1 -> U0`) are covered by `tests/m6_handoff_build.rs` |
 
 ### v1 readiness interpretation
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- Remaining v1 gaps are mostly around plan export/replay (`S-TUI-004`) and JSON output for preview/compare.
+- No immediate gaps remain in the current v1 handoff core; remaining work is mainly future-extension territory such as named profile presets and extra TUI/compare UX polish.
 
 ---
 
