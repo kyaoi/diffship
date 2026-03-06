@@ -38,6 +38,7 @@ diffship loop <patch-bundle.zip>
 - Git の差分（committed/staged/unstaged/untracked）を **アップロード制限に合わせて分割**し、
   **AI が読める入口（HANDOFF.md）**付きの bundle にする
 - `.diffshipignore` / secrets warning を尊重し、**危険/巨大/バイナリ**は除外 or attachments として扱う
+- 同じ入力から **同じ bundle tree / zip bytes** を得られるようにする
 
 ---
 
@@ -117,7 +118,6 @@ diffship loop <patch-bundle.zip>
 
 ---
 
-
 ### M5: TUI（操作の見える化 + 実行支援）
 
 | ID | Status | 内容 | Done条件 |
@@ -126,55 +126,37 @@ diffship loop <patch-bundle.zip>
 | M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
 | M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
 | M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
-| M5-05 | done | CLI parity / テスト（CI green） | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の非TTYスモークテストを追加し、`clippy -D warnings` を通す。 |
-
-
+| M5-05 | done | CLI parity / テスト（CI green） | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加し、`clippy -D warnings` と `just ci` が通る。 |
 
 ### M6: Handoff（diff → AI bundle）
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
-| M6-02 | done | diff収集（committed/staged/unstaged/untracked） | committed/staged/unstaged/untracked を CLI で選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | done | 分割（split-by）+ excluded/attachments | `--split-by auto\|file\|commit`、`attachments.zip`、`excluded.md` を生成できる。 |
+| M6-02 | done | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
+| M6-03 | done | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
-| M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（`--yes` / `--fail-on-secrets` を含む）。 |
-| M6-06 | todo | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
+| M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
+| M6-06 | done | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
 
 ---
+
 ## Next（いま着手する3つ）
 
-1) M6-06 determinism / size profile / excluded guidance の改善
-2) handoff と ops をつなぐ運用ドキュメント整理（README / workflow）
-3) `--include-binary` / `--binary-mode raw|patch|meta` の具体化
+1) handoff / ops の end-to-end 運用ドキュメント整理（`build` → AI → `loop` の一連フロー）
+2) packing limits / binary policy の具体化（`EXIT_PACKING_LIMITS` を実動させる仕様整理）
+3) handoff preview / TUI 導線の検討（bundle を作る前に含有物を確認できる導線）
 
 （候補）
-- `--include-binary` / `--binary-mode raw|patch|meta`
-- `.diffshipignore` の適用
-- part size 上限を超えたときの自動 split/exclude
+- verify の config-driven profiles（`[verify.profiles.*]`）強化
+- handoff の split policy 改良（profile別のサイズ上限 / 再分割戦略）
+- bundle 比較/再現確認コマンド
 
 ## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
-
-- M6-01 のフォローアップ（CI fix）:
-  - `tests/m6_handoff_build.rs` は predicates の `eval` を使わずに `str::contains` に統一（trait import漏れ/依存増を避ける）
-  - `tests/m6_handoff_build.rs` は default branch 名（main/master）を仮定せず、`rev-parse --abbrev-ref HEAD` で取得したブランチ名を使う
-  - `src/handoff.rs` は `clippy::too-many-arguments` を避けるため `HandoffDocInputs` に集約
-
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。
-
-- M6-02 実装メモ:
-  - `diffship build` は `--include-staged` / `--include-unstaged` / `--include-untracked` と `--no-committed` を受け付ける
-  - untracked は現時点では text add-diff のみ。binary/unreadable は File Table に skip note を残し、attachments は M6-03 で扱う
-  - `docs/TRACEABILITY.md` の `Status: Partial` は、Tests か Code のどちらかに `TBD` が残る場合だけ使う（両方埋まっていれば `Implemented`）
-
-- M6-03 では split-by=commit は committed range のみ。untracked は auto で text/small → patch、binary/unreadable → attachments.zip、meta は excluded.md に送る。
-- M6-03 フォローアップ: README では生成物（HANDOFF.md / parts/ / attachments.zip / excluded.md）を backtick の path 参照として書かない。docs-check は repo 内実在パスとして検証するため。
-- `zip` crate 0.6 系では `zip::write::FileOptions` に lifetime/generic を付けず `FileOptions` として扱う。
-- M6-04 では HANDOFF.md を bundle の入口ドキュメントとして扱う。最低限、Start Here / TL;DR / Change Map / Parts Index を毎回生成し、tests で章立てを固定する。
-
-- M6-05 では `.diffshipignore` を build 側で直接読み、committed/staged/unstaged/untracked の各 segment に後段フィルタとして適用する。
-- secrets warning は `secrets.md` + `HANDOFF.md` に記録し、非TTYでは `--yes` なしで exit code 4、CI では `--fail-on-secrets` を使う。
-- 予約だけ先に入れる exit code（例: packing limits）は `#[allow(dead_code)]` を付ける。`-D warnings` を前提に番号だけ残す場合のフォローアップ。
+- Traceability の `Partial` は Tests/Code のどちらかに `TBD` が残る場合だけ使う。
+- 予約だけ先に入れる handoff exit code には `#[allow(dead_code)]` を付ける。
+- M6-06 golden normalizer は UTF-8 を壊さないこと。hash placeholder 置換は byte 直書きではなく char 境界で進める。

@@ -235,8 +235,6 @@ diffship OS の重要な意思決定ログです。
   - range指定 + determinism + split を先に固めると拡張が容易
 - Implications:
   - 既存の `diffship tui`（ops可視化/loop支援）は維持し、handoffのTUI/previewは後続で扱う
-
-
 ---
 
 ## D-019: `diffship build` MVP は「committed-only + 1 part」から始め、出力を安定させる
@@ -305,7 +303,6 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - 部分実装を表現したい場合でも、どちらか一方は `TBD` を残して `Partial` を使う。
 
-
 ---
 
 ## D-024: M6-03 の split / untracked 方針
@@ -352,7 +349,6 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - テストでは章立てと first patch の導線を確認し、出力の入口構造を壊さない。
 
-
 ---
 
 ## D-027: M6-05 の ignore / secrets warning 方針
@@ -369,6 +365,8 @@ diffship OS の重要な意思決定ログです。
   - `diffship build` は `--yes` / `--fail-on-secrets` を持つ。
   - HANDOFF.md は secrets warning / ignore active の状態を入口で明示する。
 
+---
+
 ## D-028: 予約だけ先に入れる handoff exit code には `#[allow(dead_code)]` を付ける
 
 - Date: 2026-03-06
@@ -382,3 +380,29 @@ diffship OS の重要な意思決定ログです。
   - 将来 M6-06 以降で packing limit 系の失敗を実装したら `allow` を外す。
 
 ---
+
+## D-029: M6-06 では handoff 出力順序と zip metadata を固定し、golden tests を追加する
+
+- Date: 2026-03-06
+- Decision:
+  - `HANDOFF.md` の File Table など、bundle内の一覧は **docs → config → source → tests → other** のカテゴリ順、その後 path 昇順、最後に segment 順（committed → staged → unstaged → untracked）で固定する。
+  - diffship が生成する zip（bundle zip / attachments.zip）は、entry順をソートし、zip metadata の mtime は固定値（zip crate default）を使う。
+  - determinism は `tests/m6_handoff_determinism.rs` と `tests/golden/` の fixture で守る。
+- Rationale:
+  - 同じ入力から同じ bundle tree / zip bytes を得られるようにして、golden tests と bundle比較を安定させるため。
+- Implications:
+  - 今後 ordering rule を変える場合は `docs/DETERMINISM.md` と golden fixture を同時更新する。
+  - zip metadata を変える場合は raw zip 比較テストも見直す。
+
+---
+
+## D-030: golden 正規化は UTF-8 を保持する
+
+- Date: 2026-03-06
+- Decision:
+  - golden fixture 比較用の正規化では、40桁hex置換をしても UTF-8 記号（例: `→`）を壊さない実装にする。
+- Rationale:
+  - byte 単位で文字列を再構成すると、非ASCII文字が文字化けして golden test が偽陽性で落ちるため。
+- Implications:
+  - placeholder 置換は char 境界で進める。
+  - golden は「実出力差」だけを検出し、正規化起因の差分を混ぜない。

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use time::format_description;
 use zip::write::FileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, DateTime as ZipDateTime, ZipWriter};
 
 const AUTO_PATCH_MAX_BYTES: usize = 64 * 1024;
 
@@ -247,15 +247,17 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                 for row in &mut segment.rows {
                     row.part = part_name.clone();
                 }
+                let mut commit_files = segment
+                    .rows
+                    .iter()
+                    .map(|r| (r.path.clone(), part_name.clone()))
+                    .collect::<Vec<_>>();
+                commit_files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
                 commit_views.push(CommitView {
                     hash7: cp.hash7,
                     subject: cp.subject,
                     date: cp.date,
-                    files: segment
-                        .rows
-                        .iter()
-                        .map(|r| (r.path.clone(), part_name.clone()))
-                        .collect(),
+                    files: commit_files,
                     ins: sum_opt(segment.rows.iter().map(|r| r.ins)),
                     del: sum_opt(segment.rows.iter().map(|r| r.del)),
                 });
@@ -324,7 +326,11 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             rows.extend(seg.rows.clone());
         }
         let patch = render_segmented_patch(&worktree_segments);
-        let segments = worktree_segments.iter().map(|s| s.name.clone()).collect();
+        let mut segments = worktree_segments
+            .iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<_>>();
+        sort_segments(&mut segments);
         parts.push(PartOutput {
             name: part_name,
             patch,
@@ -333,7 +339,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     }
 
     rows.extend(extra_rows);
-    rows.sort_by(|a, b| a.segment.cmp(&b.segment).then(a.path.cmp(&b.path)));
+    sort_file_rows(&mut rows);
 
     if parts.is_empty() {
         parts.push(PartOutput {
@@ -751,6 +757,7 @@ fn build_untracked_segment(
         }
     }
 
+    sort_file_rows(&mut rows);
     let patch_rows = rows
         .iter()
         .filter(|r| r.part.is_empty())
@@ -1017,6 +1024,58 @@ fn count_text_lines(s: &str) -> u64 {
     }
 }
 
+fn segment_rank(segment: &str) -> u8 {
+    match segment {
+        "committed" => 0,
+        "staged" => 1,
+        "unstaged" => 2,
+        "untracked" => 3,
+        _ => 9,
+    }
+}
+
+fn path_category_rank(path: &str) -> u8 {
+    if path.starts_with("docs/") || path.ends_with(".md") {
+        0
+    } else if path.starts_with(".github/")
+        || path.ends_with(".toml")
+        || path.ends_with(".yml")
+        || path.ends_with(".yaml")
+        || path.ends_with(".json")
+        || path.ends_with(".lock")
+    {
+        1
+    } else if path.starts_with("src/") {
+        2
+    } else if path.starts_with("tests/") {
+        3
+    } else {
+        4
+    }
+}
+
+fn sort_segments(segments: &mut [String]) {
+    segments.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)).then(a.cmp(b)));
+}
+
+fn sort_file_rows(rows: &mut [FileRow]) {
+    rows.sort_by(|a, b| {
+        path_category_rank(&a.path)
+            .cmp(&path_category_rank(&b.path))
+            .then(a.path.cmp(&b.path))
+            .then(segment_rank(&a.segment).cmp(&segment_rank(&b.segment)))
+            .then(a.status.cmp(&b.status))
+            .then(a.note.cmp(&b.note))
+    });
+}
+
+fn deterministic_zip_file_options() -> FileOptions {
+    FileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .last_modified_time(ZipDateTime::default())
+        .unix_permissions(0o644)
+}
+
 fn run_git_allow_diff_status<I, S>(git_root: &Path, args: I) -> Result<String, ExitError>
 where
     I: IntoIterator<Item = S>,
@@ -1067,9 +1126,7 @@ fn write_attachments_zip(path: &Path, entries: &[AttachmentEntry]) -> Result<(),
         )
     })?;
     let mut zip = ZipWriter::new(file);
-    let opts: FileOptions = FileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .unix_permissions(0o644);
+    let opts = deterministic_zip_file_options();
     let mut sorted = entries.to_vec();
     sorted.sort_by(|a, b| a.zip_path.cmp(&b.zip_path));
     for entry in sorted {
@@ -1411,6 +1468,7 @@ fn parse_name_status(
             part: String::new(),
         });
     }
+    sort_file_rows(&mut rows);
     rows
 }
 
@@ -1915,9 +1973,7 @@ fn write_zip_from_dir(src_dir: &Path, zip_path: &Path) -> Result<(), ExitError> 
     let file = fs::File::create(zip_path)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create zip: {e}")))?;
     let mut zip = ZipWriter::new(file);
-    let opts: FileOptions = FileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .unix_permissions(0o644);
+    let opts = deterministic_zip_file_options();
     add_dir_recursive(&mut zip, opts, src_dir, "")?;
     zip.finish()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to finalize zip: {e}")))?;

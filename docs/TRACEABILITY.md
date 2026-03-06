@@ -21,7 +21,7 @@ Conventions:
 - **S-GOAL-001** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-002** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-003** — Tests: TBD — Code: TBD — Status: Planned
-- **S-GOAL-004** — Tests: TBD — Code: TBD — Status: Planned
+- **S-GOAL-004** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-GOAL-005** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-006** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-007** — Tests: TBD — Code: `src/ops/*` — Status: Planned
@@ -106,7 +106,7 @@ Conventions:
 
 ## Packing / fallback
 
-- **S-PACK-001** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
+- **S-PACK-001** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-PACK-002** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
 - **S-PACK-003** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
 - **S-PACK-004** — Tests: TBD — Code: `src/pack.rs` — Status: Planned

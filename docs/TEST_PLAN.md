@@ -25,7 +25,7 @@ Golden tests are valuable when outputs must be deterministic.
 
 Suggested strategy:
 
-- Keep fixtures **small**.
+- Keep fixtures **small**. Store committed golden files under `tests/golden/`.
 - Normalize unstable fields before comparing (e.g., output directory names).
 - Prefer comparing:
   - `HANDOFF.md`

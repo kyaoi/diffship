@@ -42,7 +42,7 @@ Use a single, explicit sorting policy everywhere:
 2. Within a category, sort by normalized relative path (ascending, byte order / lexicographic).
 3. Parts are ordered by their numeric index (`part_01`, `part_02`, …).
 
-If a list contains mixed sources (committed/staged/unstaged/untracked), the segment order must be explicit and stable.
+If a list contains mixed sources (committed/staged/unstaged/untracked), the segment order must be explicit and stable: `committed → staged → unstaged → untracked`.
 
 ---
 
@@ -53,7 +53,7 @@ For deterministic bundles, avoid embedding unstable metadata:
 - Avoid including timestamps in file contents.
 - For archives (zip), prefer normalizing or fixing:
   - entry order
-  - modification time (if supported)
+  - modification time (diffship uses a fixed zip timestamp for generated archives)
   - permissions (when possible)
 
 If strict zip determinism is difficult on all platforms, prefer golden tests that compare **extracted, normalized trees**
@@ -63,9 +63,10 @@ rather than raw zip bytes.
 
 ## Recommended testing strategy
 
-- Start with snapshots for:
+- Start with snapshots / golden fixtures for:
   - `diffship --help` output
   - `HANDOFF.md`
+  - normalized `parts/part_XX.patch`
 - For bundle structure, compare:
   - list of paths inside the bundle
   - `HANDOFF.md` content
