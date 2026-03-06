@@ -3,6 +3,9 @@ use std::fmt;
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_GENERAL: i32 = 1;
 pub const EXIT_NOT_GIT_REPO: i32 = 2;
+#[allow(dead_code)]
+pub const EXIT_PACKING_LIMITS: i32 = 3;
+pub const EXIT_SECRETS_WARNING: i32 = 4;
 
 // Ops-specific codes (see docs/SPEC_V1.md)
 pub const EXIT_DIRTY_WORKTREE: i32 = 5;

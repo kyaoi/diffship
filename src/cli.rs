@@ -115,6 +115,14 @@ pub struct BuildArgs {
     /// Also create a zip bundle next to the output directory
     #[arg(long, default_value_t = false)]
     pub zip: bool,
+
+    /// Automatically continue when secrets-like content is detected
+    #[arg(long, default_value_t = false)]
+    pub yes: bool,
+
+    /// Refuse the build when secrets-like content is detected
+    #[arg(long, default_value_t = false)]
+    pub fail_on_secrets: bool,
 }
 
 #[derive(Debug, Args)]

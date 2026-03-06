@@ -10,8 +10,8 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md, and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
-> `.diffshipignore`, secrets warning, and preview are still planned.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
+> Preview and richer binary policies are still planned.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
 
@@ -76,7 +76,7 @@ All commands below are implemented.
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
-- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md)
+- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md)
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches
@@ -105,6 +105,12 @@ diffship build --range-mode direct --from HEAD~3 --to HEAD --split-by commit
 
 # keep untracked files as metadata only
 diffship build --no-committed --include-untracked --untracked-mode meta
+
+# continue after a secrets warning (non-interactive)
+diffship build --yes
+
+# fail in CI when secrets-like content is detected
+diffship build --fail-on-secrets
 ```
 
 Output layout:
@@ -112,6 +118,8 @@ Output layout:
 - parts/part_XX.patch
 - attachments.zip (when raw attachments exist)
 - excluded.md (when files are intentionally omitted)
+- secrets.md (when secrets-like content is detected; paths + reasons only)
+- .diffshipignore is respected when present
 
 ## Configuration
 

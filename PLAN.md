@@ -136,17 +136,17 @@ diffship loop <patch-bundle.zip>
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
 | M6-02 | done | diff収集（committed/staged/unstaged/untracked） | committed/staged/unstaged/untracked を CLI で選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | done | 分割（split-by）+ excluded/attachments | `--split-by auto|file|commit`、`attachments.zip`、`excluded.md` を生成できる。 |
+| M6-03 | done | 分割（split-by）+ excluded/attachments | `--split-by auto\|file\|commit`、`attachments.zip`、`excluded.md` を生成できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
-| M6-05 | todo | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
+| M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（`--yes` / `--fail-on-secrets` を含む）。 |
 | M6-06 | todo | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
 
 ---
 ## Next（いま着手する3つ）
 
-1) M6-05 ignore / `.diffshipignore` / binary policy
-2) M6-06 determinism / size profile / excluded guidance の改善
-3) handoff と ops をつなぐ運用ドキュメント整理（README / workflow）
+1) M6-06 determinism / size profile / excluded guidance の改善
+2) handoff と ops をつなぐ運用ドキュメント整理（README / workflow）
+3) `--include-binary` / `--binary-mode raw|patch|meta` の具体化
 
 （候補）
 - `--include-binary` / `--binary-mode raw|patch|meta`
@@ -174,3 +174,7 @@ diffship loop <patch-bundle.zip>
 - M6-03 フォローアップ: README では生成物（HANDOFF.md / parts/ / attachments.zip / excluded.md）を backtick の path 参照として書かない。docs-check は repo 内実在パスとして検証するため。
 - `zip` crate 0.6 系では `zip::write::FileOptions` に lifetime/generic を付けず `FileOptions` として扱う。
 - M6-04 では HANDOFF.md を bundle の入口ドキュメントとして扱う。最低限、Start Here / TL;DR / Change Map / Parts Index を毎回生成し、tests で章立てを固定する。
+
+- M6-05 では `.diffshipignore` を build 側で直接読み、committed/staged/unstaged/untracked の各 segment に後段フィルタとして適用する。
+- secrets warning は `secrets.md` + `HANDOFF.md` に記録し、非TTYでは `--yes` なしで exit code 4、CI では `--fail-on-secrets` を使う。
+- 予約だけ先に入れる exit code（例: packing limits）は `#[allow(dead_code)]` を付ける。`-D warnings` を前提に番号だけ残す場合のフォローアップ。

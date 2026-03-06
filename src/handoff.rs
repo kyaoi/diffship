@@ -1,9 +1,9 @@
 use crate::cli::BuildArgs;
-use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::exit::{EXIT_GENERAL, EXIT_SECRETS_WARNING, ExitError};
 use crate::git;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use time::format_description;
@@ -137,6 +137,64 @@ struct CommitView {
     del: Option<u64>,
 }
 
+#[derive(Debug, Clone)]
+struct SecretHit {
+    path: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct IgnoreMatcher {
+    rules: Vec<IgnoreRule>,
+}
+
+#[derive(Debug, Clone)]
+struct IgnoreRule {
+    pattern: String,
+    dir_only: bool,
+}
+
+impl IgnoreMatcher {
+    fn load(git_root: &Path) -> Result<Self, ExitError> {
+        let path = git_root.join(".diffshipignore");
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let text = fs::read_to_string(&path).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to read {}: {e}", path.display()),
+            )
+        })?;
+        let mut rules = Vec::new();
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let dir_only = line.ends_with('/');
+            let pat = line.trim_start_matches('/').trim_end_matches('/');
+            if pat.is_empty() {
+                continue;
+            }
+            rules.push(IgnoreRule {
+                pattern: pat.replace('\\', "/"),
+                dir_only,
+            });
+        }
+        Ok(Self { rules })
+    }
+
+    fn is_ignored(&self, rel: &str) -> bool {
+        let rel = rel.replace('\\', "/");
+        self.rules.iter().any(|r| rule_matches(r, &rel))
+    }
+
+    fn has_rules(&self) -> bool {
+        !self.rules.is_empty()
+    }
+}
+
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
@@ -161,6 +219,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
 
     let sources = SourceSelection::from_args(&args)?;
+    let ignore = IgnoreMatcher::load(git_root)?;
     let head = git::rev_parse(git_root, "HEAD")?;
     let plan = if sources.include_committed {
         Some(build_range_plan(git_root, &args)?)
@@ -181,7 +240,10 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
             for cp in committed_parts {
                 let part_name = format!("part_{:02}.patch", parts.len() + 1);
-                let mut segment = cp.segment;
+                let mut segment = filter_segment_output(cp.segment, &ignore);
+                if segment.rows.is_empty() || segment.patch.trim().is_empty() {
+                    continue;
+                }
                 for row in &mut segment.rows {
                     row.part = part_name.clone();
                 }
@@ -206,26 +268,37 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             }
         } else {
             let part_name = format!("part_{:02}.patch", parts.len() + 1);
-            let segment = build_committed_segment(git_root, plan, &part_name)?;
-            rows.extend(segment.rows.clone());
-            parts.push(PartOutput {
-                name: part_name,
-                patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                segments: vec![segment.name],
-            });
+            let segment = filter_segment_output(
+                build_committed_segment(git_root, plan, &part_name)?,
+                &ignore,
+            );
+            if !segment.rows.is_empty() && !segment.patch.trim().is_empty() {
+                rows.extend(segment.rows.clone());
+                parts.push(PartOutput {
+                    name: part_name,
+                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                    segments: vec![segment.name],
+                });
+            }
         }
     }
 
     let mut worktree_segments = Vec::<SegmentOutput>::new();
     let mut extra_rows = Vec::<FileRow>::new();
     if sources.include_staged {
-        worktree_segments.push(build_staged_segment(git_root, "")?);
+        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &ignore);
+        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+            worktree_segments.push(seg);
+        }
     }
     if sources.include_unstaged {
-        worktree_segments.push(build_unstaged_segment(git_root, "")?);
+        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &ignore);
+        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+            worktree_segments.push(seg);
+        }
     }
     if sources.include_untracked {
-        let built = build_untracked_segment(git_root, untracked_mode)?;
+        let built = build_untracked_segment(git_root, untracked_mode, &ignore)?;
         if let Some(seg) = built.segment {
             worktree_segments.push(seg);
         }
@@ -262,6 +335,14 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     rows.extend(extra_rows);
     rows.sort_by(|a, b| a.segment.cmp(&b.segment).then(a.path.cmp(&b.path)));
 
+    if parts.is_empty() {
+        parts.push(PartOutput {
+            name: "part_01.patch".to_string(),
+            patch: "# (no changes)\n".to_string(),
+            segments: vec!["meta".to_string()],
+        });
+    }
+
     for part in &parts {
         write_text_file(&parts_dir.join(&part.name), &part.patch)?;
     }
@@ -272,6 +353,14 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         write_text_file(
             &out_dir.join("excluded.md"),
             &render_excluded_md(&exclusions),
+        )?;
+    }
+
+    let secret_hits = scan_bundle_for_secrets(&parts, &attachments)?;
+    if !secret_hits.is_empty() {
+        write_text_file(
+            &out_dir.join("secrets.md"),
+            &render_secrets_md(&secret_hits),
         )?;
     }
 
@@ -300,8 +389,12 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         commit_views: &commit_views,
         attachments: &attachments,
         exclusions: &exclusions,
+        ignore_enabled: ignore.has_rules(),
+        secret_hits: &secret_hits,
     });
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
+
+    handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;
 
     let mut zip_path = None;
     if args.zip {
@@ -319,6 +412,9 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     }
     if !exclusions.is_empty() {
         println!("diffship build: created {}/excluded.md", out_dir.display());
+    }
+    if !secret_hits.is_empty() {
+        println!("diffship build: created {}/secrets.md", out_dir.display());
     }
     if let Some(zp) = zip_path {
         println!("diffship build: created {}", zp.display());
@@ -515,6 +611,7 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
 fn build_untracked_segment(
     git_root: &Path,
     mode: UntrackedMode,
+    ignore: &IgnoreMatcher,
 ) -> Result<SegmentBuildResult, ExitError> {
     let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
     let mut paths = list
@@ -531,6 +628,9 @@ fn build_untracked_segment(
     let mut exclusions = vec![];
 
     for rel in paths {
+        if ignore.is_ignored(&rel) {
+            continue;
+        }
         let abs = git_root.join(&rel);
         let bytes = fs::read(&abs).map_err(|e| {
             ExitError::new(
@@ -1006,6 +1106,254 @@ fn render_excluded_md(exclusions: &[ExclusionEntry]) -> String {
     s
 }
 
+fn render_secrets_md(hits: &[SecretHit]) -> String {
+    let mut items = hits.to_vec();
+    items.sort_by(|a, b| a.path.cmp(&b.path).then(a.reason.cmp(&b.reason)));
+    let mut s = String::new();
+    s.push_str("# secrets.md\n\n");
+    s.push_str("Potential secrets-like content was detected. Paths and reasons are listed below; secret values are intentionally not shown.\n\n");
+    s.push_str("| path | reason |\n");
+    s.push_str("|---|---|\n");
+    for item in items {
+        s.push_str(&format!("| `{}` | {} |\n", item.path, item.reason));
+    }
+    s
+}
+
+fn handle_secret_hits(
+    hits: &[SecretHit],
+    yes: bool,
+    fail_on_secrets: bool,
+) -> Result<(), ExitError> {
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let summary = format!(
+        "secrets-like content detected ({} hit(s)); see secrets.md for paths and reasons",
+        hits.len()
+    );
+    eprintln!("warning: {summary}");
+    if fail_on_secrets {
+        return Err(ExitError::new(
+            EXIT_SECRETS_WARNING,
+            format!("refused: {summary} (fail-on-secrets)"),
+        ));
+    }
+    if yes {
+        return Ok(());
+    }
+    if io::stdin().is_terminal() && io::stderr().is_terminal() {
+        eprint!("Continue anyway? [y/N]: ");
+        io::stderr()
+            .flush()
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to flush prompt: {e}")))?;
+        let mut line = String::new();
+        io::stdin()
+            .read_line(&mut line)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read answer: {e}")))?;
+        let accepted = matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes");
+        if accepted {
+            Ok(())
+        } else {
+            Err(ExitError::new(
+                EXIT_SECRETS_WARNING,
+                format!("refused: {summary}; rerun with --yes to continue"),
+            ))
+        }
+    } else {
+        Err(ExitError::new(
+            EXIT_SECRETS_WARNING,
+            format!("refused: {summary}; rerun with --yes to continue or --fail-on-secrets for CI"),
+        ))
+    }
+}
+
+fn scan_bundle_for_secrets(
+    parts: &[PartOutput],
+    attachments: &[AttachmentEntry],
+) -> Result<Vec<SecretHit>, ExitError> {
+    let mut hits = Vec::new();
+    for part in parts {
+        for reason in detect_secret_reasons(&part.patch) {
+            hits.push(SecretHit {
+                path: format!("parts/{}", part.name),
+                reason,
+            });
+        }
+    }
+    for item in attachments {
+        if item.bytes.len() > 2_000_000 {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&item.bytes);
+        for reason in detect_secret_reasons(&text) {
+            hits.push(SecretHit {
+                path: format!("attachments.zip:{}", item.zip_path),
+                reason,
+            });
+        }
+    }
+    hits.sort_by(|a, b| a.path.cmp(&b.path).then(a.reason.cmp(&b.reason)));
+    hits.dedup_by(|a, b| a.path == b.path && a.reason == b.reason);
+    Ok(hits)
+}
+
+fn detect_secret_reasons(s: &str) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if contains_private_key_block(s) {
+        reasons.push("private key block".to_string());
+    }
+    if contains_aws_access_key_id(s) {
+        reasons.push("AWS access key id-like".to_string());
+    }
+    if contains_github_token(s) {
+        reasons.push("GitHub token-like".to_string());
+    }
+    if contains_slack_token(s) {
+        reasons.push("Slack token-like".to_string());
+    }
+    reasons
+}
+
+fn filter_segment_output(segment: SegmentOutput, ignore: &IgnoreMatcher) -> SegmentOutput {
+    if !ignore.has_rules() {
+        return segment;
+    }
+    let keep = segment
+        .rows
+        .iter()
+        .filter(|r| !ignore.is_ignored(&r.path))
+        .map(|r| r.path.clone())
+        .collect::<BTreeSet<_>>();
+    let rows = segment
+        .rows
+        .into_iter()
+        .filter(|r| keep.contains(&r.path))
+        .collect::<Vec<_>>();
+    let patch = filter_patch_by_paths(&segment.patch, &keep);
+    SegmentOutput {
+        name: segment.name,
+        patch,
+        rows,
+    }
+}
+
+fn filter_patch_by_paths(patch: &str, keep: &BTreeSet<String>) -> String {
+    if keep.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut current = String::new();
+    for line in patch.lines() {
+        if line.starts_with("diff --git ") && !current.is_empty() {
+            append_patch_chunk(&mut out, &current, keep);
+            current.clear();
+        }
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(line);
+    }
+    if !current.is_empty() {
+        append_patch_chunk(&mut out, &current, keep);
+    }
+    out
+}
+
+fn append_patch_chunk(out: &mut String, chunk: &str, keep: &BTreeSet<String>) {
+    if let Some(path) = patch_chunk_path(chunk)
+        && keep.contains(&path)
+    {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(chunk.trim_end());
+        out.push('\n');
+    }
+}
+
+fn patch_chunk_path(chunk: &str) -> Option<String> {
+    let first = chunk.lines().next()?;
+    let rest = first.strip_prefix("diff --git ")?;
+    let mut parts = rest.split_whitespace();
+    let a = parts.next()?.strip_prefix("a/").unwrap_or("");
+    let b = parts.next()?.strip_prefix("b/").unwrap_or("");
+    let path = if b.is_empty() { a } else { b };
+    Some(path.to_string())
+}
+
+fn rule_matches(rule: &IgnoreRule, rel: &str) -> bool {
+    if rule.dir_only {
+        return rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern));
+    }
+    if simple_glob_match(&rule.pattern, rel) {
+        return true;
+    }
+    if !rule.pattern.contains('/') {
+        for part in rel.split('/') {
+            if simple_glob_match(&rule.pattern, part) {
+                return true;
+            }
+        }
+    }
+    rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern))
+}
+
+fn simple_glob_match(pattern: &str, text: &str) -> bool {
+    fn inner(p: &[u8], t: &[u8]) -> bool {
+        if p.is_empty() {
+            return t.is_empty();
+        }
+        match p[0] {
+            b'*' => inner(&p[1..], t) || (!t.is_empty() && inner(p, &t[1..])),
+            b'?' => !t.is_empty() && inner(&p[1..], &t[1..]),
+            c => !t.is_empty() && c == t[0] && inner(&p[1..], &t[1..]),
+        }
+    }
+    inner(pattern.as_bytes(), text.as_bytes())
+}
+
+fn contains_private_key_block(s: &str) -> bool {
+    s.contains("BEGIN RSA PRIVATE KEY")
+        || s.contains("BEGIN OPENSSH PRIVATE KEY")
+        || s.contains("BEGIN EC PRIVATE KEY")
+        || s.contains("BEGIN PGP PRIVATE KEY BLOCK")
+}
+
+fn contains_aws_access_key_id(s: &str) -> bool {
+    contains_prefixed_token(s, "AKIA", 16) || contains_prefixed_token(s, "ASIA", 16)
+}
+
+fn contains_prefixed_token(s: &str, prefix: &str, len_after: usize) -> bool {
+    let bytes = s.as_bytes();
+    let p = prefix.as_bytes();
+    if bytes.len() < p.len() + len_after {
+        return false;
+    }
+    let mut i = 0;
+    while i + p.len() + len_after <= bytes.len() {
+        if &bytes[i..i + p.len()] == p {
+            let after = &bytes[i + p.len()..i + p.len() + len_after];
+            if after
+                .iter()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+fn contains_github_token(s: &str) -> bool {
+    s.contains("ghp_") || s.contains("github_pat_")
+}
+
+fn contains_slack_token(s: &str) -> bool {
+    s.contains("xoxb-") || s.contains("xoxp-") || s.contains("xoxa-")
+}
+
 fn parse_numstat(s: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
     let mut map = HashMap::new();
     for line in s.lines() {
@@ -1277,6 +1625,8 @@ struct HandoffDocInputs<'a> {
     commit_views: &'a [CommitView],
     attachments: &'a [AttachmentEntry],
     exclusions: &'a [ExclusionEntry],
+    ignore_enabled: bool,
+    secret_hits: &'a [SecretHit],
 }
 
 fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
@@ -1336,6 +1686,9 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     if !inp.exclusions.is_empty() {
         s.push_str("6. Check excluded.md for files that were omitted on purpose and why.\n");
     }
+    if !inp.secret_hits.is_empty() {
+        s.push_str("7. Review secrets.md before sharing the bundle. It lists only paths and reasons, never secret values.\n");
+    }
 
     s.push_str("\n---\n\n");
     s.push_str("## TL;DR\n");
@@ -1364,6 +1717,10 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- Current HEAD (workspace base): `{}`\n",
         inp.head.trim()
     ));
+    s.push_str(&format!(
+        "- Ignore rules: `.diffshipignore` = `{}`\n",
+        yes_no(inp.ignore_enabled)
+    ));
     if !inp.attachments.is_empty() {
         s.push_str(&format!(
             "- Attachments: `attachments.zip` ({} file(s))\n",
@@ -1374,6 +1731,12 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         s.push_str(&format!(
             "- Exclusions: `excluded.md` ({} item(s))\n",
             inp.exclusions.len()
+        ));
+    }
+    if !inp.secret_hits.is_empty() {
+        s.push_str(&format!(
+            "- Secrets warnings: `secrets.md` ({} hit(s))\n",
+            inp.secret_hits.len()
         ));
     }
     s.push_str("- Reading order:\n");
@@ -1412,6 +1775,10 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- untracked: `{}` (base: `HEAD`, mode: `{}`)\n",
         yes_no(inp.sources.include_untracked),
         untracked_label(inp.untracked_mode)
+    ));
+    s.push_str(&format!(
+        "- .diffshipignore active: `{}`\n",
+        yes_no(inp.ignore_enabled)
     ));
 
     s.push_str("\n---\n\n## 2) Change Map\n\n");
@@ -1481,16 +1848,25 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         s.push_str("\n---\n\n## 6) Exclusions\nSee `excluded.md`.\n");
     }
 
+    if !inp.secret_hits.is_empty() {
+        s.push_str("\n---\n\n## 7) Secrets Warnings\n");
+        s.push_str("Potential secrets-like content was detected. Review `secrets.md` before sharing the bundle. Only paths and reasons are listed there.\n");
+    }
+
     s.push_str("\n---\n\n## Where to start\n\n");
     s.push_str("Open this document first.\n");
     s.push_str(&format!("Then apply/read `{}`.\n", inp.first_part_rel));
     if !inp.attachments.is_empty() {
         s.push_str("After patch parts, inspect `attachments.zip` for raw files that were intentionally kept out of patch text.\n");
     }
+    if !inp.secret_hits.is_empty() {
+        s.push_str("Before sharing externally, review `secrets.md`.\n");
+    }
 
     s.push_str("\n---\n\n## Notes\n");
     s.push_str("- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.\n");
     s.push_str("- Binary/unreadable untracked files default to raw attachments in auto mode.\n");
+    s.push_str("- `.diffshipignore` is applied before writing parts / attachments / exclusions.\n");
     s
 }
 

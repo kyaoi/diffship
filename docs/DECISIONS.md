@@ -352,3 +352,33 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - テストでは章立てと first patch の導線を確認し、出力の入口構造を壊さない。
 
+
+---
+
+## D-027: M6-05 の ignore / secrets warning 方針
+
+- Date: 2026-03-06
+- Decision:
+  - build 側は `.diffshipignore` を直接読み、committed / staged / unstaged / untracked の各 segment に同じ除外ルールを適用する。
+  - secrets-like content を検知した場合は `secrets.md` と `HANDOFF.md` に **path + reason only** で記録し、値は出さない。
+  - 非TTYで secrets が出た場合は `--yes` がない限り exit code 4 で止める。CI では `--fail-on-secrets` を使う。
+- Rationale:
+  - handoff bundle をそのまま外部 AI に渡すことを想定すると、build 時点で共有リスクを見せる必要があるため。
+  - ignore は source type ごとに挙動がズレると bundle の説明可能性が下がるため、全 segment で一貫適用にする。
+- Implications:
+  - `diffship build` は `--yes` / `--fail-on-secrets` を持つ。
+  - HANDOFF.md は secrets warning / ignore active の状態を入口で明示する。
+
+## D-028: 予約だけ先に入れる handoff exit code には `#[allow(dead_code)]` を付ける
+
+- Date: 2026-03-06
+- Decision:
+  - handoff 側でも、SPEC 先行で exit code を予約する場合は実装が参照するまで `#[allow(dead_code)]` を付ける。
+  - 今回の `EXIT_PACKING_LIMITS=3` は将来の size/profile 制御用として残し、未使用警告だけ抑制する。
+- Rationale:
+  - `clippy -D warnings` を壊さずに、SPEC と実装の番号対応を維持するため。
+- Implications:
+  - exit code の削除ではなく「予約したまま許容する」を基本にする。
+  - 将来 M6-06 以降で packing limit 系の失敗を実装したら `allow` を外す。
+
+---

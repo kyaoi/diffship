@@ -432,3 +432,128 @@ fn build_untracked_meta_creates_excluded_md() {
     let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
     assert!(handoff.contains("## 6) Exclusions"));
 }
+
+#[test]
+fn build_respects_diffshipignore_for_committed_and_untracked() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("visible.txt"), "keep\n").unwrap();
+    fs::write(root.join("secret.txt"), "hide\n").unwrap();
+    fs::write(root.join(".diffshipignore"), "secret.txt\nskipdir/\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("visible.txt"), "keep2\n").unwrap();
+    fs::write(root.join("secret.txt"), "hide2\n").unwrap();
+    commit_all(root, "second");
+
+    fs::write(root.join("visible.txt"), "keep3\n").unwrap();
+    fs::create_dir_all(root.join("skipdir")).unwrap();
+    fs::write(root.join("skipdir").join("note.txt"), "ignored\n").unwrap();
+    fs::write(root.join("notes.txt"), "shown\n").unwrap();
+
+    let out = root.join("bundle_ignore");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--include-untracked", "--yes", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let mut patch_all = String::new();
+    for ent in fs::read_dir(out.join("parts")).unwrap() {
+        let path = ent.unwrap().path();
+        patch_all.push_str(&fs::read_to_string(path).unwrap());
+    }
+    assert!(patch_all.contains("visible.txt"));
+    assert!(patch_all.contains("+keep2") || patch_all.contains("+keep3"));
+    assert!(!patch_all.contains("secret.txt"));
+    assert!(patch_all.contains("notes.txt"));
+    assert!(!patch_all.contains("skipdir/note.txt"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("Ignore rules: `.diffshipignore` = `yes`"));
+    assert!(handoff.contains("visible.txt"));
+    assert!(!handoff.contains("secret.txt"));
+}
+
+#[test]
+fn build_secrets_fail_without_yes_in_non_tty() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "safe\n").unwrap();
+    commit_all(root, "base");
+    fs::write(
+        root.join("token.txt"),
+        "ghp_abcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+    commit_all(root, "secret");
+
+    let out = root.join("bundle_secret_fail");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).args(["build", "--out"]).arg(&out);
+    cmd.assert()
+        .failure()
+        .code(4)
+        .stderr(predicates::str::contains(
+            "refused: secrets-like content detected",
+        ));
+    assert!(out.join("secrets.md").exists());
+}
+
+#[test]
+fn build_secrets_yes_creates_report_and_handoff_note() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "safe\n").unwrap();
+    commit_all(root, "base");
+    fs::write(
+        root.join("token.txt"),
+        "ghp_abcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+    commit_all(root, "secret");
+
+    let out = root.join("bundle_secret_yes");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--yes", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let secrets = fs::read_to_string(out.join("secrets.md")).unwrap();
+    assert!(secrets.contains("parts/part_01.patch"));
+    assert!(secrets.contains("GitHub token-like"));
+    assert!(!secrets.contains("ghp_abcdefghijklmnopqrstuvwxyz123456"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("## 7) Secrets Warnings"));
+    assert!(handoff.contains("secrets.md"));
+}
+
+#[test]
+fn build_fail_on_secrets_flag_exits_4() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "safe\n").unwrap();
+    commit_all(root, "base");
+    fs::write(
+        root.join("token.txt"),
+        "ghp_abcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+    commit_all(root, "secret");
+
+    let out = root.join("bundle_secret_ci");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--fail-on-secrets", "--out"])
+        .arg(&out);
+    cmd.assert()
+        .failure()
+        .code(4)
+        .stderr(predicates::str::contains("fail-on-secrets"));
+}
