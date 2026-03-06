@@ -152,13 +152,13 @@ diffship loop <patch-bundle.zip>
 - handoff plan export / replay（`--plan-out` / `--plan`）は実装済み。TUI からも export できる。
 - handoff の named packing profile（built-in `20x512` / `10x100` + config default/custom）は実装済み。
 - verify は `[verify.profiles.*]` の custom command profile を実装済み。
-- TUI には handoff screen（range/sources/filters/split/preview/build + equivalent CLI command 表示）が入り、plan export まで実装済み。
+- TUI には handoff screen（range/sources/filters/split/preview/build + equivalent CLI command 表示）が入り、plan export と input UX 改良（edit buffer/help, plan path/max limits, Tab navigation）まで実装済み。
 
 ## Next（優先順）
 
-1) TUI の入力 UX 改良（将来拡張）
-2) compare/TUI の細部 polish をどこまで v1.1 に含めるか整理
-3) compare strict の zip container byte-level 判定を必要なら v1.1 で再検討
+1) compare/TUI の細部 polish をどこまで v1.1 に含めるか整理
+2) compare strict の zip container byte-level 判定を必要なら v1.1 で再検討
+3) named handoff profile の import/export UX を必要なら v1.1 で補強
 
 ## メモ（詰まったらここに書く）
 

@@ -14,6 +14,7 @@ It focuses on the *ops* side of an AI workflow:
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
 > `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks, and `compare` now classifies diffs by area/kind.
 > The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
+> The TUI handoff screen now shows a live edit buffer/help area and can edit plan path / packing limit overrides with `Tab` / `Shift+Tab` navigation.
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
 > `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.

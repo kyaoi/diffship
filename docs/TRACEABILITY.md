@@ -42,6 +42,7 @@ Conventions:
 - **S-TUI-002** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs`, `src/plan.rs` — Status: Implemented
 - **S-TUI-003** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
 - **S-TUI-004** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-TUI-005** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
 
 ---
 

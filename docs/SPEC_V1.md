@@ -65,6 +65,7 @@ It supports two workflows:
 - **S-TUI-002**: TUI guides: range → sources → filters → split/profile → preview → build.
 - **S-TUI-003**: TUI must preview diffs with an internal viewer (colored +/-).
 - **S-TUI-004**: TUI must be able to export a plan file and show an equivalent CLI command.
+- **S-TUI-005**: TUI edit mode MUST surface the current input buffer/help and allow editing handoff plan path and packing limit overrides with keyboard navigation.
 
 ### 4.2 `diffship build`
 

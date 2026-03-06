@@ -39,6 +39,9 @@ enum EditTarget {
     HandoffInclude,
     HandoffExclude,
     HandoffOut,
+    HandoffPlanPath,
+    HandoffMaxParts,
+    HandoffMaxBytes,
 }
 
 #[derive(Debug, Clone)]
@@ -506,7 +509,7 @@ impl App {
         for line in handoff_overview_lines(&self.input_mode, &self.handoff) {
             writeln_trunc(out, &line, w)?;
         }
-        let reserved = 22usize;
+        let reserved = 28usize;
         let max_rows = h as usize;
         let preview_rows = max_rows.saturating_sub(reserved).max(4);
         if self.handoff.preview_lines.is_empty() {
@@ -524,6 +527,10 @@ impl App {
         writeln_trunc(out, "", w)?;
         writeln_trunc(out, "6) Message", w)?;
         writeln_trunc(out, &self.handoff.message, w)?;
+        writeln_trunc(out, "", w)?;
+        for line in edit_status_lines(&self.input_mode, &self.edit_buffer) {
+            writeln_trunc(out, &line, w)?;
+        }
         Ok(())
     }
 
@@ -654,9 +661,24 @@ impl App {
                 self.input_mode = InputMode::Normal;
                 self.edit_buffer.clear();
             }
+            KeyCode::Tab => {
+                if let Some(next) = next_edit_target(target, false) {
+                    self.start_edit(next, self.current_edit_value(next));
+                }
+            }
+            KeyCode::BackTab => {
+                if let Some(next) = next_edit_target(target, true) {
+                    self.start_edit(next, self.current_edit_value(next));
+                }
+            }
             KeyCode::Enter => {
                 let value = self.edit_buffer.trim().to_string();
-                self.apply_edit_value(target, value);
+                if let Err(err) = self.apply_edit_value(target, value) {
+                    self.handoff.message = err;
+                    self.input_mode = InputMode::Normal;
+                    self.edit_buffer.clear();
+                    return Ok(());
+                }
                 self.input_mode = InputMode::Normal;
                 self.edit_buffer.clear();
                 if target == EditTarget::LoopBundle && !self.bundle_input.trim().is_empty() {
@@ -668,6 +690,9 @@ impl App {
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.edit_buffer.clear();
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                trim_last_word(&mut self.edit_buffer);
             }
             KeyCode::Char(c) => {
                 // Only accept printable characters.
@@ -766,6 +791,9 @@ impl App {
                     self.handoff.plan.out.clone().unwrap_or_default(),
                 );
             }
+            KeyCode::Char('O') => {
+                self.start_edit(EditTarget::HandoffPlanPath, self.handoff.plan_path.clone());
+            }
             KeyCode::Char('c') => {
                 self.handoff.plan.include_committed = !self.handoff.plan.include_committed;
             }
@@ -781,6 +809,18 @@ impl App {
             KeyCode::Char('p') => {
                 self.handoff.plan.split_by =
                     cycle_value(&self.handoff.plan.split_by, &["auto", "file", "commit"]);
+            }
+            KeyCode::Char('M') => {
+                self.start_edit(
+                    EditTarget::HandoffMaxParts,
+                    opt_usize_to_string(self.handoff.plan.max_parts),
+                );
+            }
+            KeyCode::Char('B') => {
+                self.start_edit(
+                    EditTarget::HandoffMaxBytes,
+                    opt_u64_to_string(self.handoff.plan.max_bytes_per_part),
+                );
             }
             KeyCode::Char('h') => {
                 if let Some(next) = cycle_named_value(
@@ -900,7 +940,23 @@ impl App {
         Ok(())
     }
 
-    fn apply_edit_value(&mut self, target: EditTarget, value: String) {
+    fn current_edit_value(&self, target: EditTarget) -> String {
+        match target {
+            EditTarget::LoopBundle => self.bundle_input.clone(),
+            EditTarget::HandoffFrom => self.handoff.plan.from.clone().unwrap_or_default(),
+            EditTarget::HandoffTo => self.handoff.plan.to.clone().unwrap_or_default(),
+            EditTarget::HandoffA => self.handoff.plan.a.clone().unwrap_or_default(),
+            EditTarget::HandoffB => self.handoff.plan.b.clone().unwrap_or_default(),
+            EditTarget::HandoffInclude => self.handoff.plan.include.join(", "),
+            EditTarget::HandoffExclude => self.handoff.plan.exclude.join(", "),
+            EditTarget::HandoffOut => self.handoff.plan.out.clone().unwrap_or_default(),
+            EditTarget::HandoffPlanPath => self.handoff.plan_path.clone(),
+            EditTarget::HandoffMaxParts => opt_usize_to_string(self.handoff.plan.max_parts),
+            EditTarget::HandoffMaxBytes => opt_u64_to_string(self.handoff.plan.max_bytes_per_part),
+        }
+    }
+
+    fn apply_edit_value(&mut self, target: EditTarget, value: String) -> Result<(), String> {
         match target {
             EditTarget::LoopBundle => {
                 self.bundle_input = value;
@@ -926,7 +982,22 @@ impl App {
             EditTarget::HandoffOut => {
                 self.handoff.plan.out = empty_to_none(value);
             }
+            EditTarget::HandoffPlanPath => {
+                self.handoff.plan_path = if value.trim().is_empty() {
+                    "diffship_plan.toml".to_string()
+                } else {
+                    value
+                };
+            }
+            EditTarget::HandoffMaxParts => {
+                self.handoff.plan.max_parts = parse_optional_usize("max parts", &value)?;
+            }
+            EditTarget::HandoffMaxBytes => {
+                self.handoff.plan.max_bytes_per_part =
+                    parse_optional_u64("max bytes per part", &value)?;
+            }
         }
+        Ok(())
     }
 }
 
@@ -1248,6 +1319,9 @@ fn edit_target_label(target: EditTarget) -> &'static str {
         EditTarget::HandoffInclude => "handoff.include",
         EditTarget::HandoffExclude => "handoff.exclude",
         EditTarget::HandoffOut => "handoff.out",
+        EditTarget::HandoffPlanPath => "handoff.plan_path",
+        EditTarget::HandoffMaxParts => "handoff.max_parts",
+        EditTarget::HandoffMaxBytes => "handoff.max_bytes_per_part",
     }
 }
 
@@ -1265,6 +1339,36 @@ fn parse_pattern_list(s: &str) -> Vec<String> {
         .filter(|v| !v.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn parse_optional_usize(label: &str, s: &str) -> Result<Option<usize>, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    trimmed
+        .parse::<usize>()
+        .map(Some)
+        .map_err(|e| format!("invalid {label}: {trimmed} ({e})"))
+}
+
+fn parse_optional_u64(label: &str, s: &str) -> Result<Option<u64>, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    trimmed
+        .parse::<u64>()
+        .map(Some)
+        .map_err(|e| format!("invalid {label}: {trimmed} ({e})"))
+}
+
+fn opt_usize_to_string(value: Option<usize>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_default()
+}
+
+fn opt_u64_to_string(value: Option<u64>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_default()
 }
 
 fn cycle_value(current: &str, values: &[&str]) -> String {
@@ -1285,6 +1389,77 @@ fn yes_no(v: bool) -> &'static str {
     if v { "yes" } else { "no" }
 }
 
+fn next_edit_target(target: EditTarget, reverse: bool) -> Option<EditTarget> {
+    const ORDER: &[EditTarget] = &[
+        EditTarget::HandoffFrom,
+        EditTarget::HandoffTo,
+        EditTarget::HandoffA,
+        EditTarget::HandoffB,
+        EditTarget::HandoffInclude,
+        EditTarget::HandoffExclude,
+        EditTarget::HandoffOut,
+        EditTarget::HandoffPlanPath,
+        EditTarget::HandoffMaxParts,
+        EditTarget::HandoffMaxBytes,
+    ];
+
+    let idx = ORDER.iter().position(|entry| *entry == target)?;
+    let next = if reverse {
+        idx.checked_sub(1).unwrap_or(ORDER.len() - 1)
+    } else {
+        (idx + 1) % ORDER.len()
+    };
+    Some(ORDER[next])
+}
+
+fn trim_last_word(s: &mut String) {
+    let trimmed_len = s.trim_end_matches(char::is_whitespace).len();
+    s.truncate(trimmed_len);
+    let cut = s
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| ch.is_whitespace() || *ch == ',' || *ch == '/')
+        .map(|(idx, ch)| idx + ch.len_utf8())
+        .unwrap_or(0);
+    s.truncate(cut);
+}
+
+fn edit_status_lines(input_mode: &InputMode, edit_buffer: &str) -> Vec<String> {
+    match input_mode {
+        InputMode::Normal => vec![
+            "7) Edit Buffer".to_string(),
+            "  - idle (press a field key to edit, Tab/Shift+Tab works while editing handoff fields)"
+                .to_string(),
+        ],
+        InputMode::Editing(target) => vec![
+            "7) Edit Buffer".to_string(),
+            format!("  - field: {}", edit_target_label(*target)),
+            format!(
+                "  - value: {}",
+                if edit_buffer.is_empty() {
+                    "(empty)"
+                } else {
+                    edit_buffer
+                }
+            ),
+            format!("  - help : {}", edit_help_line(*target)),
+        ],
+    }
+}
+
+fn edit_help_line(target: EditTarget) -> &'static str {
+    match target {
+        EditTarget::LoopBundle => "Enter=save+run  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete word",
+        EditTarget::HandoffInclude | EditTarget::HandoffExclude => {
+            "Enter=save  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete token  comma/newline separated"
+        }
+        EditTarget::HandoffMaxParts | EditTarget::HandoffMaxBytes => {
+            "Enter=save  Esc=cancel  empty=resets to selected profile  Tab/Shift+Tab=next field"
+        }
+        _ => "Enter=save  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete word  Tab/Shift+Tab=next field",
+    }
+}
+
 fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec<String> {
     let mode = match input_mode {
         InputMode::Normal => "normal".to_string(),
@@ -1292,7 +1467,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     };
     vec![
         "Handoff".to_string(),
-        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  h=profile  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
+        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  h=profile  M=max-parts  B=max-bytes  o=out  O=plan-path  w=untracked  i=include-binary  y=binary-mode  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
         String::new(),
         format!("mode        : {mode}"),
         format!("build cmd   : {}", handoff.plan.to_shell_command()),
@@ -1300,6 +1475,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
             "plan file   : {}",
             current_plan_export_path(handoff)
         ),
+        format!("plan path   : {}", handoff.plan_path),
         format!(
             "replay cmd  : {}",
             crate::plan::HandoffPlan::replay_shell_command_with_overrides(
@@ -1346,6 +1522,11 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
         "4) Split / Profile".to_string(),
         format!("  - split-by: {}", handoff.plan.split_by),
         format!("  - profile: {}", display_opt(handoff.plan.profile.as_deref())),
+        format!("  - max-parts: {}", display_opt_num(handoff.plan.max_parts)),
+        format!(
+            "  - max-bytes-per-part: {}",
+            display_opt_num(handoff.plan.max_bytes_per_part)
+        ),
         format!("  - untracked-mode: {}", handoff.plan.untracked_mode),
         format!(
             "  - binary: include={} mode={}",
@@ -1433,11 +1614,18 @@ fn line(ch: char, w: u16) -> String {
     std::iter::repeat_n(ch, w as usize).collect()
 }
 
+fn display_opt_num<T: ToString>(value: Option<T>) -> String {
+    value
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "(auto)".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle,
-        current_plan_export_path, cycle_named_value, cycle_value, handoff_overview_lines,
+        current_plan_export_path, cycle_named_value, cycle_value, edit_status_lines,
+        handoff_overview_lines, next_edit_target, parse_optional_u64, parse_optional_usize,
         parse_pattern_list, preview_line_style, should_start_tui_impl, summarize_child_failure,
         summarize_child_success,
     };
@@ -1482,6 +1670,43 @@ mod tests {
             cycle_named_value(Some("10x100"), &values),
             Some("20x512".to_string())
         );
+    }
+
+    #[test]
+    fn next_edit_target_cycles_handoff_fields() {
+        assert_eq!(
+            next_edit_target(EditTarget::HandoffFrom, false),
+            Some(EditTarget::HandoffTo)
+        );
+        assert_eq!(
+            next_edit_target(EditTarget::HandoffMaxBytes, false),
+            Some(EditTarget::HandoffFrom)
+        );
+        assert_eq!(
+            next_edit_target(EditTarget::HandoffFrom, true),
+            Some(EditTarget::HandoffMaxBytes)
+        );
+        assert_eq!(next_edit_target(EditTarget::LoopBundle, false), None);
+    }
+
+    #[test]
+    fn numeric_edit_parsers_accept_empty_and_reject_invalid_values() {
+        assert_eq!(parse_optional_usize("max parts", "").unwrap(), None);
+        assert_eq!(parse_optional_usize("max parts", "12").unwrap(), Some(12));
+        assert!(parse_optional_usize("max parts", "abc").is_err());
+
+        assert_eq!(parse_optional_u64("max bytes", "").unwrap(), None);
+        assert_eq!(parse_optional_u64("max bytes", "1024").unwrap(), Some(1024));
+        assert!(parse_optional_u64("max bytes", "oops").is_err());
+    }
+
+    #[test]
+    fn edit_status_lines_show_field_buffer_and_help() {
+        let lines = edit_status_lines(&InputMode::Editing(EditTarget::HandoffMaxParts), "12");
+        let joined = lines.join("\n");
+        assert!(joined.contains("field: handoff.max_parts"));
+        assert!(joined.contains("value: 12"));
+        assert!(joined.contains("empty=resets to selected profile"));
     }
 
     #[test]
@@ -1536,6 +1761,8 @@ mod tests {
         assert!(joined.contains("exclude: src/generated.rs"));
         assert!(joined.contains("4) Split / Profile"));
         assert!(joined.contains("profile: 10x100"));
+        assert!(joined.contains("max-parts: (auto)"));
+        assert!(joined.contains("plan path   : diffship_plan.toml"));
         assert!(joined.contains("5) Preview: parts/part_01.patch"));
         assert!(joined.contains(
             "diffship build --profile 10x100 --include-staged --include 'src/*.rs' --exclude src/generated.rs --split-by commit"

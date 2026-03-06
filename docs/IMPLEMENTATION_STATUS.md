@@ -28,7 +28,7 @@ This is the current implementation inventory based on:
 | secrets / tasks / ack | Implemented | `src/ops/secrets.rs`, `src/ops/tasks.rs`, `src/ops/promote.rs`; `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs`; `docs/OPS_WORKFLOW.md` |
 | config precedence | Implemented | `src/ops/config.rs`; `tests/m4_config_precedence.rs`; `README.md`, `docs/CONFIG.md` |
 | promotion / commit-policy switching | Implemented | CLI/config wiring in `src/cli.rs`, `src/ops/config.rs`, `src/ops/promote.rs`; tests in `tests/m4_02_promotion_switch.rs` and `tests/m4_config_precedence.rs` |
-| TUI v0 (ops + handoff guidance) | Implemented | `src/tui/mod.rs`, `src/plan.rs`, `src/ops/mod.rs`; `tests/m5_tui_cli_parity.rs`, `src/tui/mod.rs` unit tests; `README.md` |
+| TUI v0 (ops + handoff guidance) | Implemented | `src/tui/mod.rs`, `src/plan.rs`, `src/ops/mod.rs`; `tests/m5_tui_cli_parity.rs`, `src/tui/mod.rs` unit tests; the handoff screen includes preview/build flow plus editable plan path / packing limits and visible input help; `README.md` |
 
 ### Handoff side
 

@@ -607,3 +607,17 @@ diffship OS の重要な意思決定ログです。
   - determinism チェック時に「実質 patch 差分」か「周辺メタ差分」かを機械的に扱いやすくするため。
 - Implications:
   - compare の exit code 契約は変更しない。差分があれば分類付きでも non-zero のまま。
+
+---
+
+## D-045: TUI handoff input は live buffer + field navigation を持つ
+
+- Date: 2026-03-07
+- Decision:
+  - handoff screen に edit buffer/help 表示を追加し、現在どの field を編集中かを常時見えるようにする。
+  - `plan path`, `max parts`, `max bytes per part` を TUI から編集可能にする。
+  - handoff field の編集中は `Tab` / `Shift+Tab` で次/前 field に移動できるようにする。
+- Rationale:
+  - 既存の hotkey ベース編集は入力対象と現在値が見えづらく、CLI parity 上も `--max-parts` / `--max-bytes-per-part` / `--plan-out` 相当が不足していたため。
+- Implications:
+  - TUI の handoff screen は v1 core として十分な parity に近づくが、さらに細かい UX polish は future work に残す。
