@@ -11,6 +11,7 @@
 ## TL;DR
 - Bundle: `bundle`
 - Profile: `m6` (`max_parts=20`, `max_bytes_per_part=536870912`; split-by=`file`)
+- Binary policy: include=`no`, mode=`raw`
 - Segments included: committed=`yes`, staged=`no`, unstaged=`no`, untracked=`no`
 - Committed range: `last` (HEAD~1..HEAD)
 - Commit count (approx): `1`
@@ -33,6 +34,7 @@
 - staged: `no` (base: `HEAD`)
 - unstaged: `no` (base: `HEAD` / working tree)
 - untracked: `no` (base: `HEAD`, mode: `auto`)
+- binary include: `no` (mode: `raw`)
 - .diffshipignore active: `no`
 
 ---
@@ -87,5 +89,5 @@ Then apply/read `parts/part_01.patch`.
 
 ## Notes
 - split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.
-- Binary/unreadable untracked files default to raw attachments in auto mode.
+- Binary/unreadable files are excluded by default; use `--include-binary --binary-mode raw|patch|meta` to include them.
 - `.diffshipignore` is applied before writing parts / attachments / exclusions.

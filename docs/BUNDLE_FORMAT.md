@@ -63,6 +63,7 @@ Must list excluded units with:
   - `untracked/<path>`
   - `binary/<path>`
   - `snapshot/<path>` (only if enabled)
+- Binary entries are opt-in (`--include-binary`); default policy excludes binary content.
 - `HANDOFF.md` MUST list what was attached and why.
 
 ---

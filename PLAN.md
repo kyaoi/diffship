@@ -146,14 +146,14 @@ diffship loop <patch-bundle.zip>
 - ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
 - `pack-fix` は実装済みだが、専用統合テストが未整備。
 - handoff は build + source収集 + split-by + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
-- handoff の preview、include-binaryポリシー（明示スイッチ）は未完。
+- handoff の preview は未完。
 
 ## Next（優先順）
 
 1) handoff / ops の end-to-end 運用ドキュメント整理（`build` → AI → `loop` の一連フロー）
-2) binary policy の具体化（`--include-binary` / `--binary-mode` と attachments/exclusions 方針）
-3) handoff preview / TUI 導線の設計（bundle 作成前の内容確認）
-4) verify の config-driven profiles（`[verify.profiles.*]`）強化
+2) handoff preview / TUI 導線の設計（bundle 作成前の内容確認）
+3) verify の config-driven profiles（`[verify.profiles.*]`）強化
+4) split policy 改良（超過時の再分割/縮退戦略）
 5) bundle 比較/再現確認コマンド（determinism の運用検証を簡略化）
 
 ## メモ（詰まったらここに書く）

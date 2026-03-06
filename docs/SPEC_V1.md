@@ -100,7 +100,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 - **S-UNTRACKED-001**: Untracked is OFF by default; enabled via include-untracked (or TUI toggle).
 - **S-UNTRACKED-002**: Support `--untracked-mode auto|patch|raw|meta`.
-- **S-UNTRACKED-003**: In `auto`, text/small files become patch; binary/large become raw attachment.
+- **S-UNTRACKED-003**: In `auto`, text/small files become patch; large text files become raw attachment; binary files follow section 4.2.5 (default excluded unless `--include-binary`).
 - **S-UNTRACKED-004**: In `patch`, untracked should be represented as add-diffs (e.g., `/dev/null → file`) when possible.
 - **S-UNTRACKED-005**: In `raw`, untracked is bundled into `attachments.zip` under a stable path prefix.
 

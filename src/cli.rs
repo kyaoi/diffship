@@ -108,6 +108,14 @@ pub struct BuildArgs {
     #[arg(long, default_value = "auto")]
     pub untracked_mode: String,
 
+    /// Include binary content in handoff output (default: false)
+    #[arg(long, default_value_t = false)]
+    pub include_binary: bool,
+
+    /// How to represent binary content when --include-binary is enabled: raw|patch|meta
+    #[arg(long, default_value = "raw")]
+    pub binary_mode: String,
+
     /// Maximum number of patch parts allowed (default: 20)
     #[arg(long)]
     pub max_parts: Option<usize>,

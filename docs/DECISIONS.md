@@ -449,3 +449,19 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `EXIT_PACKING_LIMITS` は予約コードから実使用コードへ移行する。
   - この段階では「上限超過時の再分割/自動縮退」ではなく、明示エラー停止を優先する。
+
+---
+
+## D-034: binary policy は default exclude + 明示 opt-in とする
+
+- Date: 2026-03-06
+- Decision:
+  - handoff の binary content はデフォルトで除外する（`--include-binary` がない限り同梱しない）。
+  - `--include-binary` 指定時は `--binary-mode raw|patch|meta`（default: `raw`）で扱いを切り替える。
+  - `auto` untracked の解釈は「text/small → patch、large text → raw、binary は binary policy に従う」に統一する。
+- Rationale:
+  - デフォルト共有時の情報露出を抑えつつ、必要時のみ明示的に binary を同梱できるようにするため。
+  - `S-UNTRACKED-003` と `S-BINARY-001` の衝突を避け、説明可能な1つの方針に寄せるため。
+- Implications:
+  - `docs/SPEC_V1.md` / `docs/BUNDLE_FORMAT.md` / `docs/TRACEABILITY.md` はこの方針を前提に更新する。
+  - `HANDOFF.md` には binary policy（include/mode）を明示し、bundle 利用者が同梱有無を即時判断できるようにする。

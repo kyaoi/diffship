@@ -36,6 +36,13 @@ enum UntrackedMode {
     Meta,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BinaryMode {
+    Raw,
+    Patch,
+    Meta,
+}
+
 #[derive(Debug, Clone)]
 struct RangePlan {
     mode: RangeMode,
@@ -55,6 +62,12 @@ struct SourceSelection {
     include_staged: bool,
     include_unstaged: bool,
     include_untracked: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BinaryPolicy {
+    include_binary: bool,
+    binary_mode: BinaryMode,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -259,6 +272,10 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     };
     let split_by = effective_split_by(args.split_by.as_deref(), plan.as_ref())?;
     let untracked_mode = parse_untracked_mode(&args.untracked_mode)?;
+    let binary_policy = BinaryPolicy {
+        include_binary: args.include_binary,
+        binary_mode: parse_binary_mode(&args.binary_mode)?,
+    };
 
     let mut parts = Vec::<PartOutput>::new();
     let mut rows = Vec::<FileRow>::new();
@@ -271,17 +288,37 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
             for cp in committed_parts {
                 let part_name = format!("part_{:02}.patch", parts.len() + 1);
-                let mut segment = filter_segment_output(cp.segment, &ignore);
-                if segment.rows.is_empty() || segment.patch.trim().is_empty() {
+                let segment = filter_segment_output(cp.segment, &ignore);
+                let mut segment = apply_tracked_binary_policy(
+                    git_root,
+                    segment,
+                    binary_policy,
+                    TrackedBinarySource::Commit(&cp.rev),
+                )?;
+                attachments.append(&mut segment.attachments);
+                exclusions.append(&mut segment.exclusions);
+                let mut segment = segment.segment;
+                if segment.rows.is_empty() && segment.patch.trim().is_empty() {
                     continue;
                 }
                 for row in &mut segment.rows {
-                    row.part = part_name.clone();
+                    if row.part.is_empty() {
+                        row.part = part_name.clone();
+                    }
                 }
                 let mut commit_files = segment
                     .rows
                     .iter()
-                    .map(|r| (r.path.clone(), part_name.clone()))
+                    .map(|r| {
+                        (
+                            r.path.clone(),
+                            if r.part.is_empty() {
+                                part_name.clone()
+                            } else {
+                                r.part.clone()
+                            },
+                        )
+                    })
                     .collect::<Vec<_>>();
                 commit_files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
                 commit_views.push(CommitView {
@@ -293,11 +330,13 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                     del: sum_opt(segment.rows.iter().map(|r| r.del)),
                 });
                 rows.extend(segment.rows.clone());
-                parts.push(PartOutput {
-                    name: part_name,
-                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                    segments: vec![segment.name],
-                });
+                if !segment.patch.trim().is_empty() {
+                    parts.push(PartOutput {
+                        name: part_name,
+                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                        segments: vec![segment.name],
+                    });
+                }
             }
         } else {
             let part_name = format!("part_{:02}.patch", parts.len() + 1);
@@ -305,13 +344,24 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                 build_committed_segment(git_root, plan, &part_name)?,
                 &ignore,
             );
-            if !segment.rows.is_empty() && !segment.patch.trim().is_empty() {
+            let mut segment = apply_tracked_binary_policy(
+                git_root,
+                segment,
+                binary_policy,
+                TrackedBinarySource::Commit(&plan.target),
+            )?;
+            attachments.append(&mut segment.attachments);
+            exclusions.append(&mut segment.exclusions);
+            let segment = segment.segment;
+            if !segment.rows.is_empty() || !segment.patch.trim().is_empty() {
                 rows.extend(segment.rows.clone());
-                parts.push(PartOutput {
-                    name: part_name,
-                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                    segments: vec![segment.name],
-                });
+                if !segment.patch.trim().is_empty() {
+                    parts.push(PartOutput {
+                        name: part_name,
+                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                        segments: vec![segment.name],
+                    });
+                }
             }
         }
     }
@@ -320,18 +370,32 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let mut extra_rows = Vec::<FileRow>::new();
     if sources.include_staged {
         let seg = filter_segment_output(build_staged_segment(git_root, "")?, &ignore);
-        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+        let mut seg =
+            apply_tracked_binary_policy(git_root, seg, binary_policy, TrackedBinarySource::Index)?;
+        attachments.append(&mut seg.attachments);
+        exclusions.append(&mut seg.exclusions);
+        let seg = seg.segment;
+        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
             worktree_segments.push(seg);
         }
     }
     if sources.include_unstaged {
         let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &ignore);
-        if !seg.rows.is_empty() && !seg.patch.trim().is_empty() {
+        let mut seg = apply_tracked_binary_policy(
+            git_root,
+            seg,
+            binary_policy,
+            TrackedBinarySource::Worktree,
+        )?;
+        attachments.append(&mut seg.attachments);
+        exclusions.append(&mut seg.exclusions);
+        let seg = seg.segment;
+        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
             worktree_segments.push(seg);
         }
     }
     if sources.include_untracked {
-        let built = build_untracked_segment(git_root, untracked_mode, &ignore)?;
+        let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &ignore)?;
         if let Some(seg) = built.segment {
             worktree_segments.push(seg);
         }
@@ -344,7 +408,8 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         exclusions.extend(built.exclusions);
     }
 
-    if !worktree_segments.is_empty() {
+    let worktree_has_patch = worktree_segments.iter().any(|s| !s.patch.trim().is_empty());
+    if !worktree_segments.is_empty() && worktree_has_patch {
         let part_name = format!("part_{:02}.patch", parts.len() + 1);
         for seg in &mut worktree_segments {
             for row in &mut seg.rows {
@@ -367,6 +432,9 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             patch,
             segments,
         });
+    }
+    for seg in &worktree_segments {
+        rows.extend(seg.rows.clone());
     }
 
     rows.extend(extra_rows);
@@ -418,6 +486,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         head: &head,
         split_by,
         packing_limits,
+        binary_policy,
         sources,
         untracked_mode,
         changed_tree: &changed_tree,
@@ -465,6 +534,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
 
 #[derive(Debug, Clone)]
 struct CommitSegmentBuild {
+    rev: String,
     hash7: String,
     subject: String,
     date: String,
@@ -516,6 +586,7 @@ fn build_committed_parts_by_commit(
         }
 
         out.push(CommitSegmentBuild {
+            rev: rev.to_string(),
             hash7,
             subject,
             date,
@@ -651,6 +722,7 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
 fn build_untracked_segment(
     git_root: &Path,
     mode: UntrackedMode,
+    binary_policy: BinaryPolicy,
     ignore: &IgnoreMatcher,
 ) -> Result<SegmentBuildResult, ExitError> {
     let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
@@ -683,13 +755,24 @@ fn build_untracked_segment(
         let text_patch_ok = decoded
             .as_ref()
             .is_some_and(|_| bytes.len() <= AUTO_PATCH_MAX_BYTES);
+        let is_binary = decoded.is_none();
 
         let policy = match mode {
             UntrackedMode::Patch => UntrackedDisposition::Patch,
             UntrackedMode::Raw => UntrackedDisposition::Raw,
             UntrackedMode::Meta => UntrackedDisposition::Meta,
             UntrackedMode::Auto => {
-                if text_patch_ok {
+                if is_binary {
+                    if !binary_policy.include_binary {
+                        UntrackedDisposition::Meta
+                    } else {
+                        match binary_policy.binary_mode {
+                            BinaryMode::Raw => UntrackedDisposition::Raw,
+                            BinaryMode::Patch => UntrackedDisposition::Patch,
+                            BinaryMode::Meta => UntrackedDisposition::Meta,
+                        }
+                    }
+                } else if text_patch_ok {
                     UntrackedDisposition::Patch
                 } else {
                     UntrackedDisposition::Raw
@@ -699,16 +782,19 @@ fn build_untracked_segment(
 
         match policy {
             UntrackedDisposition::Patch => {
-                let text = decoded.ok_or_else(|| {
-                    ExitError::new(
+                if decoded.is_none()
+                    && (!binary_policy.include_binary
+                        || binary_policy.binary_mode != BinaryMode::Patch)
+                {
+                    return Err(ExitError::new(
                         EXIT_GENERAL,
                         format!(
-                            "untracked file '{}' is not valid UTF-8; use --untracked-mode raw|meta",
+                            "untracked binary file '{}' requires --include-binary --binary-mode patch/raw/meta",
                             rel
                         ),
-                    )
-                })?;
-                if bytes.len() > AUTO_PATCH_MAX_BYTES {
+                    ));
+                }
+                if decoded.is_some() && bytes.len() > AUTO_PATCH_MAX_BYTES {
                     return Err(ExitError::new(
                         EXIT_GENERAL,
                         format!(
@@ -726,6 +812,7 @@ fn build_untracked_segment(
                         "--no-ext-diff",
                         "--patch",
                         "--full-index",
+                        "--binary",
                         "--",
                         "/dev/null",
                         rel.as_str(),
@@ -741,8 +828,8 @@ fn build_untracked_segment(
                     status: "A".to_string(),
                     path: rel,
                     note: String::new(),
-                    ins: Some(count_text_lines(&text)),
-                    del: Some(0),
+                    ins: decoded.as_ref().map(|s| count_text_lines(s)),
+                    del: if decoded.is_some() { Some(0) } else { None },
                     bytes: Some(size),
                     part: String::new(),
                 });
@@ -770,11 +857,18 @@ fn build_untracked_segment(
                 });
             }
             UntrackedDisposition::Meta => {
+                let reason = if is_binary && !binary_policy.include_binary {
+                    "binary file excluded by default".to_string()
+                } else if is_binary {
+                    "binary file excluded by binary-mode=meta".to_string()
+                } else {
+                    "meta-only untracked file".to_string()
+                };
                 exclusions.push(ExclusionEntry {
                     path: rel.clone(),
-                    reason: "meta-only untracked file".to_string(),
+                    reason,
                     guidance:
-                        "Re-run with --untracked-mode raw or patch if the AI needs file contents"
+                        "Re-run with --untracked-mode raw/patch or --include-binary --binary-mode raw/patch when contents are needed"
                             .to_string(),
                 });
                 rows.push(FileRow {
@@ -896,6 +990,18 @@ fn parse_untracked_mode(raw: &str) -> Result<UntrackedMode, ExitError> {
     }
 }
 
+fn parse_binary_mode(raw: &str) -> Result<BinaryMode, ExitError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "raw" => Ok(BinaryMode::Raw),
+        "patch" => Ok(BinaryMode::Patch),
+        "meta" => Ok(BinaryMode::Meta),
+        other => Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("invalid --binary-mode '{other}' (expected: raw|patch|meta)"),
+        )),
+    }
+}
+
 fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {
     if parts.len() > limits.max_parts {
         return Err(ExitError::new(
@@ -922,6 +1028,159 @@ fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TrackedBinarySource<'a> {
+    Commit(&'a str),
+    Index,
+    Worktree,
+}
+
+#[derive(Debug)]
+struct BinaryPolicyResult {
+    segment: SegmentOutput,
+    attachments: Vec<AttachmentEntry>,
+    exclusions: Vec<ExclusionEntry>,
+}
+
+fn apply_tracked_binary_policy(
+    git_root: &Path,
+    segment: SegmentOutput,
+    policy: BinaryPolicy,
+    source: TrackedBinarySource<'_>,
+) -> Result<BinaryPolicyResult, ExitError> {
+    if segment.rows.is_empty() {
+        return Ok(BinaryPolicyResult {
+            segment,
+            attachments: vec![],
+            exclusions: vec![],
+        });
+    }
+
+    let mut keep_paths = BTreeSet::new();
+    let mut rows = Vec::new();
+    let mut attachments = Vec::new();
+    let mut exclusions = Vec::new();
+
+    for mut row in segment.rows {
+        let is_binary = row.ins.is_none() && row.del.is_none();
+        if !is_binary || (policy.include_binary && policy.binary_mode == BinaryMode::Patch) {
+            keep_paths.insert(row.path.clone());
+            rows.push(row);
+            continue;
+        }
+
+        let (reason, guidance, note) = if !policy.include_binary {
+            (
+                "binary file excluded by default",
+                "Re-run with --include-binary and choose --binary-mode raw|patch|meta",
+                "excluded binary (default policy; see excluded.md)",
+            )
+        } else if policy.binary_mode == BinaryMode::Meta {
+            (
+                "binary file excluded by binary-mode=meta",
+                "Re-run with --binary-mode raw or patch if the AI needs binary contents",
+                "excluded binary (binary-mode=meta; see excluded.md)",
+            )
+        } else {
+            ("", "", "")
+        };
+
+        if !reason.is_empty() {
+            row.note = note.to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: reason.to_string(),
+                guidance: guidance.to_string(),
+            });
+            rows.push(row);
+            continue;
+        }
+
+        // binary-mode=raw
+        if row.status == "D" {
+            row.note = "excluded binary deletion (see excluded.md)".to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: "binary deletion cannot be attached as raw snapshot".to_string(),
+                guidance: "Use --binary-mode patch if deletion hunks are needed".to_string(),
+            });
+            rows.push(row);
+            continue;
+        }
+
+        let bytes = read_tracked_binary_bytes(git_root, source, &row.path)?;
+        if let Some(bytes) = bytes {
+            attachments.push(AttachmentEntry {
+                zip_path: format!("binary/{}", row.path),
+                bytes,
+                reason: "stored as raw attachment (binary-mode=raw)".to_string(),
+            });
+            row.note = "stored in attachments.zip".to_string();
+            row.part = "attachments.zip".to_string();
+            rows.push(row);
+        } else {
+            row.note = "excluded binary (snapshot unavailable; see excluded.md)".to_string();
+            row.part = "-".to_string();
+            exclusions.push(ExclusionEntry {
+                path: row.path.clone(),
+                reason: "binary snapshot unavailable".to_string(),
+                guidance: "Use --binary-mode patch if snapshot extraction fails".to_string(),
+            });
+            rows.push(row);
+        }
+    }
+
+    sort_file_rows(&mut rows);
+    let patch = filter_patch_by_paths(&segment.patch, &keep_paths);
+    Ok(BinaryPolicyResult {
+        segment: SegmentOutput {
+            name: segment.name,
+            patch,
+            rows,
+        },
+        attachments,
+        exclusions,
+    })
+}
+
+fn read_tracked_binary_bytes(
+    git_root: &Path,
+    source: TrackedBinarySource<'_>,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ExitError> {
+    match source {
+        TrackedBinarySource::Commit(rev) => git_show_blob_bytes(git_root, rev, path),
+        TrackedBinarySource::Index => git_show_blob_bytes(git_root, ":", path),
+        TrackedBinarySource::Worktree => Ok(fs::read(git_root.join(path)).ok()),
+    }
+}
+
+fn git_show_blob_bytes(
+    git_root: &Path,
+    rev: &str,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ExitError> {
+    let spec = if rev == ":" {
+        format!(":{path}")
+    } else {
+        format!("{rev}:{path}")
+    };
+    let out = Command::new("git")
+        .args(["show", spec.as_str()])
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git show: {e}")))?;
+
+    if out.status.success() {
+        return Ok(Some(out.stdout));
+    }
+
+    // Missing blob/path is expected in some edge cases (e.g., deletions).
+    Ok(None)
 }
 
 fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, ExitError> {
@@ -1735,6 +1994,7 @@ struct HandoffDocInputs<'a> {
     head: &'a str,
     split_by: SplitBy,
     packing_limits: PackingLimits,
+    binary_policy: BinaryPolicy,
     sources: SourceSelection,
     untracked_mode: UntrackedMode,
     changed_tree: &'a str,
@@ -1821,6 +2081,11 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         split_label(inp.split_by),
     ));
     s.push_str(&format!(
+        "- Binary policy: include=`{}`, mode=`{}`\n",
+        yes_no(inp.binary_policy.include_binary),
+        binary_mode_label(inp.binary_policy.binary_mode)
+    ));
+    s.push_str(&format!(
         "- Segments included: committed=`{}`, staged=`{}`, unstaged=`{}`, untracked=`{}`\n",
         yes_no(inp.sources.include_committed),
         yes_no(inp.sources.include_staged),
@@ -1898,6 +2163,11 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- untracked: `{}` (base: `HEAD`, mode: `{}`)\n",
         yes_no(inp.sources.include_untracked),
         untracked_label(inp.untracked_mode)
+    ));
+    s.push_str(&format!(
+        "- binary include: `{}` (mode: `{}`)\n",
+        yes_no(inp.binary_policy.include_binary),
+        binary_mode_label(inp.binary_policy.binary_mode)
     ));
     s.push_str(&format!(
         "- .diffshipignore active: `{}`\n",
@@ -1988,7 +2258,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
 
     s.push_str("\n---\n\n## Notes\n");
     s.push_str("- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.\n");
-    s.push_str("- Binary/unreadable untracked files default to raw attachments in auto mode.\n");
+    s.push_str("- Binary/unreadable files are excluded by default; use `--include-binary --binary-mode raw|patch|meta` to include them.\n");
     s.push_str("- `.diffshipignore` is applied before writing parts / attachments / exclusions.\n");
     s
 }
@@ -2011,6 +2281,14 @@ fn untracked_label(v: UntrackedMode) -> &'static str {
 
 fn yes_no(v: bool) -> &'static str {
     if v { "yes" } else { "no" }
+}
+
+fn binary_mode_label(v: BinaryMode) -> &'static str {
+    match v {
+        BinaryMode::Raw => "raw",
+        BinaryMode::Patch => "patch",
+        BinaryMode::Meta => "meta",
+    }
 }
 
 fn sum_opt<I>(vals: I) -> Option<u64>

@@ -42,13 +42,13 @@ This is the current implementation inventory based on:
 | `.diffshipignore` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `README.md` |
 | determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
 | `preview` command | Not implemented | no `preview` command in `src/cli.rs`; no `src/preview.rs`; spec-only (`docs/SPEC_V1.md`) |
-| packing limits / binary policy (runtime) | Future extension / Partial | `EXIT_PACKING_LIMITS` is reserved in `src/exit.rs`; no max-parts/max-bytes enforcement in build path; untracked binary/raw attachment policy is implemented, but `--include-binary` / `--binary-mode` options are not exposed |
+| packing limits / binary policy (runtime) | Implemented (v1 baseline) | `--max-parts` / `--max-bytes-per-part` and `EXIT_PACKING_LIMITS` are implemented (`src/cli.rs`, `src/handoff.rs`, `src/exit.rs`); `--include-binary` / `--binary-mode raw|patch|meta` are exposed and tested in `tests/m6_handoff_build.rs`; advanced fallback/repacking remains future work (`S-PACK-002..004`) |
 
 ### v1 readiness interpretation
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- Remaining v1 gaps are mostly around handoff preview and explicit packing/binary limit policy.
+- Remaining v1 gaps are mostly around handoff preview and advanced packing fallback strategy.
 
 ---
 

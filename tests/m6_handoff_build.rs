@@ -444,7 +444,13 @@ fn build_untracked_auto_stores_binary_in_attachments_zip() {
     let out = root.join("bundle_auto_untracked");
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
-        .args(["build", "--no-committed", "--include-untracked", "--out"])
+        .args([
+            "build",
+            "--no-committed",
+            "--include-untracked",
+            "--include-binary",
+            "--out",
+        ])
         .arg(&out);
     cmd.assert().success();
 
@@ -460,6 +466,118 @@ fn build_untracked_auto_stores_binary_in_attachments_zip() {
     assert!(handoff.contains("## 5) Attachments"));
     assert!(handoff.contains("`untracked/bin.dat`"));
     assert!(handoff.contains("stored in attachments.zip"));
+}
+
+#[test]
+fn build_untracked_binary_is_excluded_by_default() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [0_u8, 159, 146, 150]).unwrap();
+
+    let out = root.join("bundle_auto_untracked_default_binary");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--no-committed", "--include-untracked", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(out.join("excluded.md").exists());
+    let excluded = fs::read_to_string(out.join("excluded.md")).unwrap();
+    assert!(excluded.contains("`bin.dat`"));
+    assert!(excluded.contains("binary file excluded by default"));
+}
+
+#[test]
+fn build_committed_binary_with_raw_mode_goes_to_attachments() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_raw");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--include-binary", "--binary-mode", "raw", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("attachments.zip").exists());
+    let zip_file = fs::File::open(out.join("attachments.zip")).unwrap();
+    let mut zip = ZipArchive::new(zip_file).unwrap();
+    let mut names = vec![];
+    for i in 0..zip.len() {
+        names.push(zip.by_index(i).unwrap().name().to_string());
+    }
+    assert!(names.contains(&"binary/bin.dat".to_string()));
+}
+
+#[test]
+fn build_committed_binary_with_patch_mode_keeps_patch_text() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_patch");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include-binary",
+            "--binary-mode",
+            "patch",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(!out.join("excluded.md").exists());
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("bin.dat"));
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("| committed | M | `bin.dat` |"));
+    assert!(handoff.contains("| part_01.patch |"));
+}
+
+#[test]
+fn build_committed_binary_with_meta_mode_creates_excluded_md() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("bin.dat"), [0_u8, 1_u8, 2_u8, 3_u8]).unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [4_u8, 5_u8, 6_u8, 7_u8]).unwrap();
+    commit_all(root, "binary-update");
+
+    let out = root.join("bundle_committed_binary_meta");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include-binary",
+            "--binary-mode",
+            "meta",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(!out.join("attachments.zip").exists());
+    assert!(out.join("excluded.md").exists());
+    let excluded = fs::read_to_string(out.join("excluded.md")).unwrap();
+    assert!(excluded.contains("`bin.dat`"));
+    assert!(excluded.contains("binary file excluded by binary-mode=meta"));
 }
 
 #[test]
