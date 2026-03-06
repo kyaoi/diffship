@@ -373,6 +373,66 @@ fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
 }
 
 #[test]
+fn build_fails_with_exit_3_when_max_parts_is_exceeded() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "feat a");
+
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    commit_all(root, "feat b");
+
+    let out = root.join("bundle_max_parts");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--range-mode",
+            "direct",
+            "--from",
+            "HEAD~2",
+            "--to",
+            "HEAD",
+            "--split-by",
+            "commit",
+            "--max-parts",
+            "1",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert()
+        .failure()
+        .code(3)
+        .stderr(predicates::str::contains("max_parts=1"));
+}
+
+#[test]
+fn build_fails_with_exit_3_when_part_bytes_limit_is_exceeded() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let out = root.join("bundle_max_bytes");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", "1", "--out"])
+        .arg(&out);
+    cmd.assert()
+        .failure()
+        .code(3)
+        .stderr(predicates::str::contains("max_bytes_per_part=1"));
+}
+
+#[test]
 fn build_untracked_auto_stores_binary_in_attachments_zip() {
     let td = init_repo();
     let root = td.path();

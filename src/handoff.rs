@@ -1,5 +1,5 @@
 use crate::cli::BuildArgs;
-use crate::exit::{EXIT_GENERAL, EXIT_SECRETS_WARNING, ExitError};
+use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
 use crate::git;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -11,6 +11,8 @@ use zip::write::FileOptions;
 use zip::{CompressionMethod, DateTime as ZipDateTime, ZipWriter};
 
 const AUTO_PATCH_MAX_BYTES: usize = 64 * 1024;
+const DEFAULT_MAX_PARTS: usize = 20;
+const DEFAULT_MAX_BYTES_PER_PART: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RangeMode {
@@ -53,6 +55,34 @@ struct SourceSelection {
     include_staged: bool,
     include_unstaged: bool,
     include_untracked: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PackingLimits {
+    max_parts: usize,
+    max_bytes_per_part: u64,
+}
+
+impl PackingLimits {
+    fn from_args(args: &BuildArgs) -> Result<Self, ExitError> {
+        let max_parts = args.max_parts.unwrap_or(DEFAULT_MAX_PARTS);
+        let max_bytes_per_part = args
+            .max_bytes_per_part
+            .unwrap_or(DEFAULT_MAX_BYTES_PER_PART);
+        if max_parts == 0 {
+            return Err(ExitError::new(EXIT_GENERAL, "--max-parts must be >= 1"));
+        }
+        if max_bytes_per_part == 0 {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                "--max-bytes-per-part must be >= 1",
+            ));
+        }
+        Ok(Self {
+            max_parts,
+            max_bytes_per_part,
+        })
+    }
 }
 
 impl SourceSelection {
@@ -219,6 +249,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
 
     let sources = SourceSelection::from_args(&args)?;
+    let packing_limits = PackingLimits::from_args(&args)?;
     let ignore = IgnoreMatcher::load(git_root)?;
     let head = git::rev_parse(git_root, "HEAD")?;
     let plan = if sources.include_committed {
@@ -349,6 +380,8 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         });
     }
 
+    enforce_packing_limits(&parts, packing_limits)?;
+
     for part in &parts {
         write_text_file(&parts_dir.join(&part.name), &part.patch)?;
     }
@@ -384,6 +417,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         plan: plan.as_ref(),
         head: &head,
         split_by,
+        packing_limits,
         sources,
         untracked_mode,
         changed_tree: &changed_tree,
@@ -860,6 +894,34 @@ fn parse_untracked_mode(raw: &str) -> Result<UntrackedMode, ExitError> {
             format!("invalid --untracked-mode '{other}' (expected: auto|patch|raw|meta)"),
         )),
     }
+}
+
+fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {
+    if parts.len() > limits.max_parts {
+        return Err(ExitError::new(
+            EXIT_PACKING_LIMITS,
+            format!(
+                "packing limits exceeded: parts={} > max_parts={}",
+                parts.len(),
+                limits.max_parts
+            ),
+        ));
+    }
+
+    for part in parts {
+        let bytes = part.patch.len() as u64;
+        if bytes > limits.max_bytes_per_part {
+            return Err(ExitError::new(
+                EXIT_PACKING_LIMITS,
+                format!(
+                    "packing limits exceeded: {} bytes={} > max_bytes_per_part={}",
+                    part.name, bytes, limits.max_bytes_per_part
+                ),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, ExitError> {
@@ -1672,6 +1734,7 @@ struct HandoffDocInputs<'a> {
     plan: Option<&'a RangePlan>,
     head: &'a str,
     split_by: SplitBy,
+    packing_limits: PackingLimits,
     sources: SourceSelection,
     untracked_mode: UntrackedMode,
     changed_tree: &'a str,
@@ -1752,8 +1815,10 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
     s.push_str(&format!(
-        "- Profile: `m6` (split-by=`{}`)\n",
-        split_label(inp.split_by)
+        "- Profile: `m6` (`max_parts={}`, `max_bytes_per_part={}`; split-by=`{}`)\n",
+        inp.packing_limits.max_parts,
+        inp.packing_limits.max_bytes_per_part,
+        split_label(inp.split_by),
     ));
     s.push_str(&format!(
         "- Segments included: committed=`{}`, staged=`{}`, unstaged=`{}`, untracked=`{}`\n",

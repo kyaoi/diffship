@@ -11,7 +11,7 @@ It focuses on the *ops* side of an AI workflow:
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
 > `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
-> Preview, profile-based packing limits, and explicit include-binary policy switches are still planned.
+> Preview and explicit include-binary policy switches are still planned.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -108,6 +108,9 @@ diffship build --no-committed --include-staged --include-unstaged --include-untr
 
 # commit-oriented split for a multi-commit committed range
 diffship build --range-mode direct --from HEAD~3 --to HEAD --split-by commit
+
+# tighten packing limits for CI/runtime checks
+diffship build --max-parts 10 --max-bytes-per-part 104857600
 
 # keep untracked files as metadata only
 diffship build --no-committed --include-untracked --untracked-mode meta

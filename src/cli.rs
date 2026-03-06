@@ -108,6 +108,14 @@ pub struct BuildArgs {
     #[arg(long, default_value = "auto")]
     pub untracked_mode: String,
 
+    /// Maximum number of patch parts allowed (default: 20)
+    #[arg(long)]
+    pub max_parts: Option<usize>,
+
+    /// Maximum bytes per patch part (default: 536870912 = 512 MiB)
+    #[arg(long)]
+    pub max_bytes_per_part: Option<u64>,
+
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]
     pub out: Option<String>,

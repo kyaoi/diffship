@@ -10,7 +10,7 @@
 
 ## TL;DR
 - Bundle: `bundle`
-- Profile: `m6` (split-by=`file`)
+- Profile: `m6` (`max_parts=20`, `max_bytes_per_part=536870912`; split-by=`file`)
 - Segments included: committed=`yes`, staged=`no`, unstaged=`no`, untracked=`no`
 - Committed range: `last` (HEAD~1..HEAD)
 - Commit count (approx): `1`

@@ -18,7 +18,7 @@ Conventions:
 
 ## Goals / non-goals
 
-- **S-GOAL-001** — Tests: TBD — Code: TBD — Status: Planned
+- **S-GOAL-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-GOAL-002** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-003** — Tests: TBD — Code: TBD — Status: Planned
 - **S-GOAL-004** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
@@ -259,7 +259,7 @@ Conventions:
 - **S-EXIT-000** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-001** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
-- **S-EXIT-003** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/exit.rs`, `src/handoff.rs` — Status: Implemented
 - **S-EXIT-004** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
 - **S-EXIT-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented

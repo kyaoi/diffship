@@ -134,7 +134,7 @@ diffship loop <patch-bundle.zip>
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
 | M6-02 | done | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | doing | 分割（profiles）+ excluded/attachments | split/attachments/excluded は実装済み。profile制限（max parts / max bytes）と `EXIT_PACKING_LIMITS` 実動は未完。 |
+| M6-03 | done | 分割（profiles）+ excluded/attachments | split/attachments/excluded は実装済み。`--max-parts` / `--max-bytes-per-part` 超過時は `EXIT_PACKING_LIMITS` で停止できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
 | M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
 | M6-06 | done | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
@@ -146,14 +146,14 @@ diffship loop <patch-bundle.zip>
 - ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
 - `pack-fix` は実装済みだが、専用統合テストが未整備。
 - handoff は build + source収集 + split-by + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
-- handoff の preview、packing limits（profile上限/exit=3）、include-binaryポリシーは未完。
+- handoff の preview、include-binaryポリシー（明示スイッチ）は未完。
 
 ## Next（優先順）
 
 1) handoff / ops の end-to-end 運用ドキュメント整理（`build` → AI → `loop` の一連フロー）
-2) packing limits / binary policy の具体化（`EXIT_PACKING_LIMITS` を実動させ、profile上限を build に適用）
-3) promotion `working-tree` の専用 no-commit 経路を実装し、`commit` と意味を分離
-4) handoff preview / TUI 導線の設計（bundle 作成前の内容確認）
+2) binary policy の具体化（`--include-binary` / `--binary-mode` と attachments/exclusions 方針）
+3) handoff preview / TUI 導線の設計（bundle 作成前の内容確認）
+4) verify の config-driven profiles（`[verify.profiles.*]`）強化
 5) bundle 比較/再現確認コマンド（determinism の運用検証を簡略化）
 
 ## メモ（詰まったらここに書く）

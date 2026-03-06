@@ -435,3 +435,17 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `working-tree` 実行後は target branch の HEAD は不変で、working tree が変更状態になる。
   - 事前の base_commit 一致チェックは `commit` と同様に維持する。
+
+---
+
+## D-033: handoff build で packing limits を実動化する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship build` に `--max-parts` / `--max-bytes-per-part` を追加し、生成 part が上限を超える場合は exit code 3（`EXIT_PACKING_LIMITS`）で停止する。
+  - デフォルト上限は `max_parts=20`, `max_bytes_per_part=536870912`（512 MiB）とする。
+- Rationale:
+  - アップロード制限の超過を build 時点で機械的に検知し、handoff 失敗理由を明確化するため。
+- Implications:
+  - `EXIT_PACKING_LIMITS` は予約コードから実使用コードへ移行する。
+  - この段階では「上限超過時の再分割/自動縮退」ではなく、明示エラー停止を優先する。

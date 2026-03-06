@@ -36,7 +36,7 @@ This is the current implementation inventory based on:
 |---|---|---|
 | `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md` |
 | committed / staged / unstaged / untracked collection | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md` |
-| split-by / profiles / part split | Partial | split-by and part emission exist in `src/handoff.rs`, tested in `tests/m6_handoff_build.rs`; profile-based packing limits are not enforced yet |
+| split-by / profiles / part split | Partial | split-by and part emission exist in `src/handoff.rs`; limit guards via `--max-parts` / `--max-bytes-per-part` are enforced and tested in `tests/m6_handoff_build.rs`; profile presets/config wiring is still future work |
 | `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
 | `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
 | `.diffshipignore` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `README.md` |
