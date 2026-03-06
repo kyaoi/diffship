@@ -37,6 +37,13 @@ diffship loop ./patch-bundle.zip
 diffship compare ./bundle_a ./bundle_b.zip
 ```
 
+For CI / automation, use JSON output:
+
+```bash
+diffship preview ./diffship_YYYY-MM-DD_HHMM --list --json
+diffship compare ./bundle_a ./bundle_b.zip --json
+```
+
 ---
 
 ## Concepts

@@ -79,6 +79,10 @@ pub struct CompareArgs {
     /// Compare raw bytes without normalization
     #[arg(long, default_value_t = false)]
     pub strict: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -93,6 +97,10 @@ pub struct PreviewArgs {
     /// List bundle contents and available parts
     #[arg(long, default_value_t = false)]
     pub list: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

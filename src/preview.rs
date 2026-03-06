@@ -1,5 +1,6 @@
 use crate::cli::PreviewArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
@@ -11,11 +12,33 @@ struct BundleView {
     entries: BTreeMap<String, Vec<u8>>,
 }
 
+#[derive(Debug, Serialize)]
+struct PreviewSummary<'a> {
+    bundle: String,
+    mode: &'a str,
+    handoff_md: bool,
+    parts: Vec<String>,
+    attachments_zip: bool,
+    excluded_md: bool,
+    secrets_md: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct PreviewText {
+    bundle: String,
+    entry: String,
+    text: String,
+}
+
 pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
     let bundle_path = PathBuf::from(&args.bundle);
     let view = load_bundle(&bundle_path)?;
 
     if args.list {
+        if args.json {
+            print_json(&summary_json(&bundle_path, &view, "list"))?;
+            return Ok(());
+        }
         print_list(&bundle_path, &view);
         return Ok(());
     }
@@ -23,6 +46,14 @@ pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
     if let Some(part) = args.part.as_deref() {
         let key = resolve_part_key(part, &view)?;
         let body = read_entry_text(&view, &key)?;
+        if args.json {
+            print_json(&PreviewText {
+                bundle: bundle_path.display().to_string(),
+                entry: key,
+                text: body,
+            })?;
+            return Ok(());
+        }
         print!("{}", body);
         if !body.ends_with('\n') {
             println!();
@@ -31,10 +62,25 @@ pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
     }
 
     let handoff = read_entry_text(&view, "HANDOFF.md")?;
+    if args.json {
+        print_json(&PreviewText {
+            bundle: bundle_path.display().to_string(),
+            entry: "HANDOFF.md".to_string(),
+            text: handoff,
+        })?;
+        return Ok(());
+    }
     print!("{}", handoff);
     if !handoff.ends_with('\n') {
         println!();
     }
+    Ok(())
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {
+    let s = serde_json::to_string_pretty(value)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render JSON: {e}")))?;
+    println!("{s}");
     Ok(())
 }
 
@@ -145,13 +191,7 @@ fn resolve_part_key(raw: &str, view: &BundleView) -> Result<String, ExitError> {
 }
 
 fn print_list(path: &Path, view: &BundleView) {
-    let mut parts = view
-        .entries
-        .keys()
-        .filter(|k| k.starts_with("parts/") && k.ends_with(".patch"))
-        .cloned()
-        .collect::<Vec<_>>();
-    parts.sort();
+    let parts = part_entries(view);
 
     println!("diffship preview");
     println!("  bundle          : {}", path.display());
@@ -175,6 +215,29 @@ fn print_list(path: &Path, view: &BundleView) {
         "  secrets.md      : {}",
         yes_no(view.entries.contains_key("secrets.md"))
     );
+}
+
+fn summary_json(path: &Path, view: &BundleView, mode: &'static str) -> PreviewSummary<'static> {
+    PreviewSummary {
+        bundle: path.display().to_string(),
+        mode,
+        handoff_md: view.entries.contains_key("HANDOFF.md"),
+        parts: part_entries(view),
+        attachments_zip: view.entries.contains_key("attachments.zip"),
+        excluded_md: view.entries.contains_key("excluded.md"),
+        secrets_md: view.entries.contains_key("secrets.md"),
+    }
+}
+
+fn part_entries(view: &BundleView) -> Vec<String> {
+    let mut parts = view
+        .entries
+        .keys()
+        .filter(|k| k.starts_with("parts/") && k.ends_with(".patch"))
+        .cloned()
+        .collect::<Vec<_>>();
+    parts.sort();
+    parts
 }
 
 fn yes_no(v: bool) -> &'static str {

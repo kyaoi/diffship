@@ -134,11 +134,13 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 ### 4.3 `diffship preview <handoff-bundle>`
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.
+- **S-PREVIEW-002**: Support `--json` output for bundle summary (`--list`) and entry text (`HANDOFF.md` / `--part`) so CI can consume preview results.
 
 ### 4.3.1 `diffship compare <bundle-a> <bundle-b>`
 
 - **S-COMPARE-001**: Compare two handoff bundles and report structural/content differences.
 - **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` byte-level mode.
+- **S-COMPARE-003**: Support `--json` output for machine-readable compare results while preserving non-zero exit on differences.
 
 ### 4.4 Patch bundle format (input contract)
 

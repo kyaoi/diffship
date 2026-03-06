@@ -84,8 +84,8 @@ All commands below are implemented.
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
 - `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md)
-- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`)
-- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` for raw byte comparison)
+- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`)
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches
@@ -140,6 +140,10 @@ diffship preview ./diffship_2026-03-06_1200 --list
 
 # compare two bundles for reproducibility checks
 diffship compare ./bundle_a ./bundle_b.zip
+
+# CI-friendly machine-readable checks
+diffship preview ./diffship_2026-03-06_1200 --list --json
+diffship compare ./bundle_a ./bundle_b.zip --json
 ```
 
 Output layout:

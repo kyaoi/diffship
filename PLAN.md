@@ -154,8 +154,7 @@ diffship loop <patch-bundle.zip>
 
 ## Next（優先順）
 
-1) compare/preview の JSON 出力と CI 向け利用パターン整備
-2) handoff plan export/replay（TUI→CLI）の仕様固定
+1) handoff plan export/replay（TUI→CLI）の仕様固定
 
 ## メモ（詰まったらここに書く）
 

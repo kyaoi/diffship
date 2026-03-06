@@ -1,10 +1,20 @@
 use crate::cli::CompareArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
+
+#[derive(Debug, Serialize)]
+struct CompareReport {
+    bundle_a: String,
+    bundle_b: String,
+    mode: String,
+    equivalent: bool,
+    diffs: Vec<String>,
+}
 
 pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
     let a_path = PathBuf::from(&args.bundle_a);
@@ -33,6 +43,28 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
         }
     }
 
+    let report = CompareReport {
+        bundle_a: a_path.display().to_string(),
+        bundle_b: b_path.display().to_string(),
+        mode: if args.strict {
+            "strict".to_string()
+        } else {
+            "normalized".to_string()
+        },
+        equivalent: diffs.is_empty(),
+        diffs: diffs.clone(),
+    };
+    if args.json {
+        print_json(&report)?;
+        if diffs.is_empty() {
+            return Ok(());
+        }
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "bundle comparison failed (see JSON diff output)",
+        ));
+    }
+
     if diffs.is_empty() {
         println!("diffship compare: equivalent");
         println!("  A: {}", a_path.display());
@@ -56,6 +88,13 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
         EXIT_GENERAL,
         "bundle comparison failed (see diff list above)",
     ))
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {
+    let s = serde_json::to_string_pretty(value)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render JSON: {e}")))?;
+    println!("{s}");
+    Ok(())
 }
 
 fn load_bundle(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, ExitError> {

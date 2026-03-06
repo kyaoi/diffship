@@ -547,3 +547,16 @@ diffship OS の重要な意思決定ログです。
   - 完全除外より先に diff の保持率を上げ、AI に最低限必要な変更行を残したい。
 - Implications:
   - `docs/SPEC_V1.md` の packing fallback 契約を future work から current behavior に更新する。
+
+---
+
+## D-041: `preview` / `compare` の `--json` は stdout に固定し、compare の差分時も exit code は維持する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship preview --json` は summary/entry content を pretty JSON で stdout に出す。
+  - `diffship compare --json` は compare report を stdout に出し、差分ありの場合でも non-zero exit を維持する。
+- Rationale:
+  - CI から stdout をそのまま parse できるようにしつつ、失敗判定は exit code で扱いたいため。
+- Implications:
+  - README / OPS_WORKFLOW に CI 向けの `--json` 利用例を追記する。
