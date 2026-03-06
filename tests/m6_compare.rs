@@ -43,6 +43,20 @@ fn commit_all(root: &Path, msg: &str) {
         .success();
 }
 
+fn copy_dir(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap();
+    for entry in fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap();
+        }
+    }
+}
+
 #[test]
 fn compare_normalized_accepts_equivalent_bundles() {
     let td = init_repo();
@@ -133,7 +147,8 @@ fn compare_reports_real_content_difference() {
         .stderr(
             contains("diffship compare: different")
                 .and(contains("bundle comparison failed"))
-                .and(contains("content differs")),
+                .and(contains("[handoff/content_differs] HANDOFF.md"))
+                .and(contains("[patch/content_differs] parts/part_01.patch")),
         );
 }
 
@@ -177,6 +192,12 @@ fn compare_json_reports_equivalence_and_differences() {
     let v: Value = serde_json::from_slice(&ok.stdout).expect("compare json");
     assert_eq!(v.get("equivalent").and_then(|x| x.as_bool()), Some(true));
     assert_eq!(v.get("mode").and_then(|x| x.as_str()), Some("normalized"));
+    assert_eq!(
+        v.get("areas")
+            .and_then(|x| x.as_object())
+            .map(|x| x.is_empty()),
+        Some(true)
+    );
 
     fs::write(root.join("README.md"), "v2\n").unwrap();
     commit_all(root, "v2");
@@ -200,9 +221,56 @@ fn compare_json_reports_equivalence_and_differences() {
     assert!(!diff.status.success());
     let v: Value = serde_json::from_slice(&diff.stdout).expect("compare diff json");
     assert_eq!(v.get("equivalent").and_then(|x| x.as_bool()), Some(false));
+    assert_eq!(
+        v.get("areas")
+            .and_then(|x| x.get("handoff"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("areas")
+            .and_then(|x| x.get("patch"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
     assert!(
         v.get("diffs")
             .and_then(|x| x.as_array())
             .is_some_and(|x| !x.is_empty())
     );
+}
+
+#[test]
+fn compare_classifies_structure_differences_by_area() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("README.md"), "next\n").unwrap();
+    commit_all(root, "next");
+
+    let out_a = root.join("bundle_plan_a");
+    let mut build_a = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_a
+        .current_dir(root)
+        .args(["build", "--plan-out"])
+        .arg(out_a.join("plan.toml"))
+        .args(["--out"])
+        .arg(&out_a)
+        .assert()
+        .success();
+
+    let out_b = root.join("bundle_plan_b");
+    copy_dir(&out_a, &out_b);
+    fs::remove_file(out_b.join("plan.toml")).unwrap();
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.current_dir(root)
+        .args(["compare"])
+        .arg(&out_a)
+        .arg(&out_b)
+        .assert()
+        .failure()
+        .stderr(contains("[plan/only_in_a] plan.toml"));
 }

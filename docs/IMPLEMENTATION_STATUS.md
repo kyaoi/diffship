@@ -42,7 +42,7 @@ This is the current implementation inventory based on:
 | filters (`.diffshipignore` + `--include` / `--exclude`) | Implemented | `src/filter.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/filter.rs` unit tests; `README.md` |
 | determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
 | `preview` command | Implemented | `src/preview.rs`, `src/cli.rs`; directory/zip bundles and `--json` output are supported; covered by `tests/m6_preview.rs` |
-| `compare` command (bundle reproducibility check) | Implemented | `src/bundle_compare.rs`, `src/cli.rs`; normalized/strict compare and `--json` output are covered by `tests/m6_compare.rs` |
+| `compare` command (bundle reproducibility check) | Implemented | `src/bundle_compare.rs`, `src/cli.rs`; normalized/strict compare, area/kind diff classification, and `--json` output are covered by `tests/m6_compare.rs` |
 | plan export / replay | Implemented | `src/plan.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/plan.rs` unit tests |
 | packing limits / binary policy (runtime) | Implemented | `--max-parts` / `--max-bytes-per-part` and `EXIT_PACKING_LIMITS` are implemented (`src/cli.rs`, `src/handoff.rs`, `src/exit.rs`); `--include-binary` / `--binary-mode raw|patch|meta`, fallback repacking, and context reduction (`U3 -> U1 -> U0`) are covered by `tests/m6_handoff_build.rs` |
 

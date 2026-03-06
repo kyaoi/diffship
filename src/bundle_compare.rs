@@ -13,7 +13,17 @@ struct CompareReport {
     bundle_b: String,
     mode: String,
     equivalent: bool,
-    diffs: Vec<String>,
+    areas: BTreeMap<String, usize>,
+    kinds: BTreeMap<String, usize>,
+    diffs: Vec<CompareDiff>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct CompareDiff {
+    area: String,
+    kind: String,
+    path: String,
+    detail: String,
 }
 
 pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
@@ -24,19 +34,42 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
     let b = load_bundle(&b_path)?;
 
     let mut diffs = Vec::new();
+    let mut areas = BTreeMap::new();
+    let mut kinds = BTreeMap::new();
     let mut keys = BTreeSet::new();
     keys.extend(a.keys().cloned());
     keys.extend(b.keys().cloned());
 
     for k in keys {
         match (a.get(&k), b.get(&k)) {
-            (Some(_), None) => diffs.push(format!("- only in A: {}", k)),
-            (None, Some(_)) => diffs.push(format!("- only in B: {}", k)),
+            (Some(_), None) => push_diff(
+                &mut diffs,
+                &mut areas,
+                &mut kinds,
+                &k,
+                "only_in_a",
+                format!("only in A: {k}"),
+            ),
+            (None, Some(_)) => push_diff(
+                &mut diffs,
+                &mut areas,
+                &mut kinds,
+                &k,
+                "only_in_b",
+                format!("only in B: {k}"),
+            ),
             (Some(ba), Some(bb)) => {
                 let left = normalize_entry(&k, ba, args.strict);
                 let right = normalize_entry(&k, bb, args.strict);
                 if left != right {
-                    diffs.push(format!("- content differs: {}", k));
+                    push_diff(
+                        &mut diffs,
+                        &mut areas,
+                        &mut kinds,
+                        &k,
+                        "content_differs",
+                        format!("content differs: {k}"),
+                    );
                 }
             }
             (None, None) => {}
@@ -52,6 +85,8 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
             "normalized".to_string()
         },
         equivalent: diffs.is_empty(),
+        areas: areas.clone(),
+        kinds: kinds.clone(),
         diffs: diffs.clone(),
     };
     if args.json {
@@ -81,13 +116,64 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
         "  mode: {}",
         if args.strict { "strict" } else { "normalized" }
     );
+    if !areas.is_empty() {
+        eprintln!("  areas: {}", render_count_map(&areas));
+    }
+    if !kinds.is_empty() {
+        eprintln!("  kinds: {}", render_count_map(&kinds));
+    }
     for d in &diffs {
-        eprintln!("{}", d);
+        eprintln!("- [{}/{}] {}", d.area, d.kind, d.path);
     }
     Err(ExitError::new(
         EXIT_GENERAL,
         "bundle comparison failed (see diff list above)",
     ))
+}
+
+fn push_diff(
+    diffs: &mut Vec<CompareDiff>,
+    areas: &mut BTreeMap<String, usize>,
+    kinds: &mut BTreeMap<String, usize>,
+    path: &str,
+    kind: &str,
+    detail: String,
+) {
+    let area = classify_area(path).to_string();
+    *areas.entry(area.clone()).or_insert(0) += 1;
+    *kinds.entry(kind.to_string()).or_insert(0) += 1;
+    diffs.push(CompareDiff {
+        area,
+        kind: kind.to_string(),
+        path: path.to_string(),
+        detail,
+    });
+}
+
+fn classify_area(path: &str) -> &'static str {
+    if path == "HANDOFF.md" {
+        "handoff"
+    } else if path.starts_with("parts/") && path.ends_with(".patch") {
+        "patch"
+    } else if path == "attachments.zip" {
+        "attachments"
+    } else if path == "excluded.md" {
+        "excluded"
+    } else if path == "secrets.md" {
+        "secrets"
+    } else if path == "plan.toml" {
+        "plan"
+    } else {
+        "other"
+    }
+}
+
+fn render_count_map(counts: &BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {

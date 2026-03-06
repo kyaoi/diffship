@@ -12,7 +12,7 @@ It focuses on the *ops* side of an AI workflow:
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
 > `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
-> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks.
+> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks, and `compare` now classifies diffs by area/kind.
 > The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
@@ -86,7 +86,7 @@ All commands below are implemented.
 - `diffship promote` — promote a verified run into a target branch
 - `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
 - `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
-- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`)
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`) and classify differences by area/kind
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches

@@ -156,9 +156,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（優先順）
 
-1) compare の差分分類を増やすかの判断（future UX）
-2) TUI の入力 UX 改良（将来拡張）
-3) compare/TUI の細部 polish をどこまで v1.1 に含めるか整理
+1) TUI の入力 UX 改良（将来拡張）
+2) compare/TUI の細部 polish をどこまで v1.1 に含めるか整理
+3) compare strict の zip container byte-level 判定を必要なら v1.1 で再検討
 
 ## メモ（詰まったらここに書く）
 

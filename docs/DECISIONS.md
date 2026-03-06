@@ -592,3 +592,18 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `HANDOFF.md` の TL;DR profile 表記は内部名 `m6` ではなく実際の profile 名を表示する。
   - `diffship init` の config stub に handoff profile 設定例を追記する。
+
+---
+
+## D-044: compare は差分を area/kind に分類して返す
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship compare` の差分は `area`（`handoff|patch|attachments|excluded|secrets|plan|other`）と `kind`（`only_in_a|only_in_b|content_differs`）に分類する。
+  - human-readable 出力では `[area/kind] path` 形式で列挙し、集計も併記する。
+  - `--json` 出力でも `areas` / `kinds` 集計と各 diff の分類情報を保持する。
+- Rationale:
+  - bundle の差分理由を README/HANDOFF/parts/attachments のどこに起因するか素早く切り分けられるようにするため。
+  - determinism チェック時に「実質 patch 差分」か「周辺メタ差分」かを機械的に扱いやすくするため。
+- Implications:
+  - compare の exit code 契約は変更しない。差分があれば分類付きでも non-zero のまま。

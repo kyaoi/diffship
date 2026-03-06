@@ -149,6 +149,7 @@ Conventions:
 - **S-COMPARE-001** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 - **S-COMPARE-002** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 - **S-COMPARE-003** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
+- **S-COMPARE-004** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

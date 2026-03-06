@@ -151,6 +151,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-COMPARE-001**: Compare two handoff bundles and report structural/content differences.
 - **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` byte-level mode.
 - **S-COMPARE-003**: Support `--json` output for machine-readable compare results while preserving non-zero exit on differences.
+- **S-COMPARE-004**: Classify compare differences by area/kind in both human-readable and JSON output.
 
 ### 4.4 Patch bundle format (input contract)
 
