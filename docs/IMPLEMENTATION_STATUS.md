@@ -28,7 +28,7 @@ This is the current implementation inventory based on:
 | secrets / tasks / ack | Implemented | `src/ops/secrets.rs`, `src/ops/tasks.rs`, `src/ops/promote.rs`; `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs`; `docs/OPS_WORKFLOW.md` |
 | config precedence | Implemented | `src/ops/config.rs`; `tests/m4_config_precedence.rs`; `README.md`, `docs/CONFIG.md` |
 | promotion / commit-policy switching | Implemented | CLI/config wiring in `src/cli.rs`, `src/ops/config.rs`, `src/ops/promote.rs`; tests in `tests/m4_02_promotion_switch.rs` and `tests/m4_config_precedence.rs` |
-| TUI v0 (ops-focused) | Implemented | `src/tui/mod.rs`, `src/ops/mod.rs`; `tests/m5_tui_cli_parity.rs`; `README.md` |
+| TUI v0 (ops + handoff guidance) | Implemented | `src/tui/mod.rs`, `src/plan.rs`, `src/ops/mod.rs`; `tests/m5_tui_cli_parity.rs`, `src/tui/mod.rs` unit tests; `README.md` |
 
 ### Handoff side
 
@@ -49,7 +49,7 @@ This is the current implementation inventory based on:
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- Remaining v1 gaps are mostly around TUI handoff flow parity (`S-TUI-002..004`) and filter include/exclude flags (`S-FILTER-001/003`).
+- Remaining v1 gaps are mostly around filter include/exclude flags (`S-FILTER-001/003`), plan export/replay (`S-TUI-004`), JSON output for preview/compare, and context-reduction fallback.
 
 ---
 

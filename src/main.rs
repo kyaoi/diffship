@@ -4,6 +4,7 @@ mod exit;
 mod git;
 mod handoff;
 mod ops;
+mod plan;
 mod preview;
 mod tui;
 

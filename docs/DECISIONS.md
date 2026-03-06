@@ -505,3 +505,17 @@ diffship OS の重要な意思決定ログです。
   - 単純な即時失敗よりも、読める bundle を可能な範囲で生成し、再実行指針を残すため。
 - Implications:
   - `S-PACK-002..004` の実装・テストを `src/handoff.rs` / `tests/m6_handoff_build.rs` に寄せる。
+
+---
+
+## D-038: TUI に handoff screen を追加し、build の等価 CLI を常に表示する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship tui` に handoff screen を追加し、range/sources/split/binary/out を切り替えながら preview/build できるようにする。
+  - TUI は handoff 専用ロジックを持たず、`src/plan.rs` の `HandoffPlan` から CLI 引数を再構成して既存 `diffship build` を呼ぶ。
+  - internal preview は一時 bundle を生成して最初の patch part を色付きで表示する。
+- Rationale:
+  - handoff 導線を TUI でも辿れるようにしつつ、CLI parity を壊さないため。
+- Implications:
+  - plan export/replay 自体は後続タスクとして残し、現段階では「等価 CLI の表示」までを先行実装する。

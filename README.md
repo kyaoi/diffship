@@ -13,7 +13,8 @@ It focuses on the *ops* side of an AI workflow:
 > `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
 > `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks.
-> Remaining handoff gaps are mainly TUI parity for the handoff flow and include/exclude filter flags.
+> The TUI now includes a handoff screen for range/sources/split selection, internal diff preview, build launch, and equivalent CLI command display.
+> Remaining handoff gaps are mainly include/exclude filter flags, JSON output for preview/compare, context-reduction fallback, and plan export/replay.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -71,7 +72,7 @@ You can also run `diffship pack-fix --run-id <run-id>` manually.
 All commands below are implemented.
 
 - `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
-- `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher)
+- `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher + handoff screen)
 
 - `diffship init` — generate `.diffship/` project kit files
 - `diffship status` — show lock state and recent runs (`--json` available)
