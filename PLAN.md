@@ -136,7 +136,7 @@ diffship loop <patch-bundle.zip>
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
 | M6-02 | done | diff収集（committed/staged/unstaged/untracked） | committed/staged/unstaged/untracked を CLI で選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | todo | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
+| M6-03 | done | 分割（split-by）+ excluded/attachments | `--split-by auto|file|commit`、`attachments.zip`、`excluded.md` を生成できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
 | M6-05 | todo | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
 | M6-06 | todo | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
@@ -144,15 +144,14 @@ diffship loop <patch-bundle.zip>
 ---
 ## Next（いま着手する3つ）
 
-1) M6-03: profile 制限に合わせた split / excluded / attachments
-2) M6-05: `.diffshipignore` + handoff secrets warning（値を出さない/CI用fail）
-3) M6-06: handoff 出力の golden / determinism テストを増やす
+1) M6-05 ignore / `.diffshipignore` / binary policy
+2) M6-06 determinism / size profile / excluded guidance の改善
+3) handoff と ops をつなぐ運用ドキュメント整理（README / workflow）
 
 （候補）
-- Handoff `preview`
-- Handoff TUI（インタラクティブ選択）
-- verify の config-driven profiles（`[verify.profiles.*]`）強化
-
+- `--include-binary` / `--binary-mode raw|patch|meta`
+- `.diffshipignore` の適用
+- part size 上限を超えたときの自動 split/exclude
 
 ## メモ（詰まったらここに書く）
 
@@ -170,3 +169,7 @@ diffship loop <patch-bundle.zip>
   - `diffship build` は `--include-staged` / `--include-unstaged` / `--include-untracked` と `--no-committed` を受け付ける
   - untracked は現時点では text add-diff のみ。binary/unreadable は File Table に skip note を残し、attachments は M6-03 で扱う
   - `docs/TRACEABILITY.md` の `Status: Partial` は、Tests か Code のどちらかに `TBD` が残る場合だけ使う（両方埋まっていれば `Implemented`）
+
+- M6-03 では split-by=commit は committed range のみ。untracked は auto で text/small → patch、binary/unreadable → attachments.zip、meta は excluded.md に送る。
+- M6-03 フォローアップ: README では生成物（HANDOFF.md / parts/ / attachments.zip / excluded.md）を backtick の path 参照として書かない。docs-check は repo 内実在パスとして検証するため。
+- `zip` crate 0.6 系では `zip::write::FileOptions` に lifetime/generic を付けず `FileOptions` として扱う。

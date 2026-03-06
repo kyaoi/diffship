@@ -56,7 +56,7 @@ Conventions:
 ## Range modes
 
 - **S-RANGE-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
-- **S-RANGE-002** — Tests: TBD — Code: `src/cli.rs` — Status: Planned
+- **S-RANGE-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-RANGE-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
@@ -72,10 +72,10 @@ Conventions:
 ## Untracked
 
 - **S-UNTRACKED-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
-- **S-UNTRACKED-002** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
-- **S-UNTRACKED-003** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
+- **S-UNTRACKED-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-UNTRACKED-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-UNTRACKED-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-UNTRACKED-005** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
+- **S-UNTRACKED-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -83,22 +83,22 @@ Conventions:
 
 - **S-BINARY-001** — Tests: TBD — Code: `src/binary.rs` — Status: Planned
 - **S-BINARY-002** — Tests: TBD — Code: `src/binary.rs` — Status: Planned
-- **S-BINARY-003** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
+- **S-BINARY-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
 ## Split
 
-- **S-SPLIT-001** — Tests: TBD — Code: `src/split.rs` — Status: Planned
-- **S-SPLIT-002** — Tests: TBD — Code: `src/split.rs` — Status: Planned
-- **S-SPLIT-003** — Tests: TBD — Code: `src/split.rs` — Status: Planned
+- **S-SPLIT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-SPLIT-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-SPLIT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
 ## Output
 
 - **S-OUT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-OUT-002** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
+- **S-OUT-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
@@ -110,7 +110,7 @@ Conventions:
 - **S-PACK-002** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
 - **S-PACK-003** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
 - **S-PACK-004** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
-- **S-PACK-005** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
+- **S-PACK-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -119,7 +119,7 @@ Conventions:
 - **S-HANDOFF-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-HANDOFF-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-HANDOFF-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-HANDOFF-004** — Tests: TBD — Code: `src/handoff.rs` — Status: Planned
+- **S-HANDOFF-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 

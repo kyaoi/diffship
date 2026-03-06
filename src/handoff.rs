@@ -7,8 +7,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use time::format_description;
-use zip::ZipWriter;
 use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+const AUTO_PATCH_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RangeMode {
@@ -16,6 +18,20 @@ enum RangeMode {
     MergeBase,
     Last,
     Root,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SplitBy {
+    File,
+    Commit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UntrackedMode {
+    Auto,
+    Patch,
+    Raw,
+    Meta,
 }
 
 #[derive(Debug, Clone)]
@@ -61,23 +77,6 @@ impl SourceSelection {
 
         Ok(sel)
     }
-
-    fn segment_names(&self) -> Vec<String> {
-        let mut names = vec![];
-        if self.include_committed {
-            names.push("committed".to_string());
-        }
-        if self.include_staged {
-            names.push("staged".to_string());
-        }
-        if self.include_unstaged {
-            names.push("unstaged".to_string());
-        }
-        if self.include_untracked {
-            names.push("untracked".to_string());
-        }
-        names
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +96,45 @@ struct SegmentOutput {
     name: String,
     patch: String,
     rows: Vec<FileRow>,
+}
+
+#[derive(Debug, Clone)]
+struct PartOutput {
+    name: String,
+    patch: String,
+    segments: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AttachmentEntry {
+    zip_path: String,
+    bytes: Vec<u8>,
+    reason: String,
+}
+
+#[derive(Debug, Clone)]
+struct ExclusionEntry {
+    path: String,
+    reason: String,
+    guidance: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SegmentBuildResult {
+    segment: Option<SegmentOutput>,
+    rows: Vec<FileRow>,
+    attachments: Vec<AttachmentEntry>,
+    exclusions: Vec<ExclusionEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct CommitView {
+    hash7: String,
+    subject: String,
+    date: String,
+    files: Vec<(String, String)>,
+    ins: Option<u64>,
+    del: Option<u64>,
 }
 
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
@@ -129,53 +167,140 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     } else {
         None
     };
+    let split_by = effective_split_by(args.split_by.as_deref(), plan.as_ref())?;
+    let untracked_mode = parse_untracked_mode(&args.untracked_mode)?;
 
-    let part_name = "part_01.patch";
-    let part_rel = format!("parts/{part_name}");
+    let mut parts = Vec::<PartOutput>::new();
+    let mut rows = Vec::<FileRow>::new();
+    let mut attachments = Vec::<AttachmentEntry>::new();
+    let mut exclusions = Vec::<ExclusionEntry>::new();
+    let mut commit_views = Vec::<CommitView>::new();
 
-    let mut segments = vec![];
     if let Some(plan) = plan.as_ref() {
-        segments.push(build_committed_segment(git_root, plan, part_name)?);
+        if split_by == SplitBy::Commit {
+            let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
+            for cp in committed_parts {
+                let part_name = format!("part_{:02}.patch", parts.len() + 1);
+                let mut segment = cp.segment;
+                for row in &mut segment.rows {
+                    row.part = part_name.clone();
+                }
+                commit_views.push(CommitView {
+                    hash7: cp.hash7,
+                    subject: cp.subject,
+                    date: cp.date,
+                    files: segment
+                        .rows
+                        .iter()
+                        .map(|r| (r.path.clone(), part_name.clone()))
+                        .collect(),
+                    ins: sum_opt(segment.rows.iter().map(|r| r.ins)),
+                    del: sum_opt(segment.rows.iter().map(|r| r.del)),
+                });
+                rows.extend(segment.rows.clone());
+                parts.push(PartOutput {
+                    name: part_name,
+                    patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                    segments: vec![segment.name],
+                });
+            }
+        } else {
+            let part_name = format!("part_{:02}.patch", parts.len() + 1);
+            let segment = build_committed_segment(git_root, plan, &part_name)?;
+            rows.extend(segment.rows.clone());
+            parts.push(PartOutput {
+                name: part_name,
+                patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                segments: vec![segment.name],
+            });
+        }
     }
+
+    let mut worktree_segments = Vec::<SegmentOutput>::new();
+    let mut extra_rows = Vec::<FileRow>::new();
     if sources.include_staged {
-        segments.push(build_staged_segment(git_root, part_name)?);
+        worktree_segments.push(build_staged_segment(git_root, "")?);
     }
     if sources.include_unstaged {
-        segments.push(build_unstaged_segment(git_root, part_name)?);
+        worktree_segments.push(build_unstaged_segment(git_root, "")?);
     }
     if sources.include_untracked {
-        segments.push(build_untracked_segment(git_root, part_name)?);
+        let built = build_untracked_segment(git_root, untracked_mode)?;
+        if let Some(seg) = built.segment {
+            worktree_segments.push(seg);
+        }
+        for row in built.rows {
+            if row.part == "attachments.zip" || row.part == "-" {
+                extra_rows.push(row);
+            }
+        }
+        attachments.extend(built.attachments);
+        exclusions.extend(built.exclusions);
     }
 
-    let patch = render_segmented_patch(&segments);
-    let part_path = parts_dir.join(part_name);
-    write_text_file(&part_path, &patch)?;
-
-    let mut rows = vec![];
-    for seg in &segments {
-        rows.extend(seg.rows.clone());
+    if !worktree_segments.is_empty() {
+        let part_name = format!("part_{:02}.patch", parts.len() + 1);
+        for seg in &mut worktree_segments {
+            for row in &mut seg.rows {
+                if row.part.is_empty() {
+                    row.part = part_name.clone();
+                }
+            }
+        }
+        for seg in &worktree_segments {
+            rows.extend(seg.rows.clone());
+        }
+        let patch = render_segmented_patch(&worktree_segments);
+        let segments = worktree_segments.iter().map(|s| s.name.clone()).collect();
+        parts.push(PartOutput {
+            name: part_name,
+            patch,
+            segments,
+        });
     }
+
+    rows.extend(extra_rows);
     rows.sort_by(|a, b| a.segment.cmp(&b.segment).then(a.path.cmp(&b.path)));
+
+    for part in &parts {
+        write_text_file(&parts_dir.join(&part.name), &part.patch)?;
+    }
+    if !attachments.is_empty() {
+        write_attachments_zip(&out_dir.join("attachments.zip"), &attachments)?;
+    }
+    if !exclusions.is_empty() {
+        write_text_file(
+            &out_dir.join("excluded.md"),
+            &render_excluded_md(&exclusions),
+        )?;
+    }
 
     let changed_paths: Vec<String> = rows.iter().map(|r| r.path.clone()).collect();
     let changed_tree = render_changed_tree(&changed_paths);
-    let part_segments = sources.segment_names();
-    let parts_index = render_parts_index(&patch, &rows, part_name, &part_segments);
+    let parts_index = render_parts_index(&parts, &rows);
     let (cat_summary, reading_order) = render_category_summary_and_reading_order(&rows);
+    let first_part_rel = parts
+        .first()
+        .map(|p| format!("parts/{}", p.name))
+        .unwrap_or_else(|| "parts/part_01.patch".to_string());
 
     let handoff = render_handoff_md(&HandoffDocInputs {
         out_dir: &out_dir,
         plan: plan.as_ref(),
         head: &head,
+        split_by,
         sources,
+        untracked_mode,
         changed_tree: &changed_tree,
         rows: &rows,
         cat_summary: &cat_summary,
         parts_index: &parts_index,
         reading_order: &reading_order,
-        part_rel: &part_rel,
+        first_part_rel: &first_part_rel,
+        commit_views: &commit_views,
+        attachments: &attachments,
+        exclusions: &exclusions,
     });
-
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
 
     let mut zip_path = None;
@@ -186,11 +311,86 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     }
 
     println!("diffship build: created {}", out_dir.display());
+    if !attachments.is_empty() {
+        println!(
+            "diffship build: created {}/attachments.zip",
+            out_dir.display()
+        );
+    }
+    if !exclusions.is_empty() {
+        println!("diffship build: created {}/excluded.md", out_dir.display());
+    }
     if let Some(zp) = zip_path {
         println!("diffship build: created {}", zp.display());
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct CommitSegmentBuild {
+    hash7: String,
+    subject: String,
+    date: String,
+    segment: SegmentOutput,
+}
+
+fn build_committed_parts_by_commit(
+    git_root: &Path,
+    plan: &RangePlan,
+) -> Result<Vec<CommitSegmentBuild>, ExitError> {
+    let revs = git::run_git(
+        git_root,
+        [
+            "rev-list",
+            "--reverse",
+            &format!("{}..{}", plan.base, plan.target),
+        ],
+    )?;
+    let mut out = vec![];
+    for rev in revs.lines().map(str::trim).filter(|s| !s.is_empty()) {
+        let patch = git::run_git(
+            git_root,
+            [
+                "show",
+                "--format=",
+                "--no-color",
+                "--no-ext-diff",
+                "--patch",
+                "--full-index",
+                rev,
+            ],
+        )?;
+        let name_status = git::run_git(git_root, ["show", "--format=", "--name-status", rev])?;
+        let numstat = git::run_git(git_root, ["show", "--format=", "--numstat", rev])?;
+        let meta = git::run_git(git_root, ["show", "-s", "--format=%h%x09%s%x09%cs", rev])?;
+        let mut meta_parts = meta.trim().splitn(3, '\t');
+        let hash7 = meta_parts.next().unwrap_or("").to_string();
+        let subject = meta_parts.next().unwrap_or("").to_string();
+        let date = meta_parts.next().unwrap_or("").to_string();
+
+        let insdel = parse_numstat(&numstat);
+        let mut rows = parse_name_status("committed", &name_status, &insdel);
+        for r in &mut rows {
+            if r.status == "D" {
+                r.bytes = Some(0);
+            } else {
+                r.bytes = git_cat_file_size(git_root, rev, &r.path).ok();
+            }
+        }
+
+        out.push(CommitSegmentBuild {
+            hash7,
+            subject,
+            date,
+            segment: SegmentOutput {
+                name: "committed".to_string(),
+                patch,
+                rows,
+            },
+        });
+    }
+    Ok(out)
 }
 
 fn build_committed_segment(
@@ -240,7 +440,6 @@ fn build_committed_segment(
         }
         r.part = part_name.to_string();
     }
-
     Ok(SegmentOutput {
         name: "committed".to_string(),
         patch,
@@ -274,7 +473,6 @@ fn build_staged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOutpu
         }
         r.part = part_name.to_string();
     }
-
     Ok(SegmentOutput {
         name: "staged".to_string(),
         patch,
@@ -291,10 +489,11 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
             "--no-ext-diff",
             "--patch",
             "--full-index",
+            "HEAD",
         ],
     )?;
-    let name_status = git::run_git(git_root, ["diff", "--name-status"])?;
-    let numstat = git::run_git(git_root, ["diff", "--numstat"])?;
+    let name_status = git::run_git(git_root, ["diff", "--name-status", "HEAD"])?;
+    let numstat = git::run_git(git_root, ["diff", "--numstat", "HEAD"])?;
 
     let insdel_map = parse_numstat(&numstat);
     let mut rows = parse_name_status("unstaged", &name_status, &insdel_map);
@@ -306,7 +505,6 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
         }
         r.part = part_name.to_string();
     }
-
     Ok(SegmentOutput {
         name: "unstaged".to_string(),
         patch,
@@ -314,7 +512,10 @@ fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOut
     })
 }
 
-fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOutput, ExitError> {
+fn build_untracked_segment(
+    git_root: &Path,
+    mode: UntrackedMode,
+) -> Result<SegmentBuildResult, ExitError> {
     let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
     let mut paths = list
         .lines()
@@ -326,6 +527,8 @@ fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOu
 
     let mut patch = String::new();
     let mut rows = vec![];
+    let mut attachments = vec![];
+    let mut exclusions = vec![];
 
     for rel in paths {
         let abs = git_root.join(&rel);
@@ -335,10 +538,45 @@ fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOu
                 format!("failed to read untracked file {}: {e}", abs.display()),
             )
         })?;
+        let size = bytes.len() as u64;
+        let decoded = String::from_utf8(bytes.clone()).ok();
+        let text_patch_ok = decoded
+            .as_ref()
+            .is_some_and(|_| bytes.len() <= AUTO_PATCH_MAX_BYTES);
 
-        let size = Some(bytes.len() as u64);
-        match String::from_utf8(bytes) {
-            Ok(text) => {
+        let policy = match mode {
+            UntrackedMode::Patch => UntrackedDisposition::Patch,
+            UntrackedMode::Raw => UntrackedDisposition::Raw,
+            UntrackedMode::Meta => UntrackedDisposition::Meta,
+            UntrackedMode::Auto => {
+                if text_patch_ok {
+                    UntrackedDisposition::Patch
+                } else {
+                    UntrackedDisposition::Raw
+                }
+            }
+        };
+
+        match policy {
+            UntrackedDisposition::Patch => {
+                let text = decoded.ok_or_else(|| {
+                    ExitError::new(
+                        EXIT_GENERAL,
+                        format!(
+                            "untracked file '{}' is not valid UTF-8; use --untracked-mode raw|meta",
+                            rel
+                        ),
+                    )
+                })?;
+                if bytes.len() > AUTO_PATCH_MAX_BYTES {
+                    return Err(ExitError::new(
+                        EXIT_GENERAL,
+                        format!(
+                            "untracked file '{}' is too large for patch mode; use --untracked-mode raw|meta",
+                            rel
+                        ),
+                    ));
+                }
                 let diff = run_git_allow_diff_status(
                     git_root,
                     [
@@ -358,7 +596,6 @@ fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOu
                 }
                 patch.push_str(diff.trim_end());
                 patch.push('\n');
-
                 rows.push(FileRow {
                     segment: "untracked".to_string(),
                     status: "A".to_string(),
@@ -366,46 +603,100 @@ fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOu
                     note: String::new(),
                     ins: Some(count_text_lines(&text)),
                     del: Some(0),
-                    bytes: size,
-                    part: part_name.to_string(),
+                    bytes: Some(size),
+                    part: String::new(),
                 });
             }
-            Err(_) => rows.push(FileRow {
-                segment: "untracked".to_string(),
-                status: "A".to_string(),
-                path: rel,
-                note: "binary/unreadable skipped (attachments planned in M6-03)".to_string(),
-                ins: None,
-                del: None,
-                bytes: size,
-                part: String::new(),
-            }),
+            UntrackedDisposition::Raw => {
+                let reason = if decoded.is_some() {
+                    "stored as raw attachment (auto/raw mode)"
+                } else {
+                    "binary/unreadable stored as raw attachment"
+                };
+                attachments.push(AttachmentEntry {
+                    zip_path: format!("untracked/{}", rel),
+                    bytes,
+                    reason: reason.to_string(),
+                });
+                rows.push(FileRow {
+                    segment: "untracked".to_string(),
+                    status: "A".to_string(),
+                    path: rel,
+                    note: "stored in attachments.zip".to_string(),
+                    ins: decoded.as_ref().map(|s| count_text_lines(s)),
+                    del: Some(0),
+                    bytes: Some(size),
+                    part: "attachments.zip".to_string(),
+                });
+            }
+            UntrackedDisposition::Meta => {
+                exclusions.push(ExclusionEntry {
+                    path: rel.clone(),
+                    reason: "meta-only untracked file".to_string(),
+                    guidance:
+                        "Re-run with --untracked-mode raw or patch if the AI needs file contents"
+                            .to_string(),
+                });
+                rows.push(FileRow {
+                    segment: "untracked".to_string(),
+                    status: "A".to_string(),
+                    path: rel,
+                    note: "excluded (meta only; see excluded.md)".to_string(),
+                    ins: None,
+                    del: None,
+                    bytes: Some(size),
+                    part: "-".to_string(),
+                });
+            }
         }
     }
 
-    Ok(SegmentOutput {
-        name: "untracked".to_string(),
-        patch,
+    let patch_rows = rows
+        .iter()
+        .filter(|r| r.part.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    let segment = if patch.trim().is_empty() {
+        None
+    } else {
+        Some(SegmentOutput {
+            name: "untracked".to_string(),
+            patch,
+            rows: patch_rows,
+        })
+    };
+
+    Ok(SegmentBuildResult {
+        segment,
         rows,
+        attachments,
+        exclusions,
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum UntrackedDisposition {
+    Patch,
+    Raw,
+    Meta,
 }
 
 fn render_segmented_patch(segments: &[SegmentOutput]) -> String {
     let mut out = String::new();
-
     for seg in segments {
+        if seg.patch.trim().is_empty() {
+            continue;
+        }
         if !out.is_empty() {
             out.push('\n');
         }
         out.push_str(&format!("# === diffship segment: {} ===\n", seg.name));
-        if seg.patch.trim().is_empty() {
-            out.push_str("# (no changes)\n");
-        } else {
-            out.push_str(seg.patch.trim_end());
-            out.push('\n');
-        }
+        out.push_str(seg.patch.trim_end());
+        out.push('\n');
     }
-
+    if out.is_empty() {
+        out.push_str("# (no changes)\n");
+    }
     out
 }
 
@@ -430,9 +721,42 @@ fn parse_range_mode(s: &str) -> Result<RangeMode, ExitError> {
     }
 }
 
+fn effective_split_by(raw: Option<&str>, plan: Option<&RangePlan>) -> Result<SplitBy, ExitError> {
+    let requested = match raw.unwrap_or("auto").trim().to_ascii_lowercase().as_str() {
+        "auto" => {
+            return Ok(if plan.and_then(|p| p.commit_count).unwrap_or(0) > 1 {
+                SplitBy::Commit
+            } else {
+                SplitBy::File
+            });
+        }
+        "file" => SplitBy::File,
+        "commit" => SplitBy::Commit,
+        other => {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!("invalid --split-by '{other}' (expected: auto|file|commit)"),
+            ));
+        }
+    };
+    Ok(requested)
+}
+
+fn parse_untracked_mode(raw: &str) -> Result<UntrackedMode, ExitError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "auto" => Ok(UntrackedMode::Auto),
+        "patch" => Ok(UntrackedMode::Patch),
+        "raw" => Ok(UntrackedMode::Raw),
+        "meta" => Ok(UntrackedMode::Meta),
+        other => Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("invalid --untracked-mode '{other}' (expected: auto|patch|raw|meta)"),
+        )),
+    }
+}
+
 fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, ExitError> {
     let mode = parse_range_mode(&args.range_mode)?;
-
     match mode {
         RangeMode::Last => {
             let base = git::rev_parse(git_root, "HEAD~1").map_err(|_| {
@@ -484,7 +808,6 @@ fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, Exit
             let b = args.b.clone().ok_or_else(|| {
                 ExitError::new(EXIT_GENERAL, "--range-mode=merge-base requires --b <rev>")
             })?;
-
             let mb = git::run_git(git_root, ["merge-base", a.as_str(), b.as_str()])?;
             let mb = mb.trim().to_string();
             if mb.is_empty() {
@@ -493,7 +816,6 @@ fn build_range_plan(git_root: &Path, args: &BuildArgs) -> Result<RangePlan, Exit
                     "git merge-base returned empty output",
                 ));
             }
-
             let base = mb.clone();
             let target = git::rev_parse(git_root, &b)?;
             let cnt = rev_list_count(git_root, &base, &target).ok();
@@ -533,11 +855,13 @@ fn rev_list_count(git_root: &Path, base: &str, target: &str) -> Result<u64, Exit
         git_root,
         ["rev-list", "--count", &format!("{base}..{target}")],
     )?;
-    let s = out.trim();
-    s.parse::<u64>().map_err(|e| {
+    out.trim().parse::<u64>().map_err(|e| {
         ExitError::new(
             EXIT_GENERAL,
-            format!("failed to parse rev-list --count output '{s}': {e}"),
+            format!(
+                "failed to parse rev-list --count output '{}': {e}",
+                out.trim()
+            ),
         )
     })
 }
@@ -549,7 +873,6 @@ fn empty_tree_hash(git_root: &Path) -> Result<String, ExitError> {
         .stdin(Stdio::null())
         .output()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git mktree: {e}")))?;
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ExitError::new(
@@ -557,17 +880,14 @@ fn empty_tree_hash(git_root: &Path) -> Result<String, ExitError> {
             format!("git mktree failed: {}", stderr.trim()),
         ));
     }
-
-    let s = String::from_utf8_lossy(&output.stdout);
-    let trimmed = s.trim();
+    let trimmed = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if trimmed.is_empty() {
         return Err(ExitError::new(
             EXIT_GENERAL,
             "git mktree returned empty output",
         ));
     }
-
-    Ok(trimmed.to_string())
+    Ok(trimmed)
 }
 
 fn git_cat_file_size(git_root: &Path, target_commit: &str, path: &str) -> Result<u64, ExitError> {
@@ -577,11 +897,10 @@ fn git_cat_file_size(git_root: &Path, target_commit: &str, path: &str) -> Result
         format!("{target_commit}:{path}")
     };
     let out = git::run_git(git_root, ["cat-file", "-s", spec.as_str()])?;
-    let s = out.trim();
-    s.parse::<u64>().map_err(|e| {
+    out.trim().parse::<u64>().map_err(|e| {
         ExitError::new(
             EXIT_GENERAL,
-            format!("failed to parse cat-file -s output '{s}': {e}"),
+            format!("failed to parse cat-file -s output '{}': {e}", out.trim()),
         )
     })
 }
@@ -608,17 +927,15 @@ where
         .current_dir(git_root)
         .output()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git: {e}")))?;
-
-    let code = output.status.code();
-    if output.status.success() || code == Some(1) {
-        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    let code = output.status.code().unwrap_or(1);
+    if code != 0 && code != 1 {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("git failed: {}", stderr.trim()),
+        ));
     }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(ExitError::new(
-        EXIT_GENERAL,
-        format!("git failed: {}", stderr.trim()),
-    ))
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 fn write_text_file(path: &Path, contents: &str) -> Result<(), ExitError> {
@@ -630,18 +947,63 @@ fn write_text_file(path: &Path, contents: &str) -> Result<(), ExitError> {
             )
         })?;
     }
-
     let mut s = contents.to_string();
     if !s.ends_with('\n') {
         s.push('\n');
     }
-
     fs::write(path, s.as_bytes()).map_err(|e| {
         ExitError::new(
             EXIT_GENERAL,
             format!("failed to write {}: {e}", path.display()),
         )
     })
+}
+
+fn write_attachments_zip(path: &Path, entries: &[AttachmentEntry]) -> Result<(), ExitError> {
+    let file = fs::File::create(path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to create {}: {e}", path.display()),
+        )
+    })?;
+    let mut zip = ZipWriter::new(file);
+    let opts: FileOptions = FileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    let mut sorted = entries.to_vec();
+    sorted.sort_by(|a, b| a.zip_path.cmp(&b.zip_path));
+    for entry in sorted {
+        zip.start_file(entry.zip_path, opts)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to add zip entry: {e}")))?;
+        zip.write_all(&entry.bytes)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to write zip entry: {e}")))?;
+    }
+    zip.finish().map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to finalize attachments zip: {e}"),
+        )
+    })?;
+    Ok(())
+}
+
+fn render_excluded_md(exclusions: &[ExclusionEntry]) -> String {
+    let mut items = exclusions.to_vec();
+    items.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut s = String::new();
+    s.push_str("# excluded.md\n\n");
+    s.push_str(
+        "The following items were intentionally excluded from patch parts or attachments.\n\n",
+    );
+    s.push_str("| path | reason | guidance |\n");
+    s.push_str("|---|---|---|\n");
+    for item in items {
+        s.push_str(&format!(
+            "| `{}` | {} | {} |\n",
+            item.path, item.reason, item.guidance
+        ));
+    }
+    s
 }
 
 fn parse_numstat(s: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
@@ -657,9 +1019,10 @@ fn parse_numstat(s: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
         if path.is_empty() {
             continue;
         }
-        let ins = ins_s.parse::<u64>().ok();
-        let del = del_s.parse::<u64>().ok();
-        map.insert(path.to_string(), (ins, del));
+        map.insert(
+            path.to_string(),
+            (ins_s.parse::<u64>().ok(), del_s.parse::<u64>().ok()),
+        );
     }
     map
 }
@@ -670,31 +1033,25 @@ fn parse_name_status(
     insdel: &HashMap<String, (Option<u64>, Option<u64>)>,
 ) -> Vec<FileRow> {
     let mut rows = vec![];
-
     for line in name_status.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-
         let mut parts = line.split('\t');
         let status = parts.next().unwrap_or("").trim().to_string();
         if status.is_empty() {
             continue;
         }
-
         let (path, note) = if status.starts_with('R') || status.starts_with('C') {
             let old = parts.next().unwrap_or("").to_string();
             let new = parts.next().unwrap_or("").to_string();
             (new, format!("from {old}"))
         } else {
-            let p = parts.next().unwrap_or("").to_string();
-            (p, String::new())
+            (parts.next().unwrap_or("").to_string(), String::new())
         };
-
         let st = status.chars().next().unwrap_or('?').to_string();
         let (ins, del) = insdel.get(&path).cloned().unwrap_or((None, None));
-
         rows.push(FileRow {
             segment: segment.to_string(),
             status: st,
@@ -706,7 +1063,6 @@ fn parse_name_status(
             part: String::new(),
         });
     }
-
     rows
 }
 
@@ -718,7 +1074,6 @@ struct TreeNode {
 
 fn render_changed_tree(paths: &[String]) -> String {
     let mut root = TreeNode::default();
-
     for p in paths {
         let parts: Vec<&str> = p.split('/').filter(|s| !s.is_empty()).collect();
         if parts.is_empty() {
@@ -734,7 +1089,6 @@ fn render_changed_tree(paths: &[String]) -> String {
             }
         }
     }
-
     let mut out = String::new();
     render_tree_node(&root, 0, &mut out);
     out
@@ -742,142 +1096,151 @@ fn render_changed_tree(paths: &[String]) -> String {
 
 fn render_tree_node(node: &TreeNode, depth: usize, out: &mut String) {
     let indent = "  ".repeat(depth);
-
     for (dir, child) in &node.dirs {
         out.push_str(&format!("{indent}{dir}/\n"));
         render_tree_node(child, depth + 1, out);
     }
-
     for f in &node.files {
         out.push_str(&format!("{indent}{f}\n"));
     }
 }
 
-fn render_parts_index(
-    patch: &str,
-    rows: &[FileRow],
-    part_name: &str,
-    segments: &[String],
-) -> String {
-    let approx_bytes = patch.len();
-    let mut top = rows
-        .iter()
-        .filter(|r| r.part == part_name)
-        .map(|r| r.path.clone())
-        .collect::<Vec<_>>();
-    top.sort();
-    top.dedup();
-    if top.len() > 8 {
-        top.truncate(8);
-    }
-
+fn render_parts_index(parts: &[PartOutput], rows: &[FileRow]) -> String {
     let mut s = String::new();
-    s.push_str(&format!("### {part_name}\n"));
-    s.push_str(&format!("- approx bytes: `{approx_bytes}`\n"));
-    s.push_str(&format!("- segments: `{}`\n", segments.join(", ")));
-    s.push_str("- top files:\n");
-    for p in top {
-        s.push_str(&format!("  - `{}`\n", p));
+    for part in parts {
+        let approx_bytes = part.patch.len();
+        let mut top = rows
+            .iter()
+            .filter(|r| r.part == part.name)
+            .map(|r| r.path.clone())
+            .collect::<Vec<_>>();
+        top.sort();
+        top.dedup();
+        if top.len() > 8 {
+            top.truncate(8);
+        }
+        s.push_str(&format!("### {}\n", part.name));
+        s.push_str(&format!("- approx bytes: `{}`\n", approx_bytes));
+        s.push_str(&format!("- segments: `{}`\n", part.segments.join(", ")));
+        s.push_str("- top files:\n");
+        for p in top {
+            s.push_str(&format!("  - `{}`\n", p));
+        }
+        s.push('\n');
     }
-
     s
 }
 
+#[derive(Debug, Default)]
+struct CatSummary {
+    files: BTreeSet<String>,
+    parts: BTreeSet<String>,
+}
+
 fn render_category_summary_and_reading_order(rows: &[FileRow]) -> (String, Vec<String>) {
-    let mut docs = vec![];
-    let mut cfg = vec![];
-    let mut src = vec![];
-    let mut tests = vec![];
-    let mut other = vec![];
+    let mut docs = CatSummary::default();
+    let mut cfg = CatSummary::default();
+    let mut src = CatSummary::default();
+    let mut tests = CatSummary::default();
+    let mut other = CatSummary::default();
 
     for r in rows {
-        let p = r.path.as_str();
-        if p.starts_with("docs/") || p.ends_with(".md") {
-            docs.push(r.path.clone());
-        } else if p.starts_with("src/") {
-            src.push(r.path.clone());
-        } else if p.starts_with("tests/") {
-            tests.push(r.path.clone());
-        } else if p.starts_with(".github/")
-            || p.ends_with(".toml")
-            || p.ends_with(".yml")
-            || p.ends_with(".yaml")
-            || p.ends_with(".json")
-            || p.ends_with(".lock")
+        let slot = if r.path.starts_with("docs/") || r.path.ends_with(".md") {
+            &mut docs
+        } else if r.path.starts_with("src/") {
+            &mut src
+        } else if r.path.starts_with("tests/") {
+            &mut tests
+        } else if r.path.starts_with(".github/")
+            || r.path.ends_with(".toml")
+            || r.path.ends_with(".yml")
+            || r.path.ends_with(".yaml")
+            || r.path.ends_with(".json")
+            || r.path.ends_with(".lock")
         {
-            cfg.push(r.path.clone());
+            &mut cfg
         } else {
-            other.push(r.path.clone());
+            &mut other
+        };
+        slot.files.insert(r.path.clone());
+        if !r.part.is_empty() && r.part != "-" {
+            slot.parts.insert(r.part.clone());
         }
     }
 
-    docs.sort();
-    docs.dedup();
-    cfg.sort();
-    cfg.dedup();
-    src.sort();
-    src.dedup();
-    tests.sort();
-    tests.dedup();
-    other.sort();
-    other.dedup();
-
     let mut s = String::new();
     s.push_str(&format!(
-        "- Docs: `{}` files → parts: `part_01`\n",
-        docs.len()
+        "- Docs: `{}` files → parts: `{}`\n",
+        docs.files.len(),
+        join_parts(&docs.parts)
     ));
     s.push_str(&format!(
-        "- Config/CI: `{}` files → parts: `part_01`\n",
-        cfg.len()
+        "- Config/CI: `{}` files → parts: `{}`\n",
+        cfg.files.len(),
+        join_parts(&cfg.parts)
     ));
     s.push_str(&format!(
-        "- Source: `{}` files → parts: `part_01`\n",
-        src.len()
+        "- Source: `{}` files → parts: `{}`\n",
+        src.files.len(),
+        join_parts(&src.parts)
     ));
     s.push_str(&format!(
-        "- Tests: `{}` files → parts: `part_01`\n",
-        tests.len()
+        "- Tests: `{}` files → parts: `{}`\n",
+        tests.files.len(),
+        join_parts(&tests.parts)
     ));
     s.push_str(&format!(
-        "- Other: `{}` files → parts: `part_01`\n",
-        other.len()
+        "- Other: `{}` files → parts: `{}`\n",
+        other.files.len(),
+        join_parts(&other.parts)
     ));
 
     let mut order = vec![];
-    if !docs.is_empty() {
-        order.push(format!("Docs changes: `part_01` ({} files)", docs.len()));
-    }
-    if !cfg.is_empty() {
-        order.push(format!(
-            "Config/build changes: `part_01` ({} files)",
-            cfg.len()
-        ));
-    }
-    if !src.is_empty() {
-        order.push(format!("Source changes: `part_01` ({} files)", src.len()));
-    }
-    if !tests.is_empty() {
-        order.push(format!("Tests: `part_01` ({} files)", tests.len()));
-    }
+    push_order(&mut order, "Docs changes", &docs);
+    push_order(&mut order, "Config/build changes", &cfg);
+    push_order(&mut order, "Source changes", &src);
+    push_order(&mut order, "Tests", &tests);
     if order.is_empty() {
         order.push("No file changes detected".to_string());
     }
-
     (s, order)
+}
+
+fn push_order(out: &mut Vec<String>, label: &str, cat: &CatSummary) {
+    if !cat.files.is_empty() {
+        out.push(format!(
+            "{}: `{}` ({} files)",
+            label,
+            join_parts(&cat.parts),
+            cat.files.len()
+        ));
+    }
+}
+
+fn join_parts(parts: &BTreeSet<String>) -> String {
+    if parts.is_empty() {
+        "-".to_string()
+    } else {
+        parts.iter().cloned().collect::<Vec<_>>().join(", ")
+    }
 }
 
 struct HandoffDocInputs<'a> {
     out_dir: &'a Path,
     plan: Option<&'a RangePlan>,
     head: &'a str,
+    split_by: SplitBy,
     sources: SourceSelection,
+    untracked_mode: UntrackedMode,
     changed_tree: &'a str,
     rows: &'a [FileRow],
     cat_summary: &'a str,
     parts_index: &'a str,
     reading_order: &'a [String],
-    part_rel: &'a str,
+    first_part_rel: &'a str,
+    commit_views: &'a [CommitView],
+    attachments: &'a [AttachmentEntry],
+    exclusions: &'a [ExclusionEntry],
 }
 
 fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
@@ -920,10 +1283,12 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     };
 
     let mut s = String::new();
-
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
-    s.push_str("- Profile: `mvp` (single part; no size-based splitting yet)\n");
+    s.push_str(&format!(
+        "- Profile: `m6` (split-by=`{}`)\n",
+        split_label(inp.split_by)
+    ));
     s.push_str(&format!(
         "- Segments included: committed=`{}`, staged=`{}`, unstaged=`{}`, untracked=`{}`\n",
         yes_no(inp.sources.include_committed),
@@ -944,19 +1309,30 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- Current HEAD (workspace base): `{}`\n",
         inp.head.trim()
     ));
+    if !inp.attachments.is_empty() {
+        s.push_str(&format!(
+            "- Attachments: `attachments.zip` ({} file(s))\n",
+            inp.attachments.len()
+        ));
+    }
+    if !inp.exclusions.is_empty() {
+        s.push_str(&format!(
+            "- Exclusions: `excluded.md` ({} item(s))\n",
+            inp.exclusions.len()
+        ));
+    }
     s.push_str("- Reading order:\n");
     for (i, line) in inp.reading_order.iter().enumerate() {
         s.push_str(&format!("  {}. {}\n", i + 1, line));
     }
 
     s.push_str("\n---\n\n");
-
     s.push_str("## 1) Range & Sources Summary\n");
     s.push_str("### Committed range\n");
     if let Some(plan) = inp.plan {
-        s.push_str(&format!("- included: `{}`\n", yes_no(true)));
+        s.push_str("- included: `yes`\n");
         s.push_str(&format!("- mode: `{}`\n", range_mode));
-        s.push_str(&format!("- {range_desc}\n"));
+        s.push_str(&format!("- {}\n", range_desc));
         if let Some(mb) = plan.merge_base.as_deref() {
             s.push_str(&format!("- merge-base: `{}`\n", mb));
         }
@@ -964,8 +1340,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
             s.push_str(&format!("- commit count: `{}`\n", n));
         }
     } else {
-        s.push_str("- included: `no`\n");
-        s.push_str("- mode: `disabled`\n");
+        s.push_str("- included: `no`\n- mode: `disabled`\n");
     }
 
     s.push_str("\n### Current workspace base (for uncommitted segments)\n");
@@ -979,15 +1354,13 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         yes_no(inp.sources.include_unstaged)
     ));
     s.push_str(&format!(
-        "- untracked: `{}` (base: `HEAD`, mode: `text patch only for now`)\n",
-        yes_no(inp.sources.include_untracked)
+        "- untracked: `{}` (base: `HEAD`, mode: `{}`)\n",
+        yes_no(inp.sources.include_untracked),
+        untracked_label(inp.untracked_mode)
     ));
 
-    s.push_str("\n---\n\n");
-    s.push_str("## 2) Change Map\n\n");
-
-    s.push_str("### 2.1 Changed Tree (changed files only)\n");
-    s.push_str("```text\n");
+    s.push_str("\n---\n\n## 2) Change Map\n\n");
+    s.push_str("### 2.1 Changed Tree (changed files only)\n```text\n");
     s.push_str(inp.changed_tree);
     if !inp.changed_tree.ends_with('\n') {
         s.push('\n');
@@ -1008,34 +1381,94 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         };
         s.push_str(&format!(
             "| {} | {} | `{}` | {} | {} | {} | {} | {} |\n",
-            r.segment, r.status, r.path, ins, del, bytes, part, r.note,
+            r.segment, r.status, r.path, ins, del, bytes, part, r.note
         ));
     }
 
     s.push_str("\n### 2.3 Category Summary\n");
     s.push_str(inp.cat_summary);
-
-    s.push_str("\n---\n\n");
-    s.push_str("## 3) Parts Index\n\n");
+    s.push_str("\n---\n\n## 3) Parts Index\n\n");
     s.push_str(inp.parts_index);
 
-    s.push_str("\n---\n\n");
-    s.push_str("## Where to start\n\n");
-    s.push_str("Open `HANDOFF.md` first.\n");
-    s.push_str(&format!("Then apply/read `{}`.\n", inp.part_rel));
-
-    s.push_str("\n---\n\n");
-    s.push_str("## Notes\n");
-    s.push_str("- This is still a single-part MVP. Profile-based splitting, excluded.md, and attachments.zip are planned in M6-03.\n");
-    if inp.sources.include_untracked {
-        s.push_str("- Untracked currently emits text files as add-diffs. Binary/unreadable files stay listed in the file table with a skip note until attachments are implemented.\n");
+    if !inp.commit_views.is_empty() {
+        s.push_str("\n---\n\n## 4) Commit View\n");
+        for cv in inp.commit_views {
+            s.push_str(&format!("### {} {} ({})\n", cv.hash7, cv.subject, cv.date));
+            s.push_str(&format!(
+                "- stats: `{}` files, `+{} -{}`\n",
+                cv.files.len(),
+                cv.ins.unwrap_or(0),
+                cv.del.unwrap_or(0)
+            ));
+            s.push_str("- files:\n");
+            for (path, part) in &cv.files {
+                s.push_str(&format!("  - `{}` → `{}`\n", path, part));
+            }
+            s.push('\n');
+        }
     }
 
+    if !inp.attachments.is_empty() {
+        s.push_str("\n---\n\n## 5) Attachments\n");
+        s.push_str("- `attachments.zip` contains:\n");
+        let mut items = inp.attachments.iter().collect::<Vec<_>>();
+        items.sort_by(|a, b| a.zip_path.cmp(&b.zip_path));
+        for item in items {
+            s.push_str(&format!(
+                "  - `{}` (reason: {})\n",
+                item.zip_path, item.reason
+            ));
+        }
+    }
+
+    if !inp.exclusions.is_empty() {
+        s.push_str("\n---\n\n## 6) Exclusions\nSee `excluded.md`.\n");
+    }
+
+    s.push_str("\n---\n\n## Where to start\n\n");
+    s.push_str("Open `HANDOFF.md` first.\n");
+    s.push_str(&format!("Then apply/read `{}`.\n", inp.first_part_rel));
+    if !inp.attachments.is_empty() {
+        s.push_str("After patch parts, inspect `attachments.zip` for raw files that were intentionally kept out of patch text.\n");
+    }
+
+    s.push_str("\n---\n\n## Notes\n");
+    s.push_str("- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.\n");
+    s.push_str("- Binary/unreadable untracked files default to raw attachments in auto mode.\n");
     s
+}
+
+fn split_label(v: SplitBy) -> &'static str {
+    match v {
+        SplitBy::File => "file",
+        SplitBy::Commit => "commit",
+    }
+}
+
+fn untracked_label(v: UntrackedMode) -> &'static str {
+    match v {
+        UntrackedMode::Auto => "auto",
+        UntrackedMode::Patch => "patch",
+        UntrackedMode::Raw => "raw",
+        UntrackedMode::Meta => "meta",
+    }
 }
 
 fn yes_no(v: bool) -> &'static str {
     if v { "yes" } else { "no" }
+}
+
+fn sum_opt<I>(vals: I) -> Option<u64>
+where
+    I: IntoIterator<Item = Option<u64>>,
+{
+    let mut seen = false;
+    let mut sum = 0_u64;
+    for v in vals.into_iter().flatten() {
+        seen = true;
+        sum += v;
+    }
+    if seen { Some(sum) } else { None }
 }
 
 fn write_zip_from_dir(src_dir: &Path, zip_path: &Path) -> Result<(), ExitError> {
@@ -1047,17 +1480,13 @@ fn write_zip_from_dir(src_dir: &Path, zip_path: &Path) -> Result<(), ExitError> 
             )
         })?;
     }
-
     let file = fs::File::create(zip_path)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create zip: {e}")))?;
     let mut zip = ZipWriter::new(file);
-
-    let opts = FileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
+    let opts: FileOptions = FileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
         .unix_permissions(0o644);
-
     add_dir_recursive(&mut zip, opts, src_dir, "")?;
-
     zip.finish()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to finalize zip: {e}")))?;
     Ok(())
@@ -1073,32 +1502,52 @@ fn add_dir_recursive<W: Write + io::Seek>(
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read dir: {e}")))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read dir entry: {e}")))?;
-
     entries.sort_by_key(|e| e.file_name());
-
     for ent in entries {
         let path = ent.path();
         let name = ent.file_name();
         let name = name.to_string_lossy();
-
         let rel = if prefix.is_empty() {
             name.to_string()
         } else {
             format!("{prefix}/{name}")
         };
-
         if path.is_dir() {
             add_dir_recursive(zip, opts, &path, &rel)?;
         } else if path.is_file() {
             let bytes = fs::read(&path)
                 .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read file: {e}")))?;
             zip.start_file(rel, opts).map_err(|e| {
-                ExitError::new(EXIT_GENERAL, format!("zip: start_file failed: {e}"))
+                ExitError::new(EXIT_GENERAL, format!("failed to add zip entry: {e}"))
             })?;
-            zip.write_all(&bytes)
-                .map_err(|e| ExitError::new(EXIT_GENERAL, format!("zip: write failed: {e}")))?;
+            zip.write_all(&bytes).map_err(|e| {
+                ExitError::new(EXIT_GENERAL, format!("failed to write zip entry: {e}"))
+            })?;
         }
     }
-
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_split_becomes_file_for_single_commit() {
+        let plan = RangePlan {
+            mode: RangeMode::Last,
+            base: "a".into(),
+            target: "b".into(),
+            from_rev: None,
+            to_rev: None,
+            a_rev: None,
+            b_rev: None,
+            merge_base: None,
+            commit_count: Some(1),
+        };
+        assert_eq!(
+            effective_split_by(Some("auto"), Some(&plan)).unwrap(),
+            SplitBy::File
+        );
+    }
 }

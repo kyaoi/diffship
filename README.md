@@ -10,8 +10,8 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` currently supports **committed ranges** (default: `last`) plus optional **staged / unstaged / untracked** sources.
-> Untracked is currently emitted as **text add-diffs only**; size-based splitting, raw attachments, and `preview` are still planned.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, and optional attachments.zip / excluded.md.
+> `.diffshipignore`, secrets warning, and preview are still planned.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
 
@@ -69,8 +69,6 @@ All commands below are implemented.
 - `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
 - `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher)
 
-- `diffship build` — build a handoff bundle (committed range + optional `--include-staged` / `--include-unstaged` / `--include-untracked`, `--no-committed`)
-
 - `diffship init` — generate `.diffship/` project kit files
 - `diffship status` — show lock state and recent runs (`--json` available)
 - `diffship runs` — list recent runs (`--json` available)
@@ -78,6 +76,7 @@ All commands below are implemented.
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
+- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md)
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches
@@ -90,6 +89,29 @@ Both `promote` and `loop` accept overrides:
 For details and examples, see `docs/OPS_WORKFLOW.md`.
 
 ---
+
+
+### Handoff build
+
+```bash
+# last committed change
+diffship build
+
+# staged + unstaged + untracked (no committed range)
+diffship build --no-committed --include-staged --include-unstaged --include-untracked
+
+# commit-oriented split for a multi-commit committed range
+diffship build --range-mode direct --from HEAD~3 --to HEAD --split-by commit
+
+# keep untracked files as metadata only
+diffship build --no-committed --include-untracked --untracked-mode meta
+```
+
+Output layout:
+- HANDOFF.md
+- parts/part_XX.patch
+- attachments.zip (when raw attachments exist)
+- excluded.md (when files are intentionally omitted)
 
 ## Configuration
 

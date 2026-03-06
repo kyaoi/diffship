@@ -96,9 +96,17 @@ pub struct BuildArgs {
     #[arg(long, default_value_t = false)]
     pub include_unstaged: bool,
 
-    /// Include untracked text files as add-diffs (binary/raw attachments are planned)
+    /// Include untracked files according to --untracked-mode
     #[arg(long, default_value_t = false)]
     pub include_untracked: bool,
+
+    /// Split output by auto|file|commit (commit applies to committed range only)
+    #[arg(long, default_value = "auto")]
+    pub split_by: Option<String>,
+
+    /// How to handle untracked files: auto|patch|raw|meta
+    #[arg(long, default_value = "auto")]
+    pub untracked_mode: String,
 
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]

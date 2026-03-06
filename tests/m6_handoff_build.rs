@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
+use zip::ZipArchive;
 
 fn init_repo() -> TempDir {
     let td = tempfile::tempdir().expect("tempdir");
@@ -71,15 +72,14 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     let mut bundles = vec![];
     for ent in fs::read_dir(root).unwrap() {
         let ent = ent.unwrap();
-        if !ent.file_type().unwrap().is_dir() {
-            continue;
-        }
-        let name = ent.file_name().to_string_lossy().to_string();
-        if name.starts_with("diffship_") {
-            bundles.push(ent.path());
+        if ent.file_type().unwrap().is_dir() {
+            let name = ent.file_name().to_string_lossy().to_string();
+            if name.starts_with("diffship_") {
+                bundles.push(ent.path());
+            }
         }
     }
-    assert_eq!(bundles.len(), 1, "expected exactly one bundle dir");
+    assert_eq!(bundles.len(), 1);
 
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());
@@ -127,7 +127,6 @@ fn build_range_mode_direct_accepts_from_to() {
         .arg(&out);
 
     cmd.assert().success();
-
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
     assert!(part.contains("+two"));
 }
@@ -147,7 +146,6 @@ fn build_range_mode_merge_base_uses_merge_base_to_b() {
         .current_dir(root)
         .assert()
         .success();
-
     fs::write(root.join("feature.txt"), "feature\n").unwrap();
     commit_all(root, "feature");
 
@@ -157,19 +155,16 @@ fn build_range_mode_merge_base_uses_merge_base_to_b() {
         .current_dir(root)
         .assert()
         .success();
-
     fs::write(root.join("main.txt"), "main\n").unwrap();
     commit_all(root, "main");
 
     let out = root.join("bundle_mergeb");
-
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
         .args(["build", "--range-mode", "merge-base", "--a"])
         .arg(&base_branch)
         .args(["--b", "feature", "--out"])
         .arg(&out);
-
     cmd.assert().success();
 
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
@@ -219,12 +214,10 @@ fn build_root_mode_works_for_single_commit_repo() {
     commit_all(root, "root");
 
     let out = root.join("bundle_root");
-
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
         .args(["build", "--range-mode", "root", "--out"])
         .arg(&out);
-
     cmd.assert().success();
 
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
@@ -241,12 +234,10 @@ fn build_rejects_when_no_sources_are_selected() {
     commit_all(root, "root");
 
     let out = root.join("bundle_none");
-
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
         .args(["build", "--no-committed", "--out"])
         .arg(&out);
-
     cmd.assert()
         .failure()
         .stderr(predicates::str::contains("no sources selected"));
@@ -268,12 +259,10 @@ fn build_can_include_staged_without_committed() {
         .success();
 
     let out = root.join("bundle_staged");
-
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
         .args(["build", "--no-committed", "--include-staged", "--out"])
         .arg(&out);
-
     cmd.assert().success();
 
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
@@ -300,7 +289,6 @@ fn build_can_include_unstaged_and_untracked_text() {
     fs::write(root.join("notes.txt"), "hello\nworld\n").unwrap();
 
     let out = root.join("bundle_worktree");
-
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root)
         .args([
@@ -311,7 +299,6 @@ fn build_can_include_unstaged_and_untracked_text() {
             "--out",
         ])
         .arg(&out);
-
     cmd.assert().success();
 
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
@@ -328,4 +315,112 @@ fn build_can_include_unstaged_and_untracked_text() {
     ));
     assert!(handoff.contains("| unstaged | M | `tracked.txt` |"));
     assert!(handoff.contains("| untracked | A | `notes.txt` | 2 | 0 |"));
+}
+
+#[test]
+fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "feat a");
+
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    commit_all(root, "feat b");
+
+    let out = root.join("bundle_commit_split");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--range-mode",
+            "direct",
+            "--from",
+            "HEAD~2",
+            "--to",
+            "HEAD",
+            "--split-by",
+            "commit",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("parts").join("part_01.patch").exists());
+    assert!(out.join("parts").join("part_02.patch").exists());
+    let part1 = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    let part2 = fs::read_to_string(out.join("parts").join("part_02.patch")).unwrap();
+    assert!(part1.contains("a.txt"));
+    assert!(part2.contains("b.txt"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("## 4) Commit View"));
+    assert!(handoff.contains("feat a"));
+    assert!(handoff.contains("feat b"));
+    assert!(handoff.contains("`a.txt` → `part_01.patch`"));
+    assert!(handoff.contains("`b.txt` → `part_02.patch`"));
+}
+
+#[test]
+fn build_untracked_auto_stores_binary_in_attachments_zip() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("bin.dat"), [0_u8, 159, 146, 150]).unwrap();
+
+    let out = root.join("bundle_auto_untracked");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--no-committed", "--include-untracked", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let zip_file = fs::File::open(out.join("attachments.zip")).unwrap();
+    let mut zip = ZipArchive::new(zip_file).unwrap();
+    let mut names = vec![];
+    for i in 0..zip.len() {
+        names.push(zip.by_index(i).unwrap().name().to_string());
+    }
+    assert_eq!(names, vec!["untracked/bin.dat"]);
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("## 5) Attachments"));
+    assert!(handoff.contains("`untracked/bin.dat`"));
+    assert!(handoff.contains("stored in attachments.zip"));
+}
+
+#[test]
+fn build_untracked_meta_creates_excluded_md() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("notes.txt"), "hello\n").unwrap();
+
+    let out = root.join("bundle_meta_untracked");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--no-committed",
+            "--include-untracked",
+            "--untracked-mode",
+            "meta",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("excluded.md").exists());
+    assert!(!out.join("attachments.zip").exists());
+    let excluded = fs::read_to_string(out.join("excluded.md")).unwrap();
+    assert!(excluded.contains("`notes.txt`"));
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("## 6) Exclusions"));
 }

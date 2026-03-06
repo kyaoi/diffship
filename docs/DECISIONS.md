@@ -305,3 +305,36 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - 部分実装を表現したい場合でも、どちらか一方は `TBD` を残して `Partial` を使う。
 
+
+---
+
+## D-024: M6-03 の split / untracked 方針
+
+- Date: 2026-03-06
+- Decision:
+  - `--split-by auto|file|commit` を導入し、`commit` は committed range にのみ適用する。
+  - `auto` は committed range が複数コミットなら `commit`、それ以外は `file` に寄せる。
+  - untracked は `--untracked-mode auto|patch|raw|meta` を持ち、`auto` は **text/small → patch / binary-or-unreadable-or-large → attachments.zip** とする。
+  - `meta` のときは内容を同梱せず `excluded.md` に理由と再実行ガイダンスを残す。
+- Rationale:
+  - AI に読みやすい commit view を出しつつ、巨大/非UTF-8ファイルで handoff を壊さないため。
+- Implications:
+  - `HANDOFF.md` には Commit View / Attachments / Exclusions セクションを条件付きで出す。
+  - staged / unstaged / untracked は file-level unit のままとする。
+
+---
+
+## D-025: docs-check 対象の README では生成物名を path backtick として書かない
+
+- Date: 2026-03-06
+- Decision:
+  - `README.md` で **生成される出力物**（HANDOFF.md / parts/ / attachments.zip / excluded.md など）を inline code の path 参照として書かない。
+  - それらは repo に存在するドキュメント/実装ファイルではないため、通常テキストとして記述する。
+  - `zip::write::FileOptions` はこのリポジトリの依存版（0.6 系）に合わせ、型注釈は `FileOptions` をそのまま使う。
+- Rationale:
+  - `scripts/check-doc-links.sh` は README の backtick path を実在ファイルとして検証するため、生成物名を code path で書くと docs-check が落ちる。
+  - 依存 crate の API 断面に合わせて型注釈を保守し、環境差分でビルドを壊さないため。
+- Implications:
+  - README では「実在する repo パス」と「実行後に生成される成果物」を書き分ける。
+  - 依存 crate のメジャー更新時は `FileOptions` 周辺の型注釈を再確認する。
+
