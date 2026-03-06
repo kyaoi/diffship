@@ -284,7 +284,7 @@ diffship OS の重要な意思決定ログです。
 - Decision:
   - `diffship build` は committed をデフォルト ON としつつ、`--include-staged` / `--include-unstaged` / `--include-untracked` で uncommitted sources を追加できるようにする。
   - committed を外したい場合は `--no-committed` を使う。
-  - untracked はまず text add-diff のみを扱い、binary/unreadable は File Table に skip note を残す。raw attachments は M6-03 で導入する。
+  - （段階導入の初期案）untracked はまず text add-diff を扱い、binary/unreadable の扱いは次段階で拡張する。
 - Rationale:
   - まず AI に渡す差分の出どころ（segment）を明示できるようにし、後続の attachments/excluded/split を安全に積み増すため。
 - Implications:
@@ -406,3 +406,17 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - placeholder 置換は char 境界で進める。
   - golden は「実出力差」だけを検出し、正規化起因の差分を混ぜない。
+
+---
+
+## D-031: 2026-03-06 棚卸し結果に基づく計画補正
+
+- Date: 2026-03-06
+- Decision:
+  - M4-02（promotion/commit-policy切替）を `doing` に戻す。理由: `working-tree` は現在 `commit` と同じ経路で、専用 no-commit 挙動が未実装。
+  - M6-03（profiles + packing limits）を `doing` に戻す。理由: split/attachments/excluded は実装済みだが、profile上限（max parts / max bytes）と `EXIT_PACKING_LIMITS` 実動が未実装。
+  - `pack-fix` は実装済みとして扱うが、専用統合テスト不足を残課題として明示する。
+- Rationale:
+  - 「done」を実装実態と一致させ、README / PLAN / TRACEABILITY の過大表現を避けるため。
+- Implications:
+  - 次優先は E2E運用ドキュメント、packing limits / binary policy、promotion `working-tree` 分離、preview導線。

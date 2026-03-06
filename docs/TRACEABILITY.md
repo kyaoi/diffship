@@ -26,8 +26,8 @@ Conventions:
 - **S-GOAL-006** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-007** — Tests: TBD — Code: `src/ops/*` — Status: Planned
 - **S-GOAL-008** — Tests: TBD — Code: `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Planned
-- **S-GOAL-009** — Tests: TBD — Code: `src/ops/commit.rs`, `src/ops/config.rs` — Status: Planned
-- **S-GOAL-010** — Tests: TBD — Code: `src/ops/init.rs` — Status: Planned
+- **S-GOAL-009** — Tests: TBD — Code: `src/ops/config.rs`, `src/ops/promote.rs` — Status: Planned
+- **S-GOAL-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 
 - **S-NONGOAL-001** — Tests: N/A — Code: N/A — Status: N/A
 - **S-NONGOAL-002** — Tests: N/A — Code: N/A — Status: N/A
@@ -136,7 +136,7 @@ Conventions:
 - **S-PBUNDLE-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
-- **S-PBUNDLE-006** — Tests: TBD — Code: `src/ops/patch_bundle.rs` — Status: Planned
+- **S-PBUNDLE-006** — Tests: `tests/m3_tasks.rs` — Code: `src/ops/patch_bundle.rs`, `src/ops/tasks.rs` — Status: Implemented
 
 ---
 
@@ -157,7 +157,7 @@ Conventions:
 
 - **S-COMMIT-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-COMMIT-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
-- **S-COMMIT-003** — Tests: TBD — Code: `src/ops/config.rs` — Status: Planned
+- **S-COMMIT-003** — Tests: `tests/m4_config_precedence.rs` — Code: `src/ops/config.rs` — Status: Implemented
 - **S-COMMIT-004** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Partial
 - **S-COMMIT-005** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
@@ -174,8 +174,8 @@ Conventions:
 
 ## pack-fix
 
-- **S-PACKFIX-001** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Planned
-- **S-PACKFIX-002** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Planned
+- **S-PACKFIX-001** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
+- **S-PACKFIX-002** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
 
 ---
 
@@ -214,7 +214,7 @@ Conventions:
 
 ## Promotion
 
-- **S-PROMOTE-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
+- **S-PROMOTE-001** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Partial
 - **S-PROMOTE-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-PROMOTE-003** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 
@@ -242,7 +242,7 @@ Conventions:
 
 - **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
-- **S-RUN-003** — Tests: TBD — Code: `src/ops/run.rs` — Status: Planned
+- **S-RUN-003** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
 
 ---
 
@@ -268,5 +268,5 @@ Conventions:
 - **S-EXIT-009** — Tests: `tests/m2_apply_verify.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/exit.rs` — Status: Implemented
 - **S-EXIT-011** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs` — Status: Implemented
-- **S-EXIT-012** — Tests: TBD — Code: `src/exit.rs` — Status: Planned
+- **S-EXIT-012** — Tests: `tests/m3_tasks.rs` — Code: `src/exit.rs`, `src/ops/promote.rs` — Status: Implemented
 - **S-EXIT-013** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/exit.rs`, `src/ops/promote.rs` — Status: Implemented

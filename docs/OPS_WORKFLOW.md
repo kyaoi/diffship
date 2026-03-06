@@ -41,16 +41,15 @@ What `loop` does:
 
 ### Verify failed → create a reprompt bundle
 
-`loop` will keep a run directory with logs.
-To create a reprompt zip you can send back to the AI:
+When verify fails, diffship writes a default reprompt zip at:
+
+- `.diffship/runs/<run-id>/pack-fix.zip`
+
+You can also create or re-create it explicitly:
 
 ```bash
 diffship pack-fix --run-id <run-id>
 ```
-
-The default output is:
-
-- `.diffship/runs/<run-id>/pack-fix.zip`
 
 ### Promotion blocked: secrets
 
@@ -86,7 +85,8 @@ You can override promotion behavior per run:
   - useful for “apply + verify only” or debugging
 
 - `--promotion working-tree`:
-  - apply results onto the target branch **without committing**
+  - accepted by CLI/config, but current implementation follows the same commit-based promotion path as `commit`
+  - dedicated no-commit promotion behavior is still planned
 
 - `--promotion commit` (default):
   - apply results onto the target branch and create a commit
@@ -102,7 +102,7 @@ Examples:
 # verify only
 $ diffship loop bundle.zip --promotion none
 
-# no-commit promotion
+# currently same behavior as commit mode (no dedicated no-commit path yet)
 $ diffship loop bundle.zip --promotion working-tree
 
 # require the AI to craft the commit inside the sandbox (advanced)

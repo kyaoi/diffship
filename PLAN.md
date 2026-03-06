@@ -114,7 +114,7 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる |
+| M4-02 | doing | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる（※ `working-tree` の専用 no-commit 経路は未実装） |
 
 ---
 
@@ -134,23 +134,28 @@ diffship loop <patch-bundle.zip>
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
 | M6-02 | done | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | done | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
+| M6-03 | doing | 分割（profiles）+ excluded/attachments | split/attachments/excluded は実装済み。profile制限（max parts / max bytes）と `EXIT_PACKING_LIMITS` 実動は未完。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
 | M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
 | M6-06 | done | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
 
 ---
 
-## Next（いま着手する3つ）
+## 棚卸しメモ（2026-03-06）
+
+- ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
+- `pack-fix` は実装済みだが、専用統合テストが未整備。
+- handoff は build + source収集 + split-by + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
+- handoff の preview、packing limits（profile上限/exit=3）、include-binaryポリシーは未完。
+- `--promotion working-tree` は受理されるが、現状は commit 経路と同じ動作。
+
+## Next（優先順）
 
 1) handoff / ops の end-to-end 運用ドキュメント整理（`build` → AI → `loop` の一連フロー）
-2) packing limits / binary policy の具体化（`EXIT_PACKING_LIMITS` を実動させる仕様整理）
-3) handoff preview / TUI 導線の検討（bundle を作る前に含有物を確認できる導線）
-
-（候補）
-- verify の config-driven profiles（`[verify.profiles.*]`）強化
-- handoff の split policy 改良（profile別のサイズ上限 / 再分割戦略）
-- bundle 比較/再現確認コマンド
+2) packing limits / binary policy の具体化（`EXIT_PACKING_LIMITS` を実動させ、profile上限を build に適用）
+3) promotion `working-tree` の専用 no-commit 経路を実装し、`commit` と意味を分離
+4) handoff preview / TUI 導線の設計（bundle 作成前の内容確認）
+5) bundle 比較/再現確認コマンド（determinism の運用検証を簡略化）
 
 ## メモ（詰まったらここに書く）
 

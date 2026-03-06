@@ -10,6 +10,48 @@ This document explains how to read that status and how to update it.
 
 ---
 
+## Inventory snapshot (2026-03-06)
+
+This is the current implementation inventory based on:
+
+- code in `src/`
+- integration tests in `tests/`
+- user-facing docs (`README.md`, `PLAN.md`, `docs/*`)
+
+### Ops side
+
+| Area | Status | Evidence (code / tests / docs) |
+|---|---|---|
+| `init` / `status` / `runs` | Implemented | `src/ops/init.rs`, `src/ops/status.rs`, `src/ops/runs.rs`; `tests/m0_integration.rs`; `README.md`, `docs/OPS_WORKFLOW.md` |
+| `apply` / `verify` / `promote` / `loop` | Implemented (core) | `src/ops/apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs`, `src/ops/loop_cmd.rs`; `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs`; `README.md`, `docs/OPS_WORKFLOW.md` |
+| `pack-fix` | Partial | `src/ops/pack_fix.rs` and automatic generation from `verify` failures in `src/ops/verify.rs`; no dedicated `pack-fix` integration test yet |
+| secrets / tasks / ack | Implemented | `src/ops/secrets.rs`, `src/ops/tasks.rs`, `src/ops/promote.rs`; `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs`; `docs/OPS_WORKFLOW.md` |
+| config precedence | Implemented | `src/ops/config.rs`; `tests/m4_config_precedence.rs`; `README.md`, `docs/CONFIG.md` |
+| promotion / commit-policy switching | Partial | CLI/config wiring exists in `src/cli.rs`, `src/ops/config.rs`, `src/ops/promote.rs`; tested for `promotion=none` in `tests/m4_02_promotion_switch.rs`; `promotion=working-tree` behavior is not distinct yet |
+| TUI v0 (ops-focused) | Implemented | `src/tui/mod.rs`, `src/ops/mod.rs`; `tests/m5_tui_cli_parity.rs`; `README.md` |
+
+### Handoff side
+
+| Area | Status | Evidence (code / tests / docs) |
+|---|---|---|
+| `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md` |
+| committed / staged / unstaged / untracked collection | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md` |
+| split-by / profiles / part split | Partial | split-by and part emission exist in `src/handoff.rs`, tested in `tests/m6_handoff_build.rs`; profile-based packing limits are not enforced yet |
+| `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
+| `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
+| `.diffshipignore` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `README.md` |
+| determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
+| `preview` command | Not implemented | no `preview` command in `src/cli.rs`; no `src/preview.rs`; spec-only (`docs/SPEC_V1.md`) |
+| packing limits / binary policy (runtime) | Future extension / Partial | `EXIT_PACKING_LIMITS` is reserved in `src/exit.rs`; no max-parts/max-bytes enforcement in build path; untracked binary/raw attachment policy is implemented, but `--include-binary` / `--binary-mode` options are not exposed |
+
+### v1 readiness interpretation
+
+- Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
+- Handoff generation is usable for practical diff handoff.
+- Remaining v1 gaps are mostly around handoff preview and explicit packing/binary limit policy.
+
+---
+
 ## Status values
 
 ### Planned
