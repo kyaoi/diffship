@@ -142,6 +142,16 @@ fn extract_run_id(stdout: &[u8]) -> String {
     panic!("run_id not found in output: {s}");
 }
 
+fn git_status_porcelain(root: &std::path::Path) -> String {
+    let out = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(root)
+        .output()
+        .expect("git status")
+        .stdout;
+    String::from_utf8_lossy(&out).to_string()
+}
+
 #[test]
 fn m4_02_promotion_none_skips_cherry_pick() {
     let home_td = tempfile::tempdir().expect("home");
@@ -175,4 +185,45 @@ fn m4_02_promotion_none_skips_cherry_pick() {
 
     // Promotion skipped: repository HEAD should remain unchanged.
     assert_eq!(head(root), base);
+}
+
+#[test]
+fn m4_02_promotion_working_tree_applies_without_commit() {
+    let home_td = tempfile::tempdir().expect("home");
+    let home = home_td.path();
+
+    let td = init_repo_with_branches(&["develop"]);
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_by_editing_readme(root, "working-tree\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], "");
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd(home)
+        .args([
+            "loop",
+            bundle_root.to_str().unwrap(),
+            "--promotion",
+            "working-tree",
+            "--target-branch",
+            "develop",
+        ])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let _run_id = extract_run_id(&out);
+
+    // working-tree mode should not create a commit on the target branch.
+    assert_eq!(head(root), base);
+
+    // But the patch content should be present in the target working tree.
+    let readme = fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("working-tree"));
+    let status = git_status_porcelain(root);
+    assert!(status.contains("README.md"));
 }

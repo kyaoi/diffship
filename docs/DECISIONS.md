@@ -420,3 +420,18 @@ diffship OS の重要な意思決定ログです。
   - 「done」を実装実態と一致させ、README / PLAN / TRACEABILITY の過大表現を避けるため。
 - Implications:
   - 次優先は E2E運用ドキュメント、packing limits / binary policy、promotion `working-tree` 分離、preview導線。
+
+---
+
+## D-032: `promotion=working-tree` は no-commit で target working tree に反映する
+
+- Date: 2026-03-06
+- Decision:
+  - `promotion=working-tree` では、sandbox の結果差分を target branch の working tree に適用し、commit は作らない。
+  - `promotion=commit` は従来どおり commit を作成して反映する。
+  - `promotion=none` は反映自体を行わない。
+- Rationale:
+  - `none|working-tree|commit` の3モードを意味的に分離し、CLI契約（spec）と挙動を一致させるため。
+- Implications:
+  - `working-tree` 実行後は target branch の HEAD は不変で、working tree が変更状態になる。
+  - 事前の base_commit 一致チェックは `commit` と同様に維持する。

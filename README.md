@@ -90,7 +90,7 @@ Both `promote` and `loop` accept overrides:
 
 Current note:
 - `none` is implemented and tested.
-- `working-tree` is accepted, but currently follows the same commit-based promotion path as `commit`.
+- `working-tree` is implemented as no-commit promotion (applies patch result onto target working tree).
 
 For details and examples, see `docs/OPS_WORKFLOW.md`.
 

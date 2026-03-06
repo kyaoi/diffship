@@ -214,7 +214,7 @@ Conventions:
 
 ## Promotion
 
-- **S-PROMOTE-001** — Tests: TBD — Code: `src/ops/promote.rs` — Status: Partial
+- **S-PROMOTE-001** — Tests: `tests/m2_promotion_loop.rs`, `tests/m4_02_promotion_switch.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-PROMOTE-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 - **S-PROMOTE-003** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/promote.rs` — Status: Implemented
 

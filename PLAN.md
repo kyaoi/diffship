@@ -114,7 +114,7 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | doing | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる（※ `working-tree` の専用 no-commit 経路は未実装） |
+| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる（`none` / `working-tree` / `commit` を個別動作で確認済み） |
 
 ---
 
@@ -147,7 +147,6 @@ diffship loop <patch-bundle.zip>
 - `pack-fix` は実装済みだが、専用統合テストが未整備。
 - handoff は build + source収集 + split-by + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
 - handoff の preview、packing limits（profile上限/exit=3）、include-binaryポリシーは未完。
-- `--promotion working-tree` は受理されるが、現状は commit 経路と同じ動作。
 
 ## Next（優先順）
 

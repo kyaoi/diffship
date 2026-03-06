@@ -85,8 +85,8 @@ You can override promotion behavior per run:
   - useful for “apply + verify only” or debugging
 
 - `--promotion working-tree`:
-  - accepted by CLI/config, but current implementation follows the same commit-based promotion path as `commit`
-  - dedicated no-commit promotion behavior is still planned
+  - apply results onto the target branch working tree **without creating a commit**
+  - useful when you want to inspect/edit before committing manually
 
 - `--promotion commit` (default):
   - apply results onto the target branch and create a commit
@@ -102,7 +102,7 @@ Examples:
 # verify only
 $ diffship loop bundle.zip --promotion none
 
-# currently same behavior as commit mode (no dedicated no-commit path yet)
+# no-commit promotion (working tree only)
 $ diffship loop bundle.zip --promotion working-tree
 
 # require the AI to craft the commit inside the sandbox (advanced)
