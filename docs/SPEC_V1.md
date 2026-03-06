@@ -116,14 +116,19 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-SPLIT-002**: `commit` split applies to committed range only; other segments remain file-level units.
 - **S-SPLIT-003**: `auto` chooses commit split if committed range spans multiple commits; otherwise file split.
 
-#### 4.2.7 Output
+#### 4.2.7 Packing profiles
+
+- **S-PROFILE-001**: Support named handoff packing profiles, including built-in `20x512` (default) and `10x100`.
+- **S-PROFILE-002**: Support project/global config defaults and custom profile definitions for handoff packing limits.
+
+#### 4.2.8 Output
 
 - **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`.
 - **S-OUT-002**: `--zip` optionally produces a zip bundle with the same layout.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.
 
-#### 4.2.8 Packing algorithm and fallback
+#### 4.2.9 Packing algorithm and fallback
 
 - **S-PACK-001**: Packing is deterministic for the same inputs.
 - **S-PACK-002**: Units are sorted by (1) bytes desc, (2) path/commit asc.
@@ -131,7 +136,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PACK-004**: If a unit cannot fit within `max_bytes_per_part`, fallback MUST attempt lower unified diff context levels (`U1`, then `U0`) before excluding it.
 - **S-PACK-005**: Exclusions must be recorded in `excluded.md` with reasons and guidance.
 
-#### 4.2.9 Plan export / replay
+#### 4.2.10 Plan export / replay
 
 - **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
 - **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format.

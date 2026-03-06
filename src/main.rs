@@ -4,6 +4,7 @@ mod exit;
 mod filter;
 mod git;
 mod handoff;
+mod handoff_config;
 mod ops;
 mod plan;
 mod preview;

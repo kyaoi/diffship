@@ -52,6 +52,18 @@ fn git_stdout(root: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+fn write_global_config(home: &Path, body: &str) {
+    let path = home.join(".config").join("diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("config.toml"), body).unwrap();
+}
+
+fn write_project_config(root: &Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("config.toml"), body).unwrap();
+}
+
 #[test]
 fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     let td = init_repo();
@@ -157,6 +169,90 @@ fn build_can_export_and_replay_plan_toml() {
         .arg(&out_b)
         .assert()
         .success();
+}
+
+#[test]
+fn build_profile_flag_records_named_profile_and_limits() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("tracked.txt"), "next\n").unwrap();
+    commit_all(root, "next");
+
+    let out = root.join("bundle_profile_flag");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--profile", "10x100", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains(
+        "Profile: `10x100` (`max_parts=10`, `max_bytes_per_part=104857600`; split-by=`file`)"
+    ));
+}
+
+#[test]
+fn build_handoff_profile_config_uses_project_default_and_cli_override() {
+    let home_td = tempfile::tempdir().expect("home");
+    let home = home_td.path();
+
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("tracked.txt"), "next\n").unwrap();
+    commit_all(root, "next");
+
+    write_global_config(
+        home,
+        r#"
+[handoff]
+default_profile = "10x100"
+"#,
+    );
+    write_project_config(
+        root,
+        r#"
+[handoff]
+default_profile = "team"
+
+[handoff.profiles."team"]
+max_parts = 7
+max_bytes_per_part = 4096
+"#,
+    );
+
+    let out_project = root.join("bundle_profile_project");
+    let mut project_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    project_cmd
+        .env("HOME", home)
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&out_project);
+    project_cmd.assert().success();
+    let project_handoff = fs::read_to_string(out_project.join("HANDOFF.md")).unwrap();
+    assert!(
+        project_handoff.contains(
+            "Profile: `team` (`max_parts=7`, `max_bytes_per_part=4096`; split-by=`file`)"
+        )
+    );
+
+    let out_cli = root.join("bundle_profile_cli");
+    let mut cli_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cli_cmd
+        .env("HOME", home)
+        .current_dir(root)
+        .args(["build", "--profile", "10x100", "--out"])
+        .arg(&out_cli);
+    cli_cmd.assert().success();
+    let cli_handoff = fs::read_to_string(out_cli.join("HANDOFF.md")).unwrap();
+    assert!(cli_handoff.contains(
+        "Profile: `10x100` (`max_parts=10`, `max_bytes_per_part=104857600`; split-by=`file`)"
+    ));
 }
 
 #[test]

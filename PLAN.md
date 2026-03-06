@@ -141,7 +141,7 @@ diffship loop <patch-bundle.zip>
 
 ---
 
-## 棚卸しメモ（2026-03-06）
+## 棚卸しメモ（2026-03-07）
 
 - ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
 - `pack-fix` は専用統合テスト込みで実装済み。
@@ -150,14 +150,15 @@ diffship loop <patch-bundle.zip>
 - handoff の `preview` / `compare` は実装済み。
 - handoff の explicit path filter（`--include` / `--exclude`）は実装済み。TUI handoff screen からも編集できる。
 - handoff plan export / replay（`--plan-out` / `--plan`）は実装済み。TUI からも export できる。
+- handoff の named packing profile（built-in `20x512` / `10x100` + config default/custom）は実装済み。
 - verify は `[verify.profiles.*]` の custom command profile を実装済み。
 - TUI には handoff screen（range/sources/filters/split/preview/build + equivalent CLI command 表示）が入り、plan export まで実装済み。
 
 ## Next（優先順）
 
-1) named handoff profile presets / config wiring の設計
-2) compare の差分分類を増やすかの判断（future UX）
-3) TUI の入力 UX 改良（将来拡張）
+1) compare の差分分類を増やすかの判断（future UX）
+2) TUI の入力 UX 改良（将来拡張）
+3) compare/TUI の細部 polish をどこまで v1.1 に含めるか整理
 
 ## メモ（詰まったらここに書く）
 

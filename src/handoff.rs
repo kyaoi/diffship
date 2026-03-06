@@ -2,6 +2,7 @@ use crate::cli::BuildArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
 use crate::filter::PathFilter;
 use crate::git;
+use crate::handoff_config::{DEFAULT_PROFILE_NAME, HandoffConfig};
 use crate::plan::HandoffPlan;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -72,8 +73,9 @@ struct BinaryPolicy {
     binary_mode: BinaryMode,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct PackingLimits {
+    profile_label: String,
     max_parts: usize,
     max_bytes_per_part: u64,
 }
@@ -94,6 +96,10 @@ impl PackingLimits {
             ));
         }
         Ok(Self {
+            profile_label: args
+                .profile
+                .clone()
+                .unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string()),
             max_parts,
             max_bytes_per_part,
         })
@@ -191,7 +197,7 @@ struct SecretHit {
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
-    let args = resolve_build_args(&cwd, args)?;
+    let args = resolve_build_args(git_root, &cwd, args)?;
     let resolved_plan = HandoffPlan::from_build_args(&args);
 
     let out_dir = match &args.out {
@@ -405,10 +411,10 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         &mut rows,
         &mut commit_views,
         &mut exclusions,
-        packing_limits,
+        &packing_limits,
     )?;
 
-    enforce_packing_limits(&parts, packing_limits)?;
+    enforce_packing_limits(&parts, &packing_limits)?;
 
     for part in &parts {
         write_text_file(&parts_dir.join(&part.name), &part.patch)?;
@@ -501,9 +507,15 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     Ok(())
 }
 
-fn resolve_build_args(cwd: &Path, args: BuildArgs) -> Result<BuildArgs, ExitError> {
+fn resolve_build_args(
+    git_root: &Path,
+    cwd: &Path,
+    args: BuildArgs,
+) -> Result<BuildArgs, ExitError> {
     let Some(plan_path) = args.plan.clone() else {
-        return Ok(args);
+        let cfg = HandoffConfig::load(git_root)?;
+        let (resolved, _) = cfg.resolve_build_args(args)?;
+        return Ok(resolved);
     };
     if build_args_conflict_with_plan(&args) {
         return Err(ExitError::new(
@@ -518,11 +530,14 @@ fn resolve_build_args(cwd: &Path, args: BuildArgs) -> Result<BuildArgs, ExitErro
     effective.zip = args.zip;
     effective.yes = args.yes;
     effective.fail_on_secrets = args.fail_on_secrets;
-    Ok(effective)
+    let cfg = HandoffConfig::load(git_root)?;
+    let (resolved, _) = cfg.resolve_build_args(effective)?;
+    Ok(resolved)
 }
 
 fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
-    args.range_mode != "last"
+    args.profile.is_some()
+        || args.range_mode != "last"
         || args.from.is_some()
         || args.to.is_some()
         || args.a.is_some()
@@ -1035,7 +1050,7 @@ fn apply_packing_fallback(
     rows: &mut [FileRow],
     commit_views: &mut [CommitView],
     exclusions: &mut Vec<ExclusionEntry>,
-    limits: PackingLimits,
+    limits: &PackingLimits,
 ) -> Result<(), ExitError> {
     if !parts_exceed_limits(parts, limits) {
         return Ok(());
@@ -1245,7 +1260,7 @@ fn apply_packing_fallback(
     Ok(())
 }
 
-fn parts_exceed_limits(parts: &[PartOutput], limits: PackingLimits) -> bool {
+fn parts_exceed_limits(parts: &[PartOutput], limits: &PackingLimits) -> bool {
     if parts.len() > limits.max_parts {
         return true;
     }
@@ -1590,7 +1605,7 @@ fn hunk_line_deltas(line: &str) -> (i64, i64) {
     }
 }
 
-fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {
+fn enforce_packing_limits(parts: &[PartOutput], limits: &PackingLimits) -> Result<(), ExitError> {
     if parts.len() > limits.max_parts {
         return Err(ExitError::new(
             EXIT_PACKING_LIMITS,
@@ -2635,7 +2650,8 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
     s.push_str(&format!(
-        "- Profile: `m6` (`max_parts={}`, `max_bytes_per_part={}`; split-by=`{}`)\n",
+        "- Profile: `{}` (`max_parts={}`, `max_bytes_per_part={}`; split-by=`{}`)\n",
+        inp.packing_limits.profile_label,
         inp.packing_limits.max_parts,
         inp.packing_limits.max_bytes_per_part,
         split_label(inp.split_by),

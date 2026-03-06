@@ -10,6 +10,7 @@ pub struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Start the interactive TUI (status/runs viewer + loop launcher)
     Tui(TuiArgs),
@@ -164,6 +165,10 @@ pub struct BuildArgs {
     /// How to represent binary content when --include-binary is enabled: raw|patch|meta
     #[arg(long, default_value = "raw")]
     pub binary_mode: String,
+
+    /// Named handoff profile for packing limits (e.g. 20x512, 10x100)
+    #[arg(long)]
+    pub profile: Option<String>,
 
     /// Maximum number of patch parts allowed (default: 20)
     #[arg(long)]

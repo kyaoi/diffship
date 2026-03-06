@@ -3,8 +3,7 @@
 This document describes **how configuration is resolved** and which keys are **actually supported** by the current diffship binary.
 
 > diffship is developed with spec-driven development.
-> Some configuration sections (especially handoff/TUI-related ones) are **specified for the future** but not consumed by the current implementation.
-> Ops verify profile commands under `[verify.profiles.*]` are now consumed by the current implementation.
+> Ops verify profile commands under `[verify.profiles.*]` and handoff packing profiles under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
 
 ---
 
@@ -137,43 +136,50 @@ Today these policies are **built-in** and not configurable via TOML.
 
 ---
 
-## 3. Handoff / TUI configuration (spec-only for now)
+## 3. Handoff / TUI configuration
 
-The sections below describe the **planned/spec-defined** configuration surface for the handoff/TUI workflow.
-They are kept here so the repo has a single place to converge on, but they are not consumed by the current binary.
+Only handoff packing profiles are consumed today. The other handoff/TUI sections below remain planned/spec-defined for future work.
 
 All examples below are TOML.
 
-### 3.1 Profiles (upload limits)
+### 3.1 Profiles (upload limits, implemented)
 
-Built-in default profile (spec):
+Built-in profiles:
 
-- Name: `20x512`
-- `max_parts = 20`
-- `max_bytes_per_part = 536870912` (512 MiB)
+- `20x512` (default) → `max_parts = 20`, `max_bytes_per_part = 536870912`
+- `10x100` → `max_parts = 10`, `max_bytes_per_part = 104857600`
 
-Custom profiles:
+CLI:
+
+- `diffship build --profile <name>`
+- `diffship build --max-parts <n> --max-bytes-per-part <bytes>`
+
+Resolution:
+
+- precedence is `CLI > project > global > built-in default`
+- explicit `--max-parts` / `--max-bytes-per-part` override the selected profile values
+- TUI handoff screen uses the same resolved profile set and can cycle profiles with `h`
+
+Config:
 
 ```toml
+[handoff]
 default_profile = "20x512"
 
-[profiles."20x512"]
-max_parts = 20
-max_bytes_per_part = 536870912
-
-[profiles."10x100"]
-max_parts = 10
+[handoff.profiles."team-ci"]
+max_parts = 8
 max_bytes_per_part = 104857600 # 100 MiB
 ```
 
-Optional heuristic token limit:
+Compatibility alias (also accepted):
 
 ```toml
-[profiles."20x512"]
-max_parts = 20
-max_bytes_per_part = 536870912
-max_approx_tokens_per_part = 2000000
+[profiles."team-ci"]
+max_parts = 8
+max_bytes_per_part = 104857600
 ```
+
+The generated `plan.toml` records `profile` plus resolved numeric limits so replay remains stable even if config later changes.
 
 ### 3.2 Diff options
 

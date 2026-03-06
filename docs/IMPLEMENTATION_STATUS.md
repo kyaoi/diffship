@@ -10,7 +10,7 @@ This document explains how to read that status and how to update it.
 
 ---
 
-## Inventory snapshot (2026-03-06)
+## Inventory snapshot (2026-03-07)
 
 This is the current implementation inventory based on:
 
@@ -36,7 +36,7 @@ This is the current implementation inventory based on:
 |---|---|---|
 | `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md` |
 | committed / staged / unstaged / untracked collection | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md` |
-| split-by / profiles / part split | Partial | split-by and part emission exist in `src/handoff.rs`; limit guards via `--max-parts` / `--max-bytes-per-part` are enforced and tested in `tests/m6_handoff_build.rs`; profile presets/config wiring is still future work |
+| split-by / profiles / part split | Implemented | split-by, named handoff profiles (`20x512`, `10x100`, custom config), and part emission exist in `src/handoff.rs`, `src/handoff_config.rs`, `src/cli.rs`, `src/tui/mod.rs`; limits/profile behavior is covered by `tests/m6_handoff_build.rs`; docs are synced in `docs/CONFIG.md`, `README.md` |
 | `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
 | `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
 | filters (`.diffshipignore` + `--include` / `--exclude`) | Implemented | `src/filter.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/filter.rs` unit tests; `README.md` |
@@ -50,7 +50,7 @@ This is the current implementation inventory based on:
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- No immediate gaps remain in the current v1 handoff core; remaining work is mainly future-extension territory such as named profile presets and extra TUI/compare UX polish.
+- No immediate gaps remain in the current v1 handoff core; remaining work is mainly future-extension territory such as extra compare/TUI UX polish.
 
 ---
 

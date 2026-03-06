@@ -136,6 +136,14 @@ fn default_config_stub() -> String {
 [verify]
 default_profile = "standard" # fast|standard|full
 
+[handoff]
+default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.profiles."<name>"]
+
+# Example custom handoff profile:
+# [handoff.profiles."team-ci"]
+# max_parts = 8
+# max_bytes_per_part = 104857600
+
 [ops.promote]
 mode = "commit"           # none|working-tree|commit
 target_branch = "develop"

@@ -4,6 +4,7 @@ use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandoffPlan {
+    pub profile: Option<String>,
     pub range_mode: String,
     pub from: Option<String>,
     pub to: Option<String>,
@@ -30,6 +31,7 @@ pub struct HandoffPlan {
 impl Default for HandoffPlan {
     fn default() -> Self {
         Self {
+            profile: None,
             range_mode: "last".to_string(),
             from: None,
             to: None,
@@ -58,6 +60,7 @@ impl Default for HandoffPlan {
 impl HandoffPlan {
     pub fn from_build_args(args: &BuildArgs) -> Self {
         Self {
+            profile: args.profile.clone(),
             range_mode: args.range_mode.clone(),
             from: args.from.clone(),
             to: args.to.clone(),
@@ -84,6 +87,7 @@ impl HandoffPlan {
 
     pub fn into_build_args(self, plan: Option<String>, plan_out: Option<String>) -> BuildArgs {
         BuildArgs {
+            profile: self.profile,
             range_mode: self.range_mode,
             from: self.from,
             to: self.to,
@@ -113,6 +117,7 @@ impl HandoffPlan {
     pub fn to_build_args(&self) -> Vec<String> {
         let mut out = vec!["build".to_string()];
 
+        push_opt_flag(&mut out, "--profile", self.profile.as_deref());
         if self.range_mode != "last" {
             out.push("--range-mode".to_string());
             out.push(self.range_mode.clone());
@@ -193,6 +198,7 @@ impl HandoffPlan {
     pub fn to_toml_string(&self) -> String {
         let mut out = String::new();
         out.push_str("# diffship handoff plan\n");
+        push_toml_opt(&mut out, "profile", self.profile.as_deref());
         out.push_str(&format!("range_mode = {}\n", toml_string(&self.range_mode)));
         push_toml_opt(&mut out, "from", self.from.as_deref());
         push_toml_opt(&mut out, "to", self.to.as_deref());
@@ -253,6 +259,7 @@ impl HandoffPlan {
             let key = key.trim();
             let value = value.trim();
             match key {
+                "profile" => plan.profile = Some(parse_toml_string(value)?),
                 "range_mode" => plan.range_mode = parse_toml_string(value)?,
                 "from" => plan.from = Some(parse_toml_string(value)?),
                 "to" => plan.to = Some(parse_toml_string(value)?),
@@ -417,6 +424,7 @@ mod tests {
     #[test]
     fn build_args_include_selected_flags() {
         let plan = HandoffPlan {
+            profile: Some("10x100".to_string()),
             range_mode: "direct".to_string(),
             from: Some("HEAD~3".to_string()),
             to: Some("feature branch".to_string()),
@@ -432,6 +440,8 @@ mod tests {
             plan.to_build_args(),
             vec![
                 "build",
+                "--profile",
+                "10x100",
                 "--range-mode",
                 "direct",
                 "--from",
@@ -451,13 +461,14 @@ mod tests {
         );
         assert_eq!(
             plan.to_shell_command(),
-            "diffship build --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip"
+            "diffship build --profile 10x100 --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip"
         );
     }
 
     #[test]
     fn toml_roundtrip_preserves_plan() {
         let plan = HandoffPlan {
+            profile: Some("team".to_string()),
             range_mode: "merge-base".to_string(),
             a: Some("main".to_string()),
             b: Some("feature".to_string()),
@@ -475,6 +486,7 @@ mod tests {
         assert_eq!(parsed.out, None);
         assert!(!parsed.zip);
         assert!(!parsed.yes);
+        assert_eq!(parsed.profile, plan.profile);
         assert_eq!(parsed.range_mode, plan.range_mode);
         assert_eq!(parsed.a, plan.a);
         assert_eq!(parsed.b, plan.b);

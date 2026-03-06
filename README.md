@@ -17,7 +17,7 @@ It focuses on the *ops* side of an AI workflow:
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
 > `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.
-> Remaining handoff work is mainly future-extension territory (for example named profile presets / extra UX polish), not the current v1 handoff core.
+> Remaining handoff work is mainly future-extension territory (for example compare/TUI UX polish), not the current v1 handoff core.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -84,7 +84,7 @@ All commands below are implemented.
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
-- `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
+- `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
 - `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
 - `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`)
 - `diffship loop <bundle>` — apply → verify → promote
@@ -122,6 +122,9 @@ diffship build --include 'src/*.rs' --include '*.txt' --exclude 'src/generated.r
 
 # tighten packing limits for CI/runtime checks
 diffship build --max-parts 10 --max-bytes-per-part 104857600
+
+# select a named packing profile
+diffship build --profile 10x100
 
 # keep untracked files as metadata only
 diffship build --no-committed --include-untracked --untracked-mode meta

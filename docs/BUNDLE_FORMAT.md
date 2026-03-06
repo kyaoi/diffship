@@ -76,3 +76,4 @@ Must list excluded units with:
 - Export with `diffship build --plan-out <path>` (for example `<bundle>/plan.toml`).
 - Replay with `diffship build --plan <path>`.
 - Output path / zip emission are CLI-time concerns and may be supplied when replaying the plan.
+- Current plan payload includes the selected `profile` name plus resolved numeric limit fields, so replay remains stable if config later changes.

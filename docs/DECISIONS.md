@@ -574,3 +574,21 @@ diffship OS の重要な意思決定ログです。
   - export 元 bundle path を plan に焼き込むと replay 先が固定されて扱いにくくなるため。
 - Implications:
   - `docs/BUNDLE_FORMAT.md` には「output path は replay 時に与えられる」前提を明記する。
+
+---
+
+## D-043: handoff packing profile は named presets + config default で解決する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship build` に `--profile <name>` を追加し、built-in `20x512`（default）と `10x100` を提供する。
+  - global / project config から `[handoff].default_profile` と `[handoff.profiles.<name>]` を読み、custom profile を追加できるようにする。
+  - compatibility として `[profiles.<name>]` も受け付ける。
+  - TUI handoff screen は同じ profile set を使い、`h` キーで profile を切り替える。
+  - `plan.toml` には `profile` と resolved limit 値を両方保持する。
+- Rationale:
+  - upload limit を数値直打ちだけにせず、再利用可能な名前付き設定として持ち回せるようにするため。
+  - TUI / CLI / replay の parity を保ったまま、repo ごとの handoff size policy を config で固定したいため。
+- Implications:
+  - `HANDOFF.md` の TL;DR profile 表記は内部名 `m6` ではなく実際の profile 名を表示する。
+  - `diffship init` の config stub に handoff profile 設定例を追記する。

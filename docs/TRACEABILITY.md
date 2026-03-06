@@ -95,6 +95,13 @@ Conventions:
 
 ---
 
+## Profiles
+
+- **S-PROFILE-001** — Tests: `tests/m6_handoff_build.rs`, `src/plan.rs`, `src/tui/mod.rs` — Code: `src/handoff.rs`, `src/handoff_config.rs`, `src/cli.rs`, `src/plan.rs`, `src/tui/mod.rs` — Status: Implemented
+- **S-PROFILE-002** — Tests: `tests/m6_handoff_build.rs`, `src/handoff_config.rs` — Code: `src/handoff_config.rs`, `src/handoff.rs`, `src/ops/init.rs` — Status: Implemented
+
+---
+
 ## Output
 
 - **S-OUT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented

@@ -109,6 +109,8 @@ struct App {
     loop_scroll: usize,
 
     // Handoff
+    handoff_config: crate::handoff_config::HandoffConfig,
+    handoff_profile_names: Vec<String>,
     handoff: HandoffState,
 
     should_exit: bool,
@@ -168,6 +170,15 @@ impl App {
     fn new(git_root: &Path) -> Result<Self, ExitError> {
         let runs = run::list_runs(git_root, 20)?;
         let status = Some(load_status(git_root, 8)?);
+        let handoff_config = crate::handoff_config::HandoffConfig::load(git_root)?;
+        let handoff_profile_names = handoff_config.available_profile_names();
+        let default_profile = handoff_config.resolve_selection(None, None, None)?;
+        let handoff_plan = crate::plan::HandoffPlan {
+            profile: Some(default_profile.selected_name.clone()),
+            max_parts: Some(default_profile.max_parts),
+            max_bytes_per_part: Some(default_profile.max_bytes_per_part),
+            ..crate::plan::HandoffPlan::default()
+        };
 
         Ok(Self {
             screen: Screen::Runs,
@@ -185,8 +196,10 @@ impl App {
             loop_message: "Bundle path is empty. Press i to type, Enter to run.".to_string(),
             loop_scroll: 0,
 
+            handoff_config,
+            handoff_profile_names,
             handoff: HandoffState {
-                plan: crate::plan::HandoffPlan::default(),
+                plan: handoff_plan,
                 plan_path: "diffship_plan.toml".to_string(),
                 message: "Press v to preview the current handoff selection, or g to build."
                     .to_string(),
@@ -769,6 +782,19 @@ impl App {
                 self.handoff.plan.split_by =
                     cycle_value(&self.handoff.plan.split_by, &["auto", "file", "commit"]);
             }
+            KeyCode::Char('h') => {
+                if let Some(next) = cycle_named_value(
+                    self.handoff.plan.profile.as_deref(),
+                    &self.handoff_profile_names,
+                ) {
+                    let resolved =
+                        self.handoff_config
+                            .resolve_selection(Some(&next), None, None)?;
+                    self.handoff.plan.profile = Some(resolved.selected_name);
+                    self.handoff.plan.max_parts = Some(resolved.max_parts);
+                    self.handoff.plan.max_bytes_per_part = Some(resolved.max_bytes_per_part);
+                }
+            }
             KeyCode::Char('w') => {
                 self.handoff.plan.untracked_mode = cycle_value(
                     &self.handoff.plan.untracked_mode,
@@ -1246,6 +1272,15 @@ fn cycle_value(current: &str, values: &[&str]) -> String {
     values[(idx + 1) % values.len()].to_string()
 }
 
+fn cycle_named_value(current: Option<&str>, values: &[String]) -> Option<String> {
+    if values.is_empty() {
+        return None;
+    }
+    let current = current.unwrap_or(values[0].as_str());
+    let idx = values.iter().position(|v| v == current).unwrap_or(0);
+    Some(values[(idx + 1) % values.len()].clone())
+}
+
 fn yes_no(v: bool) -> &'static str {
     if v { "yes" } else { "no" }
 }
@@ -1257,7 +1292,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     };
     vec![
         "Handoff".to_string(),
-        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
+        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  h=profile  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
         String::new(),
         format!("mode        : {mode}"),
         format!("build cmd   : {}", handoff.plan.to_shell_command()),
@@ -1310,6 +1345,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
         String::new(),
         "4) Split / Profile".to_string(),
         format!("  - split-by: {}", handoff.plan.split_by),
+        format!("  - profile: {}", display_opt(handoff.plan.profile.as_deref())),
         format!("  - untracked-mode: {}", handoff.plan.untracked_mode),
         format!(
             "  - binary: include={} mode={}",
@@ -1401,8 +1437,8 @@ fn line(ch: char, w: u16) -> String {
 mod tests {
     use super::{
         ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle,
-        current_plan_export_path, cycle_value, handoff_overview_lines, parse_pattern_list,
-        preview_line_style, should_start_tui_impl, summarize_child_failure,
+        current_plan_export_path, cycle_named_value, cycle_value, handoff_overview_lines,
+        parse_pattern_list, preview_line_style, should_start_tui_impl, summarize_child_failure,
         summarize_child_success,
     };
 
@@ -1436,6 +1472,19 @@ mod tests {
     }
 
     #[test]
+    fn cycle_named_value_wraps() {
+        let values = vec!["20x512".to_string(), "10x100".to_string()];
+        assert_eq!(
+            cycle_named_value(Some("20x512"), &values),
+            Some("10x100".to_string())
+        );
+        assert_eq!(
+            cycle_named_value(Some("10x100"), &values),
+            Some("20x512".to_string())
+        );
+    }
+
+    #[test]
     fn summarize_child_output_prefers_stderr_on_failure() {
         let run = ChildRunResult {
             code: 3,
@@ -1465,6 +1514,7 @@ mod tests {
     fn handoff_overview_lists_flow_sections_and_command() {
         let handoff = HandoffState {
             plan: crate::plan::HandoffPlan {
+                profile: Some("10x100".to_string()),
                 include_staged: true,
                 include: vec!["src/*.rs".to_string()],
                 exclude: vec!["src/generated.rs".to_string()],
@@ -1485,9 +1535,10 @@ mod tests {
         assert!(joined.contains("include: src/*.rs"));
         assert!(joined.contains("exclude: src/generated.rs"));
         assert!(joined.contains("4) Split / Profile"));
+        assert!(joined.contains("profile: 10x100"));
         assert!(joined.contains("5) Preview: parts/part_01.patch"));
         assert!(joined.contains(
-            "diffship build --include-staged --include 'src/*.rs' --exclude src/generated.rs --split-by commit"
+            "diffship build --profile 10x100 --include-staged --include 'src/*.rs' --exclude src/generated.rs --split-by commit"
         ));
     }
 

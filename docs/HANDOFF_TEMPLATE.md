@@ -7,7 +7,7 @@
 
 ## TL;DR
 - Bundle: `<name>`
-- Profile: `<profile>` (`<max_parts>` parts × `<max_bytes_per_part>` bytes)
+- Profile: `<profile>` (`<max_parts>` parts × `<max_bytes_per_part>` bytes; split-by=`<split-by>`)
 - Binary policy: include=`<yes/no>`, mode=`<raw|patch|meta>`
 - Segments included: committed=`<yes/no>`, staged=`<yes/no>`, unstaged=`<yes/no>`, untracked=`<yes/no>`
 - Committed range: `<mode>` `<from/to or a/b>` (commits: `<n>`)
