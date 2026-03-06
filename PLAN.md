@@ -173,3 +173,4 @@ diffship loop <patch-bundle.zip>
 - M6-03 では split-by=commit は committed range のみ。untracked は auto で text/small → patch、binary/unreadable → attachments.zip、meta は excluded.md に送る。
 - M6-03 フォローアップ: README では生成物（HANDOFF.md / parts/ / attachments.zip / excluded.md）を backtick の path 参照として書かない。docs-check は repo 内実在パスとして検証するため。
 - `zip` crate 0.6 系では `zip::write::FileOptions` に lifetime/generic を付けず `FileOptions` として扱う。
+- M6-04 では HANDOFF.md を bundle の入口ドキュメントとして扱う。最低限、Start Here / TL;DR / Change Map / Parts Index を毎回生成し、tests で章立てを固定する。

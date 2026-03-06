@@ -338,3 +338,17 @@ diffship OS の重要な意思決定ログです。
   - README では「実在する repo パス」と「実行後に生成される成果物」を書き分ける。
   - 依存 crate のメジャー更新時は `FileOptions` 周辺の型注釈を再確認する。
 
+---
+
+## D-026: HANDOFF.md は bundle の入口ドキュメントに固定する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship build` が生成する HANDOFF.md は、bundle 全体の入口ドキュメントとして扱う。
+  - 最低限 `Start Here` / `TL;DR` / `Change Map` / `Parts Index` を毎回含める。
+  - `Parts Index` は quick index と part details の二段構成にし、読む順番を決めやすくする。
+- Rationale:
+  - AI や人間が bundle を開いたとき、最初に何を読めばよいか迷わないようにするため。
+- Implications:
+  - テストでは章立てと first patch の導線を確認し、出力の入口構造を壊さない。
+

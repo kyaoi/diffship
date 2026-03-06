@@ -10,7 +10,7 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, and optional attachments.zip / excluded.md.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md, and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > `.diffshipignore`, secrets warning, and preview are still planned.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -108,7 +108,7 @@ diffship build --no-committed --include-untracked --untracked-mode meta
 ```
 
 Output layout:
-- HANDOFF.md
+- HANDOFF.md (entry document: Start Here / TL;DR / Change Map / Parts Index)
 - parts/part_XX.patch
 - attachments.zip (when raw attachments exist)
 - excluded.md (when files are intentionally omitted)

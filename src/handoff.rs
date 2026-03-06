@@ -1107,6 +1107,42 @@ fn render_tree_node(node: &TreeNode, depth: usize, out: &mut String) {
 
 fn render_parts_index(parts: &[PartOutput], rows: &[FileRow]) -> String {
     let mut s = String::new();
+    s.push_str("### 3.1 Quick index\n");
+    s.push_str("| part | segments | files | approx bytes | first files |\n");
+    s.push_str("|---|---|---:|---:|---|\n");
+
+    for part in parts {
+        let approx_bytes = part.patch.len();
+        let mut files = rows
+            .iter()
+            .filter(|r| r.part == part.name)
+            .map(|r| r.path.clone())
+            .collect::<Vec<_>>();
+        files.sort();
+        files.dedup();
+
+        let preview = if files.is_empty() {
+            "-".to_string()
+        } else {
+            files
+                .iter()
+                .take(3)
+                .map(|p| format!("`{}`", p))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        s.push_str(&format!(
+            "| `{}` | `{}` | {} | {} | {} |\n",
+            part.name,
+            part.segments.join(", "),
+            files.len(),
+            approx_bytes,
+            preview,
+        ));
+    }
+
+    s.push_str("\n### 3.2 Part details\n");
     for part in parts {
         let approx_bytes = part.patch.len();
         let mut top = rows
@@ -1119,7 +1155,7 @@ fn render_parts_index(parts: &[PartOutput], rows: &[FileRow]) -> String {
         if top.len() > 8 {
             top.truncate(8);
         }
-        s.push_str(&format!("### {}\n", part.name));
+        s.push_str(&format!("#### {}\n", part.name));
         s.push_str(&format!("- approx bytes: `{}`\n", approx_bytes));
         s.push_str(&format!("- segments: `{}`\n", part.segments.join(", ")));
         s.push_str("- top files:\n");
@@ -1283,6 +1319,25 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     };
 
     let mut s = String::new();
+    s.push_str("# HANDOFF\n\n");
+    s.push_str("## Start Here\n");
+    s.push_str("1. Read the TL;DR to understand the scope and included segments.\n");
+    s.push_str(
+        "2. Use the Change Map to see which files changed and which patch part they belong to.\n",
+    );
+    s.push_str("3. Use the Parts Index to decide reading order inside the patch bundle.\n");
+    s.push_str(&format!(
+        "4. Open the first patch part: `{}`\n",
+        inp.first_part_rel
+    ));
+    if !inp.attachments.is_empty() {
+        s.push_str("5. After the patch parts, inspect attachments.zip for raw files that were intentionally kept out of patch text.\n");
+    }
+    if !inp.exclusions.is_empty() {
+        s.push_str("6. Check excluded.md for files that were omitted on purpose and why.\n");
+    }
+
+    s.push_str("\n---\n\n");
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
     s.push_str(&format!(
@@ -1388,6 +1443,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("\n### 2.3 Category Summary\n");
     s.push_str(inp.cat_summary);
     s.push_str("\n---\n\n## 3) Parts Index\n\n");
+    s.push_str("Use this section to decide reading order inside the patch bundle.\n\n");
     s.push_str(inp.parts_index);
 
     if !inp.commit_views.is_empty() {
@@ -1426,7 +1482,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     }
 
     s.push_str("\n---\n\n## Where to start\n\n");
-    s.push_str("Open `HANDOFF.md` first.\n");
+    s.push_str("Open this document first.\n");
     s.push_str(&format!("Then apply/read `{}`.\n", inp.first_part_rel));
     if !inp.attachments.is_empty() {
         s.push_str("After patch parts, inspect `attachments.zip` for raw files that were intentionally kept out of patch text.\n");

@@ -86,12 +86,17 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(bundle.join("parts").join("part_01.patch").exists());
 
     let handoff = fs::read_to_string(bundle.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("# HANDOFF"));
+    assert!(handoff.contains("## Start Here"));
     assert!(handoff.contains("## TL;DR"));
     assert!(handoff.contains(
         "Segments included: committed=`yes`, staged=`no`, unstaged=`no`, untracked=`no`"
     ));
     assert!(handoff.contains(&head));
     assert!(handoff.contains("## 3) Parts Index"));
+    assert!(handoff.contains("### 3.1 Quick index"));
+    assert!(handoff.contains("### 3.2 Part details"));
+    assert!(handoff.contains("4. Open the first patch part: `parts/part_01.patch`"));
 
     let part = fs::read_to_string(bundle.join("parts").join("part_01.patch")).unwrap();
     assert!(part.contains("diffship segment: committed"));
@@ -358,6 +363,9 @@ fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
 
     let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
     assert!(handoff.contains("## 4) Commit View"));
+    assert!(handoff.contains("### 3.1 Quick index"));
+    assert!(handoff.contains("| `part_01.patch` | `committed` |"));
+    assert!(handoff.contains("| `part_02.patch` | `committed` |"));
     assert!(handoff.contains("feat a"));
     assert!(handoff.contains("feat b"));
     assert!(handoff.contains("`a.txt` → `part_01.patch`"));
