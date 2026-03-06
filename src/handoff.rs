@@ -968,6 +968,7 @@ struct PackUnit {
     segment: String,
     chunk: String,
     bytes: u64,
+    context_level: usize,
 }
 
 fn apply_packing_fallback(
@@ -999,15 +1000,16 @@ fn apply_packing_fallback(
     let mut dropped: Vec<(PackUnit, String, String)> = vec![];
 
     for unit in sorted_units {
-        let cost = pack_unit_cost(&unit);
+        let unit = reduce_pack_unit_to_capacity(unit, limits.max_bytes_per_part);
+        let mut cost = pack_unit_cost(&unit);
         if cost > limits.max_bytes_per_part {
             dropped.push((
                 unit,
                 format!(
-                    "diff unit exceeds max_bytes_per_part={} (estimated with marker overhead)",
+                    "diff unit exceeds max_bytes_per_part={} even after context reduction (U3→U1→U0)",
                     limits.max_bytes_per_part
                 ),
-                "Increase --max-bytes-per-part or narrow selected sources/range".to_string(),
+                "Increase --max-bytes-per-part or narrow selected sources/range; context reduction was already attempted".to_string(),
             ));
             continue;
         }
@@ -1030,13 +1032,33 @@ fn apply_packing_fallback(
             bin_bytes.push(cost);
             bins.push(vec![unit]);
         } else {
+            let max_remaining = bin_bytes
+                .iter()
+                .map(|used| limits.max_bytes_per_part.saturating_sub(*used))
+                .max()
+                .unwrap_or(0);
+            let reduced = reduce_pack_unit_to_capacity(unit.clone(), max_remaining);
+            cost = pack_unit_cost(&reduced);
+            if cost <= max_remaining {
+                for (idx, used) in bin_bytes.iter_mut().enumerate() {
+                    if *used + cost <= limits.max_bytes_per_part {
+                        *used += cost;
+                        bins[idx].push(reduced.clone());
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+            if placed {
+                continue;
+            }
             dropped.push((
-                unit,
+                reduced,
                 format!(
-                    "max_parts={} reached during fallback packing",
+                    "max_parts={} reached during fallback packing even after context reduction",
                     limits.max_parts
                 ),
-                "Increase --max-parts or narrow selected sources/range".to_string(),
+                "Increase --max-parts or narrow selected sources/range; context reduction was already attempted".to_string(),
             ));
         }
     }
@@ -1054,6 +1076,7 @@ fn apply_packing_fallback(
 
     let mut rebuilt = Vec::new();
     let mut part_remap: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut reduced_map: BTreeMap<(String, String), usize> = BTreeMap::new();
     for (idx, bin) in bins.into_iter().enumerate() {
         if bin.is_empty() {
             continue;
@@ -1082,6 +1105,9 @@ fn apply_packing_fallback(
             }
             patch.push_str(u.chunk.trim_end());
             patch.push('\n');
+            if u.context_level < 3 {
+                reduced_map.insert((u.origin_part.clone(), u.path.clone()), u.context_level);
+            }
             part_remap.insert((u.origin_part, u.path), part_name.clone());
         }
 
@@ -1109,6 +1135,15 @@ fn apply_packing_fallback(
         let key = (old_part, row.path.clone());
         if let Some(new_part) = part_remap.get(&key) {
             row.part = new_part.clone();
+            if let Some(context_level) = reduced_map.get(&key) {
+                append_row_note(
+                    row,
+                    &format!(
+                        "packing fallback reduced diff context to U{}",
+                        context_level
+                    ),
+                );
+            }
             continue;
         }
         if let Some((reason, guidance)) = drop_map.get(&key) {
@@ -1212,13 +1247,288 @@ fn push_pack_unit(out: &mut Vec<PackUnit>, part: &PartOutput, segment: &str, chu
             segment: segment.to_string(),
             chunk: chunk.to_string(),
             bytes: chunk.len() as u64,
+            context_level: 3,
         });
+    }
+}
+
+fn append_row_note(row: &mut FileRow, note: &str) {
+    if row.note.is_empty() {
+        row.note = note.to_string();
+    } else if !row.note.contains(note) {
+        row.note.push_str("; ");
+        row.note.push_str(note);
     }
 }
 
 fn pack_unit_cost(unit: &PackUnit) -> u64 {
     // Safety margin for segment headers and separators added during rebuild.
     unit.bytes + 48
+}
+
+fn reduce_pack_unit_to_capacity(unit: PackUnit, max_capacity: u64) -> PackUnit {
+    if max_capacity == 0 || pack_unit_cost(&unit) <= max_capacity {
+        return unit;
+    }
+
+    let mut current = unit;
+    for context_level in [1usize, 0usize] {
+        if current.context_level <= context_level {
+            continue;
+        }
+        let Some(chunk) = reduce_patch_chunk_context(&current.chunk, context_level) else {
+            continue;
+        };
+        if chunk.len() >= current.chunk.len() {
+            continue;
+        }
+        current.chunk = chunk;
+        current.bytes = current.chunk.len() as u64;
+        current.context_level = context_level;
+        if pack_unit_cost(&current) <= max_capacity {
+            break;
+        }
+    }
+    current
+}
+
+#[derive(Debug, Clone)]
+struct UnifiedHunkHeader {
+    old_start: i64,
+    old_count: i64,
+    new_start: i64,
+    new_count: i64,
+    suffix: String,
+}
+
+#[derive(Debug, Clone)]
+struct HunkItem {
+    line: String,
+    old_delta: i64,
+    new_delta: i64,
+    trailing: Vec<String>,
+}
+
+fn reduce_patch_chunk_context(chunk: &str, max_context: usize) -> Option<String> {
+    if chunk.contains("GIT binary patch") {
+        return None;
+    }
+
+    let lines = chunk.lines().collect::<Vec<_>>();
+    let first_hunk = lines.iter().position(|line| line.starts_with("@@ "))?;
+
+    let mut out = Vec::<String>::new();
+    out.extend(lines[..first_hunk].iter().map(|line| (*line).to_string()));
+
+    let mut i = first_hunk;
+    while i < lines.len() {
+        let header = parse_unified_hunk_header(lines[i])?;
+        i += 1;
+
+        let start = i;
+        while i < lines.len() && !lines[i].starts_with("@@ ") {
+            i += 1;
+        }
+        let body = lines[start..i]
+            .iter()
+            .map(|line| (*line).to_string())
+            .collect::<Vec<_>>();
+        let reduced = reduce_hunk_context(&header, &body, max_context)?;
+        for (header, body) in reduced {
+            out.push(format_unified_hunk_header(&header));
+            out.extend(body);
+        }
+    }
+
+    if out.is_empty() {
+        return None;
+    }
+
+    let mut rendered = out.join("\n");
+    rendered.push('\n');
+    Some(rendered)
+}
+
+fn reduce_hunk_context(
+    header: &UnifiedHunkHeader,
+    body: &[String],
+    max_context: usize,
+) -> Option<Vec<(UnifiedHunkHeader, Vec<String>)>> {
+    let mut items = Vec::<HunkItem>::new();
+    for line in body {
+        if line.starts_with('\\') {
+            if let Some(last) = items.last_mut() {
+                last.trailing.push(line.clone());
+            }
+            continue;
+        }
+        let (old_delta, new_delta) = hunk_line_deltas(line);
+        items.push(HunkItem {
+            line: line.clone(),
+            old_delta,
+            new_delta,
+            trailing: vec![],
+        });
+    }
+
+    let change_indices = items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| {
+            if item.old_delta == 0 || item.new_delta == 0 {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if change_indices.is_empty() {
+        return None;
+    }
+
+    let mut old_positions = vec![0_i64; items.len()];
+    let mut new_positions = vec![0_i64; items.len()];
+    let mut old_line = header.old_start;
+    let mut new_line = header.new_start;
+    for (idx, item) in items.iter().enumerate() {
+        old_positions[idx] = old_line;
+        new_positions[idx] = new_line;
+        old_line += item.old_delta;
+        new_line += item.new_delta;
+    }
+
+    let mut ranges = change_indices
+        .into_iter()
+        .map(|idx| {
+            (
+                expand_hunk_start(&items, idx, max_context),
+                expand_hunk_end(&items, idx, max_context),
+            )
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+    let mut merged = Vec::<(usize, usize)>::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.0 <= last.1 + 1
+        {
+            last.1 = last.1.max(range.1);
+            continue;
+        }
+        merged.push(range);
+    }
+
+    let mut out = Vec::<(UnifiedHunkHeader, Vec<String>)>::new();
+    for (start, end) in merged {
+        let old_start = old_positions[start];
+        let new_start = new_positions[start];
+        let old_count = items[start..=end]
+            .iter()
+            .map(|item| item.old_delta)
+            .sum::<i64>();
+        let new_count = items[start..=end]
+            .iter()
+            .map(|item| item.new_delta)
+            .sum::<i64>();
+        let mut reduced_body = Vec::<String>::new();
+        for item in &items[start..=end] {
+            reduced_body.push(item.line.clone());
+            reduced_body.extend(item.trailing.clone());
+        }
+        out.push((
+            UnifiedHunkHeader {
+                old_start,
+                old_count,
+                new_start,
+                new_count,
+                suffix: header.suffix.clone(),
+            },
+            reduced_body,
+        ));
+    }
+    Some(out)
+}
+
+fn expand_hunk_start(items: &[HunkItem], idx: usize, max_context: usize) -> usize {
+    let mut start = idx;
+    let mut seen_context = 0usize;
+    while start > 0 {
+        let prev = start - 1;
+        if items[prev].old_delta == 1 && items[prev].new_delta == 1 {
+            if seen_context == max_context {
+                break;
+            }
+            seen_context += 1;
+        }
+        start = prev;
+    }
+    start
+}
+
+fn expand_hunk_end(items: &[HunkItem], idx: usize, max_context: usize) -> usize {
+    let mut end = idx;
+    let mut seen_context = 0usize;
+    while end + 1 < items.len() {
+        let next = end + 1;
+        if items[next].old_delta == 1 && items[next].new_delta == 1 {
+            if seen_context == max_context {
+                break;
+            }
+            seen_context += 1;
+        }
+        end = next;
+    }
+    end
+}
+
+fn parse_unified_hunk_header(line: &str) -> Option<UnifiedHunkHeader> {
+    let rest = line.strip_prefix("@@ -")?;
+    let (old_raw, rest) = rest.split_once(" +")?;
+    let (new_raw, suffix) = rest.split_once(" @@")?;
+    let (old_start, old_count) = parse_hunk_range(old_raw)?;
+    let (new_start, new_count) = parse_hunk_range(new_raw)?;
+    Some(UnifiedHunkHeader {
+        old_start,
+        old_count,
+        new_start,
+        new_count,
+        suffix: suffix.to_string(),
+    })
+}
+
+fn parse_hunk_range(raw: &str) -> Option<(i64, i64)> {
+    let (start, count) = match raw.split_once(',') {
+        Some((start, count)) => (start, count),
+        None => (raw, "1"),
+    };
+    Some((start.parse().ok()?, count.parse().ok()?))
+}
+
+fn format_unified_hunk_header(header: &UnifiedHunkHeader) -> String {
+    format!(
+        "@@ -{} +{} @@{}",
+        format_hunk_range(header.old_start, header.old_count),
+        format_hunk_range(header.new_start, header.new_count),
+        header.suffix
+    )
+}
+
+fn format_hunk_range(start: i64, count: i64) -> String {
+    if count == 1 {
+        start.to_string()
+    } else {
+        format!("{start},{count}")
+    }
+}
+
+fn hunk_line_deltas(line: &str) -> (i64, i64) {
+    match line.as_bytes().first().copied() {
+        Some(b' ') => (1, 1),
+        Some(b'-') => (1, 0),
+        Some(b'+') => (0, 1),
+        _ => (0, 0),
+    }
 }
 
 fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {

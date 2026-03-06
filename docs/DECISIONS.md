@@ -533,3 +533,17 @@ diffship OS の重要な意思決定ログです。
   - handoff の bundle 内容を説明可能にしつつ、source category ごとに filter 挙動がズレるのを防ぐため。
 - Implications:
   - TUI handoff screen でも include/exclude を編集可能にし、CLI と同じ bundle を再現できるようにする。
+
+---
+
+## D-040: packing overflow では context reduction を exclusion より先に試す
+
+- Date: 2026-03-07
+- Decision:
+  - packing fallback で unit が byte limit に収まらない場合、まず unified diff context を `U1`、必要なら `U0` に縮退させる。
+  - context reduction 後も収まらない unit だけを `excluded.md` に送る。
+  - reduction が発生した file row には `HANDOFF.md` 上でその旨を残す。
+- Rationale:
+  - 完全除外より先に diff の保持率を上げ、AI に最低限必要な変更行を残したい。
+- Implications:
+  - `docs/SPEC_V1.md` の packing fallback 契約を future work から current behavior に更新する。

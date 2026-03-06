@@ -474,6 +474,55 @@ fn build_part_bytes_overflow_repacks_into_multiple_parts() {
 }
 
 #[test]
+fn build_reduces_diff_context_before_excluding_an_oversized_unit() {
+    let td = init_repo();
+    let root = td.path();
+
+    let mut base = String::new();
+    for i in 1..=20 {
+        base.push_str(&format!("line_{i:02} {}\n", "x".repeat(80)));
+    }
+    fs::write(root.join("big.txt"), &base).unwrap();
+    commit_all(root, "base");
+
+    let mut changed = base.clone();
+    changed = changed.replace(
+        &format!("line_{:02} {}\n", 10, "x".repeat(80)),
+        &format!("line_{:02} {}\n", 10, "y".repeat(80)),
+    );
+    fs::write(root.join("big.txt"), changed).unwrap();
+    commit_all(root, "change");
+
+    let baseline = root.join("bundle_context_baseline");
+    let mut baseline_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    baseline_cmd
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&baseline);
+    baseline_cmd.assert().success();
+    let baseline_part = fs::read_to_string(baseline.join("parts").join("part_01.patch")).unwrap();
+    assert!(baseline_part.contains("line_07"));
+
+    let limit = (baseline_part.len() as u64).saturating_sub(250);
+    assert!(limit > 0);
+
+    let out = root.join("bundle_context_reduced");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", &limit.to_string(), "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    let reduced_part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(reduced_part.contains("line_10"));
+    assert!(!reduced_part.contains("line_07"));
+    assert!(!out.join("excluded.md").exists());
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("packing fallback reduced diff context"));
+}
+
+#[test]
 fn build_untracked_auto_stores_binary_in_attachments_zip() {
     let td = init_repo();
     let root = td.path();

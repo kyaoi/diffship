@@ -91,3 +91,4 @@ Then apply/read `parts/part_01.patch`.
 - split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.
 - Binary/unreadable files are excluded by default; use `--include-binary --binary-mode raw|patch|meta` to include them.
 - `.diffshipignore` is applied before writing parts / attachments / exclusions.
+- Explicit `--include` / `--exclude` path filters apply consistently to all selected segments.

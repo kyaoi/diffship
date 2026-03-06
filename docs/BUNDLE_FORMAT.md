@@ -45,6 +45,7 @@ See `docs/HANDOFF_TEMPLATE.md` for a recommended structure.
 - UTF-8, LF
 - Deterministic ordering (see `docs/DETERMINISM.md`)
 - Each part MUST contain clear segment markers (headers) so a reader can see which segment a hunk belongs to.
+- When packing fallback is active, diff context MAY be reduced (`U1` / `U0`) to keep a unit inside the configured byte limit.
 
 ---
 

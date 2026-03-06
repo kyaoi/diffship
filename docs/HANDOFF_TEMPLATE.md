@@ -95,3 +95,11 @@
 
 ## 6) Exclusions (only if excluded.md exists)
 See `excluded.md`.
+
+---
+
+## Notes
+- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.
+- Binary/unreadable files are excluded by default unless explicitly included.
+- `.diffshipignore` and optional include/exclude filters are applied before writing parts / attachments / exclusions.
+- Packing fallback may reduce diff context (`U1` / `U0`) before excluding an oversized unit.

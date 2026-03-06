@@ -15,7 +15,8 @@ It focuses on the *ops* side of an AI workflow:
 > `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks.
 > The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
-> Remaining handoff gaps are mainly JSON output for preview/compare, context-reduction fallback, and plan export/replay.
+> Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
+> Remaining handoff gaps are mainly JSON output for preview/compare and plan export/replay.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.

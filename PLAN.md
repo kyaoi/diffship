@@ -146,6 +146,7 @@ diffship loop <patch-bundle.zip>
 - ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
 - `pack-fix` は専用統合テスト込みで実装済み。
 - handoff は build + source収集 + split-by + packing fallback + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
+- packing fallback は context reduction（`U3 -> U1 -> U0`）まで実装済み。
 - handoff の `preview` / `compare` は実装済み。
 - handoff の explicit path filter（`--include` / `--exclude`）は実装済み。TUI handoff screen からも編集できる。
 - verify は `[verify.profiles.*]` の custom command profile を実装済み。
@@ -153,9 +154,8 @@ diffship loop <patch-bundle.zip>
 
 ## Next（優先順）
 
-1) pack fallback の context-reduction（U3→U1）段階実装
-2) compare/preview の JSON 出力と CI 向け利用パターン整備
-3) handoff plan export/replay（TUI→CLI）の仕様固定
+1) compare/preview の JSON 出力と CI 向け利用パターン整備
+2) handoff plan export/replay（TUI→CLI）の仕様固定
 
 ## メモ（詰まったらここに書く）
 
