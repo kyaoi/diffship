@@ -121,6 +121,14 @@ pub struct BuildArgs {
     #[arg(long, default_value_t = false)]
     pub no_committed: bool,
 
+    /// Include only paths matching this glob (repeatable)
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+
+    /// Exclude paths matching this glob (repeatable)
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
+
     /// Include staged changes (based on current HEAD)
     #[arg(long, default_value_t = false)]
     pub include_staged: bool,

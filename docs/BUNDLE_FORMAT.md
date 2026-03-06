@@ -28,6 +28,7 @@ Human/LLM entrypoint: what the bundle represents and how to read it.
 Must include:
 - TL;DR + recommended reading order
 - Included segments (committed/staged/unstaged/untracked) and bases (e.g., HEAD hash)
+- Applied path filters (`.diffshipignore`, optional `--include`, optional `--exclude`) when present
 - Change map:
   - changed tree
   - file table (path, status, segment, ins/del where available, bytes, part)

@@ -169,6 +169,8 @@ mod tests {
             to: Some("feature branch".to_string()),
             include_staged: true,
             include_untracked: true,
+            include: vec!["src/*.rs".to_string()],
+            exclude: vec!["src/generated.rs".to_string()],
             split_by: "commit".to_string(),
             zip: true,
             ..HandoffPlan::default()
@@ -185,6 +187,10 @@ mod tests {
                 "feature branch",
                 "--include-staged",
                 "--include-untracked",
+                "--include",
+                "src/*.rs",
+                "--exclude",
+                "src/generated.rs",
                 "--split-by",
                 "commit",
                 "--zip",
@@ -192,7 +198,7 @@ mod tests {
         );
         assert_eq!(
             plan.to_shell_command(),
-            "diffship build --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --split-by commit --zip"
+            "diffship build --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip"
         );
     }
 }

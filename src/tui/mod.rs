@@ -36,6 +36,8 @@ enum EditTarget {
     HandoffTo,
     HandoffA,
     HandoffB,
+    HandoffInclude,
+    HandoffExclude,
     HandoffOut,
 }
 
@@ -731,6 +733,18 @@ impl App {
                     self.handoff.plan.b.clone().unwrap_or_default(),
                 );
             }
+            KeyCode::Char('l') => {
+                self.start_edit(
+                    EditTarget::HandoffInclude,
+                    self.handoff.plan.include.join(", "),
+                );
+            }
+            KeyCode::Char('e') => {
+                self.start_edit(
+                    EditTarget::HandoffExclude,
+                    self.handoff.plan.exclude.join(", "),
+                );
+            }
             KeyCode::Char('o') => {
                 self.start_edit(
                     EditTarget::HandoffOut,
@@ -854,6 +868,12 @@ impl App {
             }
             EditTarget::HandoffB => {
                 self.handoff.plan.b = empty_to_none(value);
+            }
+            EditTarget::HandoffInclude => {
+                self.handoff.plan.include = parse_pattern_list(&value);
+            }
+            EditTarget::HandoffExclude => {
+                self.handoff.plan.exclude = parse_pattern_list(&value);
             }
             EditTarget::HandoffOut => {
                 self.handoff.plan.out = empty_to_none(value);
@@ -1177,6 +1197,8 @@ fn edit_target_label(target: EditTarget) -> &'static str {
         EditTarget::HandoffTo => "handoff.to",
         EditTarget::HandoffA => "handoff.a",
         EditTarget::HandoffB => "handoff.b",
+        EditTarget::HandoffInclude => "handoff.include",
+        EditTarget::HandoffExclude => "handoff.exclude",
         EditTarget::HandoffOut => "handoff.out",
     }
 }
@@ -1187,6 +1209,14 @@ fn display_opt(s: Option<&str>) -> &str {
 
 fn empty_to_none(s: String) -> Option<String> {
     if s.trim().is_empty() { None } else { Some(s) }
+}
+
+fn parse_pattern_list(s: &str) -> Vec<String> {
+    s.split([',', '\n'])
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn cycle_value(current: &str, values: &[&str]) -> String {
@@ -1205,7 +1235,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     };
     vec![
         "Handoff".to_string(),
-        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  p=split  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  ↑/↓=scroll preview".to_string(),
+        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  w=untracked  i=include-binary  y=binary-mode  o=out  z=zip  v=preview  g=build  ↑/↓=scroll preview".to_string(),
         String::new(),
         format!("mode        : {mode}"),
         format!("build cmd   : {}", handoff.plan.to_shell_command()),
@@ -1227,7 +1257,23 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
         ),
         String::new(),
         "3) Filters".to_string(),
-        "  - `.diffshipignore` is always applied. Explicit --include/--exclude filters are added in the next task.".to_string(),
+        format!(
+            "  - include: {}",
+            if handoff.plan.include.is_empty() {
+                "(none)".to_string()
+            } else {
+                handoff.plan.include.join(", ")
+            }
+        ),
+        format!(
+            "  - exclude: {}",
+            if handoff.plan.exclude.is_empty() {
+                "(none)".to_string()
+            } else {
+                handoff.plan.exclude.join(", ")
+            }
+        ),
+        "  - `.diffshipignore` is always applied.".to_string(),
         String::new(),
         "4) Split / Profile".to_string(),
         format!("  - split-by: {}", handoff.plan.split_by),
@@ -1314,8 +1360,8 @@ fn line(ch: char, w: u16) -> String {
 mod tests {
     use super::{
         ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle, cycle_value,
-        handoff_overview_lines, preview_line_style, should_start_tui_impl, summarize_child_failure,
-        summarize_child_success,
+        handoff_overview_lines, parse_pattern_list, preview_line_style, should_start_tui_impl,
+        summarize_child_failure, summarize_child_success,
     };
 
     #[test]
@@ -1378,6 +1424,8 @@ mod tests {
         let handoff = HandoffState {
             plan: crate::plan::HandoffPlan {
                 include_staged: true,
+                include: vec!["src/*.rs".to_string()],
+                exclude: vec!["src/generated.rs".to_string()],
                 split_by: "commit".to_string(),
                 ..crate::plan::HandoffPlan::default()
             },
@@ -1391,9 +1439,13 @@ mod tests {
         assert!(joined.contains("1) Range"));
         assert!(joined.contains("2) Sources"));
         assert!(joined.contains("3) Filters"));
+        assert!(joined.contains("include: src/*.rs"));
+        assert!(joined.contains("exclude: src/generated.rs"));
         assert!(joined.contains("4) Split / Profile"));
         assert!(joined.contains("5) Preview: parts/part_01.patch"));
-        assert!(joined.contains("diffship build --include-staged --split-by commit"));
+        assert!(joined.contains(
+            "diffship build --include-staged --include 'src/*.rs' --exclude src/generated.rs --split-by commit"
+        ));
     }
 
     #[test]
@@ -1404,5 +1456,13 @@ mod tests {
         assert_eq!(preview_line_style("diff --git"), PreviewLineStyle::Plain);
         assert_eq!(preview_line_style("--- a/file"), PreviewLineStyle::Plain);
         assert_eq!(preview_line_style("+++ b/file"), PreviewLineStyle::Plain);
+    }
+
+    #[test]
+    fn parse_pattern_list_accepts_commas_and_newlines() {
+        assert_eq!(
+            parse_pattern_list("src/*.rs, docs/*.md\nnotes.txt"),
+            vec!["src/*.rs", "docs/*.md", "notes.txt"]
+        );
     }
 }

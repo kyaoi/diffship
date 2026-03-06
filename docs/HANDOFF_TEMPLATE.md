@@ -12,6 +12,8 @@
 - Segments included: committed=`<yes/no>`, staged=`<yes/no>`, unstaged=`<yes/no>`, untracked=`<yes/no>`
 - Committed range: `<mode>` `<from/to or a/b>` (commits: `<n>`)
 - Current HEAD (for staged/unstaged/untracked): `<head>`
+- Include filters (optional): `<glob1>`, `<glob2>`
+- Exclude filters (optional): `<glob3>`
 - Reading order:
   1) Docs changes: `<parts/files>`
   2) Config/build changes: `<parts/files>`
@@ -33,6 +35,9 @@
 - unstaged: `<included?>`
 - untracked: `<included?>` (mode: `<auto|patch|raw|meta>`)
 - binary include: `<yes/no>` (mode: `<raw|patch|meta>`)
+- `.diffshipignore` active: `<yes/no>`
+- include filters (optional): `<...>`
+- exclude filters (optional): `<...>`
 
 ---
 

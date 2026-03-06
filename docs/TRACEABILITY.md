@@ -63,9 +63,9 @@ Conventions:
 
 ## Filters
 
-- **S-FILTER-001** — Tests: TBD — Code: `src/filter.rs` — Status: Planned
+- **S-FILTER-001** — Tests: `tests/m6_handoff_build.rs`, `src/filter.rs` — Code: `src/filter.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-FILTER-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-FILTER-003** — Tests: TBD — Code: `src/filter.rs` — Status: Planned
+- **S-FILTER-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/filter.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

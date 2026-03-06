@@ -1,5 +1,6 @@
 use crate::cli::BuildArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
+use crate::filter::PathFilter;
 use crate::git;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -186,58 +187,6 @@ struct SecretHit {
     reason: String,
 }
 
-#[derive(Debug, Clone, Default)]
-struct IgnoreMatcher {
-    rules: Vec<IgnoreRule>,
-}
-
-#[derive(Debug, Clone)]
-struct IgnoreRule {
-    pattern: String,
-    dir_only: bool,
-}
-
-impl IgnoreMatcher {
-    fn load(git_root: &Path) -> Result<Self, ExitError> {
-        let path = git_root.join(".diffshipignore");
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let text = fs::read_to_string(&path).map_err(|e| {
-            ExitError::new(
-                EXIT_GENERAL,
-                format!("failed to read {}: {e}", path.display()),
-            )
-        })?;
-        let mut rules = Vec::new();
-        for raw in text.lines() {
-            let line = raw.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let dir_only = line.ends_with('/');
-            let pat = line.trim_start_matches('/').trim_end_matches('/');
-            if pat.is_empty() {
-                continue;
-            }
-            rules.push(IgnoreRule {
-                pattern: pat.replace('\\', "/"),
-                dir_only,
-            });
-        }
-        Ok(Self { rules })
-    }
-
-    fn is_ignored(&self, rel: &str) -> bool {
-        let rel = rel.replace('\\', "/");
-        self.rules.iter().any(|r| rule_matches(r, &rel))
-    }
-
-    fn has_rules(&self) -> bool {
-        !self.rules.is_empty()
-    }
-}
-
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
@@ -263,7 +212,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
 
     let sources = SourceSelection::from_args(&args)?;
     let packing_limits = PackingLimits::from_args(&args)?;
-    let ignore = IgnoreMatcher::load(git_root)?;
+    let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
     let head = git::rev_parse(git_root, "HEAD")?;
     let plan = if sources.include_committed {
         Some(build_range_plan(git_root, &args)?)
@@ -288,7 +237,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
             for cp in committed_parts {
                 let part_name = format!("part_{:02}.patch", parts.len() + 1);
-                let segment = filter_segment_output(cp.segment, &ignore);
+                let segment = filter_segment_output(cp.segment, &filters);
                 let mut segment = apply_tracked_binary_policy(
                     git_root,
                     segment,
@@ -342,7 +291,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let part_name = format!("part_{:02}.patch", parts.len() + 1);
             let segment = filter_segment_output(
                 build_committed_segment(git_root, plan, &part_name)?,
-                &ignore,
+                &filters,
             );
             let mut segment = apply_tracked_binary_policy(
                 git_root,
@@ -369,7 +318,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let mut worktree_segments = Vec::<SegmentOutput>::new();
     let mut extra_rows = Vec::<FileRow>::new();
     if sources.include_staged {
-        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &ignore);
+        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &filters);
         let mut seg =
             apply_tracked_binary_policy(git_root, seg, binary_policy, TrackedBinarySource::Index)?;
         attachments.append(&mut seg.attachments);
@@ -380,7 +329,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         }
     }
     if sources.include_unstaged {
-        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &ignore);
+        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &filters);
         let mut seg = apply_tracked_binary_policy(
             git_root,
             seg,
@@ -395,7 +344,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         }
     }
     if sources.include_untracked {
-        let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &ignore)?;
+        let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &filters)?;
         if let Some(seg) = built.segment {
             worktree_segments.push(seg);
         }
@@ -506,7 +455,9 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         commit_views: &commit_views,
         attachments: &attachments,
         exclusions: &exclusions,
-        ignore_enabled: ignore.has_rules(),
+        ignore_enabled: filters.has_ignore_rules(),
+        include_patterns: filters.includes(),
+        exclude_patterns: filters.excludes(),
         secret_hits: &secret_hits,
     });
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
@@ -731,7 +682,7 @@ fn build_untracked_segment(
     git_root: &Path,
     mode: UntrackedMode,
     binary_policy: BinaryPolicy,
-    ignore: &IgnoreMatcher,
+    filters: &PathFilter,
 ) -> Result<SegmentBuildResult, ExitError> {
     let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
     let mut paths = list
@@ -748,7 +699,7 @@ fn build_untracked_segment(
     let mut exclusions = vec![];
 
     for rel in paths {
-        if ignore.is_ignored(&rel) {
+        if !filters.allows(&rel) {
             continue;
         }
         let abs = git_root.join(&rel);
@@ -1861,14 +1812,15 @@ fn detect_secret_reasons(s: &str) -> Vec<String> {
     reasons
 }
 
-fn filter_segment_output(segment: SegmentOutput, ignore: &IgnoreMatcher) -> SegmentOutput {
-    if !ignore.has_rules() {
+fn filter_segment_output(segment: SegmentOutput, filters: &PathFilter) -> SegmentOutput {
+    if !filters.has_ignore_rules() && filters.includes().is_empty() && filters.excludes().is_empty()
+    {
         return segment;
     }
     let keep = segment
         .rows
         .iter()
-        .filter(|r| !ignore.is_ignored(&r.path))
+        .filter(|r| filters.allows(&r.path))
         .map(|r| r.path.clone())
         .collect::<BTreeSet<_>>();
     let rows = segment
@@ -1926,37 +1878,6 @@ fn patch_chunk_path(chunk: &str) -> Option<String> {
     let b = parts.next()?.strip_prefix("b/").unwrap_or("");
     let path = if b.is_empty() { a } else { b };
     Some(path.to_string())
-}
-
-fn rule_matches(rule: &IgnoreRule, rel: &str) -> bool {
-    if rule.dir_only {
-        return rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern));
-    }
-    if simple_glob_match(&rule.pattern, rel) {
-        return true;
-    }
-    if !rule.pattern.contains('/') {
-        for part in rel.split('/') {
-            if simple_glob_match(&rule.pattern, part) {
-                return true;
-            }
-        }
-    }
-    rel == rule.pattern || rel.starts_with(&format!("{}/", rule.pattern))
-}
-
-fn simple_glob_match(pattern: &str, text: &str) -> bool {
-    fn inner(p: &[u8], t: &[u8]) -> bool {
-        if p.is_empty() {
-            return t.is_empty();
-        }
-        match p[0] {
-            b'*' => inner(&p[1..], t) || (!t.is_empty() && inner(p, &t[1..])),
-            b'?' => !t.is_empty() && inner(&p[1..], &t[1..]),
-            c => !t.is_empty() && c == t[0] && inner(&p[1..], &t[1..]),
-        }
-    }
-    inner(pattern.as_bytes(), text.as_bytes())
 }
 
 fn contains_private_key_block(s: &str) -> bool {
@@ -2275,6 +2196,8 @@ struct HandoffDocInputs<'a> {
     attachments: &'a [AttachmentEntry],
     exclusions: &'a [ExclusionEntry],
     ignore_enabled: bool,
+    include_patterns: &'a [String],
+    exclude_patterns: &'a [String],
     secret_hits: &'a [SecretHit],
 }
 
@@ -2377,6 +2300,18 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- Ignore rules: `.diffshipignore` = `{}`\n",
         yes_no(inp.ignore_enabled)
     ));
+    if !inp.include_patterns.is_empty() {
+        s.push_str(&format!(
+            "- Include filters: `{}`\n",
+            inp.include_patterns.join("`, `")
+        ));
+    }
+    if !inp.exclude_patterns.is_empty() {
+        s.push_str(&format!(
+            "- Exclude filters: `{}`\n",
+            inp.exclude_patterns.join("`, `")
+        ));
+    }
     if !inp.attachments.is_empty() {
         s.push_str(&format!(
             "- Attachments: `attachments.zip` ({} file(s))\n",
@@ -2441,6 +2376,18 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         "- .diffshipignore active: `{}`\n",
         yes_no(inp.ignore_enabled)
     ));
+    if !inp.include_patterns.is_empty() {
+        s.push_str(&format!(
+            "- include filters: `{}`\n",
+            inp.include_patterns.join("`, `")
+        ));
+    }
+    if !inp.exclude_patterns.is_empty() {
+        s.push_str(&format!(
+            "- exclude filters: `{}`\n",
+            inp.exclude_patterns.join("`, `")
+        ));
+    }
 
     s.push_str("\n---\n\n## 2) Change Map\n\n");
     s.push_str("### 2.1 Changed Tree (changed files only)\n```text\n");
@@ -2528,6 +2475,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("- split-by=commit applies only to committed range; staged/unstaged/untracked remain file-level units.\n");
     s.push_str("- Binary/unreadable files are excluded by default; use `--include-binary --binary-mode raw|patch|meta` to include them.\n");
     s.push_str("- `.diffshipignore` is applied before writing parts / attachments / exclusions.\n");
+    s.push_str("- Explicit `--include` / `--exclude` path filters apply consistently to all selected segments.\n");
     s
 }
 

@@ -519,3 +519,17 @@ diffship OS の重要な意思決定ログです。
   - handoff 導線を TUI でも辿れるようにしつつ、CLI parity を壊さないため。
 - Implications:
   - plan export/replay 自体は後続タスクとして残し、現段階では「等価 CLI の表示」までを先行実装する。
+
+---
+
+## D-039: explicit path filter は `.diffshipignore` と併用し、全 segment に同じ条件を適用する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship build` に repeatable `--include <glob>` / `--exclude <glob>` を追加する。
+  - 判定順は `.diffshipignore` と `--exclude` を優先し、その後 `--include` が空なら許可、指定ありなら一致した path のみ許可とする。
+  - 同じ filter 条件を committed/staged/unstaged/untracked の全 segment に適用し、`HANDOFF.md` に選択条件を記録する。
+- Rationale:
+  - handoff の bundle 内容を説明可能にしつつ、source category ごとに filter 挙動がズレるのを防ぐため。
+- Implications:
+  - TUI handoff screen でも include/exclude を編集可能にし、CLI と同じ bundle を再現できるようにする。

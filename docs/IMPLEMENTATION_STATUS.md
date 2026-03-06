@@ -39,7 +39,7 @@ This is the current implementation inventory based on:
 | split-by / profiles / part split | Partial | split-by and part emission exist in `src/handoff.rs`; limit guards via `--max-parts` / `--max-bytes-per-part` are enforced and tested in `tests/m6_handoff_build.rs`; profile presets/config wiring is still future work |
 | `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
 | `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
-| `.diffshipignore` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `README.md` |
+| filters (`.diffshipignore` + `--include` / `--exclude`) | Implemented | `src/filter.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/filter.rs` unit tests; `README.md` |
 | determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
 | `preview` command | Implemented | `src/preview.rs`, `src/cli.rs`; directory/zip bundles are supported; covered by `tests/m6_preview.rs` |
 | `compare` command (bundle reproducibility check) | Implemented | `src/bundle_compare.rs`, `src/cli.rs`; normalized/strict compare is covered by `tests/m6_compare.rs` |
@@ -49,7 +49,7 @@ This is the current implementation inventory based on:
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- Remaining v1 gaps are mostly around filter include/exclude flags (`S-FILTER-001/003`), plan export/replay (`S-TUI-004`), JSON output for preview/compare, and context-reduction fallback.
+- Remaining v1 gaps are mostly around plan export/replay (`S-TUI-004`), JSON output for preview/compare, and context-reduction fallback.
 
 ---
 

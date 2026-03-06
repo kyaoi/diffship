@@ -696,6 +696,65 @@ fn build_respects_diffshipignore_for_committed_and_untracked() {
 }
 
 #[test]
+fn build_include_and_exclude_filters_apply_to_all_segments() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("keep.rs"), "fn keep() {}\n").unwrap();
+    fs::write(root.join("skip.rs"), "fn skip() {}\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("keep.rs"), "fn keep() { println!(\"ok\"); }\n").unwrap();
+    fs::write(root.join("skip.rs"), "fn skip() { println!(\"no\"); }\n").unwrap();
+    commit_all(root, "second");
+
+    fs::write(root.join("staged.rs"), "fn staged() {}\n").unwrap();
+    Command::new("git")
+        .args(["add", "staged.rs"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    fs::write(root.join("note.txt"), "keep me\n").unwrap();
+    fs::write(root.join("notes.md"), "drop me\n").unwrap();
+
+    let out = root.join("bundle_filters");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--include",
+            "*.rs",
+            "--include",
+            "*.txt",
+            "--exclude",
+            "skip.rs",
+            "--include-staged",
+            "--include-untracked",
+            "--yes",
+            "--out",
+        ])
+        .arg(&out);
+    cmd.assert().success();
+
+    let mut patch_all = String::new();
+    for ent in fs::read_dir(out.join("parts")).unwrap() {
+        let path = ent.unwrap().path();
+        patch_all.push_str(&fs::read_to_string(path).unwrap());
+    }
+
+    assert!(patch_all.contains("keep.rs"));
+    assert!(patch_all.contains("staged.rs"));
+    assert!(patch_all.contains("note.txt"));
+    assert!(!patch_all.contains("skip.rs"));
+    assert!(!patch_all.contains("notes.md"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("Include filters: `*.rs`, `*.txt`"));
+    assert!(handoff.contains("Exclude filters: `skip.rs`"));
+}
+
+#[test]
 fn build_secrets_fail_without_yes_in_non_tty() {
     let td = init_repo();
     let root = td.path();
