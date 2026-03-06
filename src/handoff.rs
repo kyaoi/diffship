@@ -21,10 +21,8 @@ enum RangeMode {
 #[derive(Debug, Clone)]
 struct RangePlan {
     mode: RangeMode,
-    // Base and target are revision-ish strings acceptable to `git diff`.
     base: String,
     target: String,
-    // For display in HANDOFF.md
     from_rev: Option<String>,
     to_rev: Option<String>,
     a_rev: Option<String>,
@@ -33,8 +31,58 @@ struct RangePlan {
     commit_count: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SourceSelection {
+    include_committed: bool,
+    include_staged: bool,
+    include_unstaged: bool,
+    include_untracked: bool,
+}
+
+impl SourceSelection {
+    fn from_args(args: &BuildArgs) -> Result<Self, ExitError> {
+        let sel = Self {
+            include_committed: !args.no_committed,
+            include_staged: args.include_staged,
+            include_unstaged: args.include_unstaged,
+            include_untracked: args.include_untracked,
+        };
+
+        if !sel.include_committed
+            && !sel.include_staged
+            && !sel.include_unstaged
+            && !sel.include_untracked
+        {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                "no sources selected (enable at least one of committed/staged/unstaged/untracked)",
+            ));
+        }
+
+        Ok(sel)
+    }
+
+    fn segment_names(&self) -> Vec<String> {
+        let mut names = vec![];
+        if self.include_committed {
+            names.push("committed".to_string());
+        }
+        if self.include_staged {
+            names.push("staged".to_string());
+        }
+        if self.include_unstaged {
+            names.push("unstaged".to_string());
+        }
+        if self.include_untracked {
+            names.push("untracked".to_string());
+        }
+        names
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FileRow {
+    segment: String,
     status: String,
     path: String,
     note: String,
@@ -42,6 +90,13 @@ struct FileRow {
     del: Option<u64>,
     bytes: Option<u64>,
     part: String,
+}
+
+#[derive(Debug, Clone)]
+struct SegmentOutput {
+    name: String,
+    patch: String,
+    rows: Vec<FileRow>,
 }
 
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
@@ -67,70 +122,52 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     fs::create_dir_all(&parts_dir)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
 
+    let sources = SourceSelection::from_args(&args)?;
     let head = git::rev_parse(git_root, "HEAD")?;
-    let plan = build_range_plan(git_root, &args)?;
-
-    // MVP: committed-only patch in a single part.
-    let patch = git::run_git(
-        git_root,
-        [
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--patch",
-            "--full-index",
-            plan.base.as_str(),
-            plan.target.as_str(),
-        ],
-    )?;
+    let plan = if sources.include_committed {
+        Some(build_range_plan(git_root, &args)?)
+    } else {
+        None
+    };
 
     let part_name = "part_01.patch";
     let part_rel = format!("parts/{part_name}");
+
+    let mut segments = vec![];
+    if let Some(plan) = plan.as_ref() {
+        segments.push(build_committed_segment(git_root, plan, part_name)?);
+    }
+    if sources.include_staged {
+        segments.push(build_staged_segment(git_root, part_name)?);
+    }
+    if sources.include_unstaged {
+        segments.push(build_unstaged_segment(git_root, part_name)?);
+    }
+    if sources.include_untracked {
+        segments.push(build_untracked_segment(git_root, part_name)?);
+    }
+
+    let patch = render_segmented_patch(&segments);
     let part_path = parts_dir.join(part_name);
     write_text_file(&part_path, &patch)?;
 
-    let name_status = git::run_git(
-        git_root,
-        [
-            "diff",
-            "--name-status",
-            plan.base.as_str(),
-            plan.target.as_str(),
-        ],
-    )?;
-    let numstat = git::run_git(
-        git_root,
-        [
-            "diff",
-            "--numstat",
-            plan.base.as_str(),
-            plan.target.as_str(),
-        ],
-    )?;
-
-    let insdel_map = parse_numstat(&numstat);
-    let mut rows = parse_name_status(&name_status, &insdel_map);
-
-    for r in &mut rows {
-        if r.status == "D" {
-            r.bytes = Some(0);
-            continue;
-        }
-        r.bytes = git_cat_file_size(git_root, &plan.target, &r.path).ok();
-        r.part = part_name.to_string();
+    let mut rows = vec![];
+    for seg in &segments {
+        rows.extend(seg.rows.clone());
     }
-
-    rows.sort_by(|a, b| a.path.cmp(&b.path));
+    rows.sort_by(|a, b| a.segment.cmp(&b.segment).then(a.path.cmp(&b.path)));
 
     let changed_paths: Vec<String> = rows.iter().map(|r| r.path.clone()).collect();
     let changed_tree = render_changed_tree(&changed_paths);
-    let parts_index = render_parts_index(&patch, &rows, part_name);
+    let part_segments = sources.segment_names();
+    let parts_index = render_parts_index(&patch, &rows, part_name, &part_segments);
     let (cat_summary, reading_order) = render_category_summary_and_reading_order(&rows);
 
     let handoff = render_handoff_md(&HandoffDocInputs {
         out_dir: &out_dir,
-        plan: &plan,
+        plan: plan.as_ref(),
         head: &head,
+        sources,
         changed_tree: &changed_tree,
         rows: &rows,
         cat_summary: &cat_summary,
@@ -154,6 +191,222 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     }
 
     Ok(())
+}
+
+fn build_committed_segment(
+    git_root: &Path,
+    plan: &RangePlan,
+    part_name: &str,
+) -> Result<SegmentOutput, ExitError> {
+    let patch = git::run_git(
+        git_root,
+        [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+            plan.base.as_str(),
+            plan.target.as_str(),
+        ],
+    )?;
+
+    let name_status = git::run_git(
+        git_root,
+        [
+            "diff",
+            "--name-status",
+            plan.base.as_str(),
+            plan.target.as_str(),
+        ],
+    )?;
+    let numstat = git::run_git(
+        git_root,
+        [
+            "diff",
+            "--numstat",
+            plan.base.as_str(),
+            plan.target.as_str(),
+        ],
+    )?;
+
+    let insdel_map = parse_numstat(&numstat);
+    let mut rows = parse_name_status("committed", &name_status, &insdel_map);
+    for r in &mut rows {
+        if r.status == "D" {
+            r.bytes = Some(0);
+        } else {
+            r.bytes = git_cat_file_size(git_root, &plan.target, &r.path).ok();
+        }
+        r.part = part_name.to_string();
+    }
+
+    Ok(SegmentOutput {
+        name: "committed".to_string(),
+        patch,
+        rows,
+    })
+}
+
+fn build_staged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOutput, ExitError> {
+    let patch = git::run_git(
+        git_root,
+        [
+            "diff",
+            "--cached",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+            "HEAD",
+        ],
+    )?;
+    let name_status = git::run_git(git_root, ["diff", "--cached", "--name-status", "HEAD"])?;
+    let numstat = git::run_git(git_root, ["diff", "--cached", "--numstat", "HEAD"])?;
+
+    let insdel_map = parse_numstat(&numstat);
+    let mut rows = parse_name_status("staged", &name_status, &insdel_map);
+    for r in &mut rows {
+        if r.status == "D" {
+            r.bytes = Some(0);
+        } else {
+            r.bytes = git_cat_file_size(git_root, ":", &r.path).ok();
+        }
+        r.part = part_name.to_string();
+    }
+
+    Ok(SegmentOutput {
+        name: "staged".to_string(),
+        patch,
+        rows,
+    })
+}
+
+fn build_unstaged_segment(git_root: &Path, part_name: &str) -> Result<SegmentOutput, ExitError> {
+    let patch = git::run_git(
+        git_root,
+        [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+        ],
+    )?;
+    let name_status = git::run_git(git_root, ["diff", "--name-status"])?;
+    let numstat = git::run_git(git_root, ["diff", "--numstat"])?;
+
+    let insdel_map = parse_numstat(&numstat);
+    let mut rows = parse_name_status("unstaged", &name_status, &insdel_map);
+    for r in &mut rows {
+        if r.status == "D" {
+            r.bytes = Some(0);
+        } else {
+            r.bytes = file_size_on_disk(git_root, &r.path);
+        }
+        r.part = part_name.to_string();
+    }
+
+    Ok(SegmentOutput {
+        name: "unstaged".to_string(),
+        patch,
+        rows,
+    })
+}
+
+fn build_untracked_segment(git_root: &Path, part_name: &str) -> Result<SegmentOutput, ExitError> {
+    let list = git::run_git(git_root, ["ls-files", "--others", "--exclude-standard"])?;
+    let mut paths = list
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    let mut patch = String::new();
+    let mut rows = vec![];
+
+    for rel in paths {
+        let abs = git_root.join(&rel);
+        let bytes = fs::read(&abs).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to read untracked file {}: {e}", abs.display()),
+            )
+        })?;
+
+        let size = Some(bytes.len() as u64);
+        match String::from_utf8(bytes) {
+            Ok(text) => {
+                let diff = run_git_allow_diff_status(
+                    git_root,
+                    [
+                        "diff",
+                        "--no-index",
+                        "--no-color",
+                        "--no-ext-diff",
+                        "--patch",
+                        "--full-index",
+                        "--",
+                        "/dev/null",
+                        rel.as_str(),
+                    ],
+                )?;
+                if !patch.is_empty() && !patch.ends_with('\n') {
+                    patch.push('\n');
+                }
+                patch.push_str(diff.trim_end());
+                patch.push('\n');
+
+                rows.push(FileRow {
+                    segment: "untracked".to_string(),
+                    status: "A".to_string(),
+                    path: rel,
+                    note: String::new(),
+                    ins: Some(count_text_lines(&text)),
+                    del: Some(0),
+                    bytes: size,
+                    part: part_name.to_string(),
+                });
+            }
+            Err(_) => rows.push(FileRow {
+                segment: "untracked".to_string(),
+                status: "A".to_string(),
+                path: rel,
+                note: "binary/unreadable skipped (attachments planned in M6-03)".to_string(),
+                ins: None,
+                del: None,
+                bytes: size,
+                part: String::new(),
+            }),
+        }
+    }
+
+    Ok(SegmentOutput {
+        name: "untracked".to_string(),
+        patch,
+        rows,
+    })
+}
+
+fn render_segmented_patch(segments: &[SegmentOutput]) -> String {
+    let mut out = String::new();
+
+    for seg in segments {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&format!("# === diffship segment: {} ===\n", seg.name));
+        if seg.patch.trim().is_empty() {
+            out.push_str("# (no changes)\n");
+        } else {
+            out.push_str(seg.patch.trim_end());
+            out.push('\n');
+        }
+    }
+
+    out
 }
 
 fn timestamp_yyyymmdd_hhmm() -> Result<String, ExitError> {
@@ -318,8 +571,11 @@ fn empty_tree_hash(git_root: &Path) -> Result<String, ExitError> {
 }
 
 fn git_cat_file_size(git_root: &Path, target_commit: &str, path: &str) -> Result<u64, ExitError> {
-    // NOTE: This is best-effort; errors should not fail the whole build.
-    let spec = format!("{}:{}", target_commit, path);
+    let spec = if target_commit == ":" {
+        format!(":{path}")
+    } else {
+        format!("{target_commit}:{path}")
+    };
     let out = git::run_git(git_root, ["cat-file", "-s", spec.as_str()])?;
     let s = out.trim();
     s.parse::<u64>().map_err(|e| {
@@ -328,6 +584,41 @@ fn git_cat_file_size(git_root: &Path, target_commit: &str, path: &str) -> Result
             format!("failed to parse cat-file -s output '{s}': {e}"),
         )
     })
+}
+
+fn file_size_on_disk(git_root: &Path, path: &str) -> Option<u64> {
+    fs::metadata(git_root.join(path)).ok().map(|m| m.len())
+}
+
+fn count_text_lines(s: &str) -> u64 {
+    if s.is_empty() {
+        0
+    } else {
+        s.lines().count() as u64
+    }
+}
+
+fn run_git_allow_diff_status<I, S>(git_root: &Path, args: I) -> Result<String, ExitError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(git_root)
+        .output()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git: {e}")))?;
+
+    let code = output.status.code();
+    if output.status.success() || code == Some(1) {
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(ExitError::new(
+        EXIT_GENERAL,
+        format!("git failed: {}", stderr.trim()),
+    ))
 }
 
 fn write_text_file(path: &Path, contents: &str) -> Result<(), ExitError> {
@@ -359,7 +650,6 @@ fn parse_numstat(s: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
         if line.trim().is_empty() {
             continue;
         }
-        // numstat is TAB-separated: ins<TAB>del<TAB>path
         let mut parts = line.split('\t');
         let ins_s = parts.next().unwrap_or("");
         let del_s = parts.next().unwrap_or("");
@@ -375,6 +665,7 @@ fn parse_numstat(s: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
 }
 
 fn parse_name_status(
+    segment: &str,
     name_status: &str,
     insdel: &HashMap<String, (Option<u64>, Option<u64>)>,
 ) -> Vec<FileRow> {
@@ -386,7 +677,6 @@ fn parse_name_status(
             continue;
         }
 
-        // name-status is TAB-separated by default.
         let mut parts = line.split('\t');
         let status = parts.next().unwrap_or("").trim().to_string();
         if status.is_empty() {
@@ -406,13 +696,14 @@ fn parse_name_status(
         let (ins, del) = insdel.get(&path).cloned().unwrap_or((None, None));
 
         rows.push(FileRow {
+            segment: segment.to_string(),
             status: st,
             path,
             note,
             ins,
             del,
             bytes: None,
-            part: "".to_string(),
+            part: String::new(),
         });
     }
 
@@ -462,10 +753,20 @@ fn render_tree_node(node: &TreeNode, depth: usize, out: &mut String) {
     }
 }
 
-fn render_parts_index(patch: &str, rows: &[FileRow], part_name: &str) -> String {
+fn render_parts_index(
+    patch: &str,
+    rows: &[FileRow],
+    part_name: &str,
+    segments: &[String],
+) -> String {
     let approx_bytes = patch.len();
-    let mut top = rows.iter().map(|r| r.path.clone()).collect::<Vec<_>>();
+    let mut top = rows
+        .iter()
+        .filter(|r| r.part == part_name)
+        .map(|r| r.path.clone())
+        .collect::<Vec<_>>();
     top.sort();
+    top.dedup();
     if top.len() > 8 {
         top.truncate(8);
     }
@@ -473,7 +774,7 @@ fn render_parts_index(patch: &str, rows: &[FileRow], part_name: &str) -> String 
     let mut s = String::new();
     s.push_str(&format!("### {part_name}\n"));
     s.push_str(&format!("- approx bytes: `{approx_bytes}`\n"));
-    s.push_str("- segments: `committed`\n");
+    s.push_str(&format!("- segments: `{}`\n", segments.join(", ")));
     s.push_str("- top files:\n");
     for p in top {
         s.push_str(&format!("  - `{}`\n", p));
@@ -511,10 +812,15 @@ fn render_category_summary_and_reading_order(rows: &[FileRow]) -> (String, Vec<S
     }
 
     docs.sort();
+    docs.dedup();
     cfg.sort();
+    cfg.dedup();
     src.sort();
+    src.dedup();
     tests.sort();
+    tests.dedup();
     other.sort();
+    other.dedup();
 
     let mut s = String::new();
     s.push_str(&format!(
@@ -538,7 +844,6 @@ fn render_category_summary_and_reading_order(rows: &[FileRow]) -> (String, Vec<S
         other.len()
     ));
 
-    // reading order: choose representative lists (paths), but keep it short.
     let mut order = vec![];
     if !docs.is_empty() {
         order.push(format!("Docs changes: `part_01` ({} files)", docs.len()));
@@ -564,8 +869,9 @@ fn render_category_summary_and_reading_order(rows: &[FileRow]) -> (String, Vec<S
 
 struct HandoffDocInputs<'a> {
     out_dir: &'a Path,
-    plan: &'a RangePlan,
+    plan: Option<&'a RangePlan>,
     head: &'a str,
+    sources: SourceSelection,
     changed_tree: &'a str,
     rows: &'a [FileRow],
     cat_summary: &'a str,
@@ -581,48 +887,57 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| inp.out_dir.display().to_string());
 
-    let (range_mode, range_desc) = match inp.plan.mode {
-        RangeMode::Direct => (
-            "direct",
-            format!(
-                "from/to: `{}` → `{}`",
-                inp.plan.from_rev.as_deref().unwrap_or("?"),
-                inp.plan.to_rev.as_deref().unwrap_or("?"),
+    let (range_mode, range_desc) = if let Some(plan) = inp.plan {
+        match plan.mode {
+            RangeMode::Direct => (
+                "direct",
+                format!(
+                    "from/to: `{}` → `{}`",
+                    plan.from_rev.as_deref().unwrap_or("?"),
+                    plan.to_rev.as_deref().unwrap_or("?"),
+                ),
             ),
-        ),
-        RangeMode::MergeBase => (
-            "merge-base",
-            format!(
-                "a/b: `{}` / `{}` (merge-base: `{}`)",
-                inp.plan.a_rev.as_deref().unwrap_or("?"),
-                inp.plan.b_rev.as_deref().unwrap_or("?"),
-                inp.plan.merge_base.as_deref().unwrap_or("?"),
+            RangeMode::MergeBase => (
+                "merge-base",
+                format!(
+                    "a/b: `{}` / `{}` (merge-base: `{}`)",
+                    plan.a_rev.as_deref().unwrap_or("?"),
+                    plan.b_rev.as_deref().unwrap_or("?"),
+                    plan.merge_base.as_deref().unwrap_or("?"),
+                ),
             ),
-        ),
-        RangeMode::Last => ("last", "HEAD~1..HEAD".to_string()),
-        RangeMode::Root => (
-            "root",
-            format!(
-                "empty-tree → `{}`",
-                inp.plan.to_rev.as_deref().unwrap_or("HEAD")
+            RangeMode::Last => ("last", "HEAD~1..HEAD".to_string()),
+            RangeMode::Root => (
+                "root",
+                format!(
+                    "empty-tree → `{}`",
+                    plan.to_rev.as_deref().unwrap_or("HEAD")
+                ),
             ),
-        ),
+        }
+    } else {
+        ("disabled", "committed range not included".to_string())
     };
 
     let mut s = String::new();
 
-    // TL;DR
     s.push_str("## TL;DR\n");
     s.push_str(&format!("- Bundle: `{}`\n", bundle_name));
     s.push_str("- Profile: `mvp` (single part; no size-based splitting yet)\n");
-    s.push_str(
-        "- Segments included: committed=`yes`, staged=`no`, unstaged=`no`, untracked=`no`\n",
-    );
+    s.push_str(&format!(
+        "- Segments included: committed=`{}`, staged=`{}`, unstaged=`{}`, untracked=`{}`\n",
+        yes_no(inp.sources.include_committed),
+        yes_no(inp.sources.include_staged),
+        yes_no(inp.sources.include_unstaged),
+        yes_no(inp.sources.include_untracked),
+    ));
     s.push_str(&format!(
         "- Committed range: `{}` ({})\n",
         range_mode, range_desc
     ));
-    if let Some(n) = inp.plan.commit_count {
+    if let Some(plan) = inp.plan
+        && let Some(n) = plan.commit_count
+    {
         s.push_str(&format!("- Commit count (approx): `{}`\n", n));
     }
     s.push_str(&format!(
@@ -636,23 +951,38 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
 
     s.push_str("\n---\n\n");
 
-    // 1) Range & Sources Summary
     s.push_str("## 1) Range & Sources Summary\n");
     s.push_str("### Committed range\n");
-    s.push_str(&format!("- mode: `{}`\n", range_mode));
-    s.push_str(&format!("- {range_desc}\n"));
-    if let Some(mb) = inp.plan.merge_base.as_deref() {
-        s.push_str(&format!("- merge-base: `{}`\n", mb));
-    }
-    if let Some(n) = inp.plan.commit_count {
-        s.push_str(&format!("- commit count: `{}`\n", n));
+    if let Some(plan) = inp.plan {
+        s.push_str(&format!("- included: `{}`\n", yes_no(true)));
+        s.push_str(&format!("- mode: `{}`\n", range_mode));
+        s.push_str(&format!("- {range_desc}\n"));
+        if let Some(mb) = plan.merge_base.as_deref() {
+            s.push_str(&format!("- merge-base: `{}`\n", mb));
+        }
+        if let Some(n) = plan.commit_count {
+            s.push_str(&format!("- commit count: `{}`\n", n));
+        }
+    } else {
+        s.push_str("- included: `no`\n");
+        s.push_str("- mode: `disabled`\n");
     }
 
     s.push_str("\n### Current workspace base (for uncommitted segments)\n");
     s.push_str(&format!("- HEAD: `{}`\n", inp.head.trim()));
-    s.push_str("- staged: `no`\n- unstaged: `no`\n- untracked: `no`\n");
+    s.push_str(&format!(
+        "- staged: `{}` (base: `HEAD`)\n",
+        yes_no(inp.sources.include_staged)
+    ));
+    s.push_str(&format!(
+        "- unstaged: `{}` (base: `HEAD` / working tree)\n",
+        yes_no(inp.sources.include_unstaged)
+    ));
+    s.push_str(&format!(
+        "- untracked: `{}` (base: `HEAD`, mode: `text patch only for now`)\n",
+        yes_no(inp.sources.include_untracked)
+    ));
 
-    // 2) Change Map
     s.push_str("\n---\n\n");
     s.push_str("## 2) Change Map\n\n");
 
@@ -668,54 +998,44 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("| segment | status | path | ins | del | bytes | part | note |\n");
     s.push_str("|---|---:|---|---:|---:|---:|---|---|\n");
     for r in inp.rows {
-        let ins = r
-            .ins
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "".to_string());
-        let del = r
-            .del
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "".to_string());
-        let bytes = r
-            .bytes
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "".to_string());
+        let ins = r.ins.map(|v| v.to_string()).unwrap_or_default();
+        let del = r.del.map(|v| v.to_string()).unwrap_or_default();
+        let bytes = r.bytes.map(|v| v.to_string()).unwrap_or_default();
+        let part = if r.part.is_empty() {
+            "-"
+        } else {
+            r.part.as_str()
+        };
         s.push_str(&format!(
-            "| committed | {} | `{}` | {} | {} | {} | {} | {} |\n",
-            r.status,
-            r.path,
-            ins,
-            del,
-            bytes,
-            r.part,
-            if r.note.is_empty() {
-                ""
-            } else {
-                r.note.as_str()
-            },
+            "| {} | {} | `{}` | {} | {} | {} | {} | {} |\n",
+            r.segment, r.status, r.path, ins, del, bytes, part, r.note,
         ));
     }
 
     s.push_str("\n### 2.3 Category Summary\n");
     s.push_str(inp.cat_summary);
 
-    // 3) Parts Index
     s.push_str("\n---\n\n");
     s.push_str("## 3) Parts Index\n\n");
     s.push_str(inp.parts_index);
 
-    // Minimal explicit pointer for parts
     s.push_str("\n---\n\n");
     s.push_str("## Where to start\n\n");
-    s.push_str(&format!("Open `{}` first.\n", "HANDOFF.md"));
+    s.push_str("Open `HANDOFF.md` first.\n");
     s.push_str(&format!("Then apply/read `{}`.\n", inp.part_rel));
 
-    // Extra hint for automation
     s.push_str("\n---\n\n");
     s.push_str("## Notes\n");
-    s.push_str("- This is an MVP committed-only bundle. Staged/unstaged/untracked sources and size-based splitting are planned.\n");
+    s.push_str("- This is still a single-part MVP. Profile-based splitting, excluded.md, and attachments.zip are planned in M6-03.\n");
+    if inp.sources.include_untracked {
+        s.push_str("- Untracked currently emits text files as add-diffs. Binary/unreadable files stay listed in the file table with a skip note until attachments are implemented.\n");
+    }
 
     s
+}
+
+fn yes_no(v: bool) -> &'static str {
+    if v { "yes" } else { "no" }
 }
 
 fn write_zip_from_dir(src_dir: &Path, zip_path: &Path) -> Result<(), ExitError> {
@@ -754,7 +1074,6 @@ fn add_dir_recursive<W: Write + io::Seek>(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read dir entry: {e}")))?;
 
-    // Deterministic order
     entries.sort_by_key(|e| e.file_name());
 
     for ent in entries {

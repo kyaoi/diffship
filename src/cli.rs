@@ -14,7 +14,7 @@ pub enum Command {
     /// Start the interactive TUI (status/runs viewer + loop launcher)
     Tui(TuiArgs),
 
-    /// Build an AI handoff bundle from committed diffs (M6, MVP: committed-only)
+    /// Build an AI handoff bundle from committed and optional uncommitted diffs
     Build(BuildArgs),
 
     /// Generate a ChatGPT Project kit under .diffship/
@@ -83,6 +83,22 @@ pub struct BuildArgs {
     /// Range B revision (for range-mode=merge-base)
     #[arg(long)]
     pub b: Option<String>,
+
+    /// Exclude committed range from the bundle (default: committed included)
+    #[arg(long, default_value_t = false)]
+    pub no_committed: bool,
+
+    /// Include staged changes (based on current HEAD)
+    #[arg(long, default_value_t = false)]
+    pub include_staged: bool,
+
+    /// Include unstaged changes (based on current HEAD / working tree)
+    #[arg(long, default_value_t = false)]
+    pub include_unstaged: bool,
+
+    /// Include untracked text files as add-diffs (binary/raw attachments are planned)
+    #[arg(long, default_value_t = false)]
+    pub include_untracked: bool,
 
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]

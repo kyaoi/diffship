@@ -135,7 +135,7 @@ diffship loop <patch-bundle.zip>
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
 | M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
-| M6-02 | doing | diff収集（committed/staged/unstaged/untracked） | committed range は生成できる（MVP）。segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
+| M6-02 | done | diff収集（committed/staged/unstaged/untracked） | committed/staged/unstaged/untracked を CLI で選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
 | M6-03 | todo | 分割（profiles）+ excluded/attachments | profile制限内で `parts/part_XX.patch` を分割できる。超過・除外は `excluded.md`、raw添付は `attachments.zip` に退避できる。 |
 | M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
 | M6-05 | todo | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
@@ -144,9 +144,9 @@ diffship loop <patch-bundle.zip>
 ---
 ## Next（いま着手する3つ）
 
-1) M6-02: staged/unstaged/untracked の取り込み拡張（sources toggle + HEAD基準の明記）
-2) M6-03: profile 制限に合わせた split / excluded / attachments
-3) M6-05: `.diffshipignore` + handoff secrets warning（値を出さない/CI用fail）
+1) M6-03: profile 制限に合わせた split / excluded / attachments
+2) M6-05: `.diffshipignore` + handoff secrets warning（値を出さない/CI用fail）
+3) M6-06: handoff 出力の golden / determinism テストを増やす
 
 （候補）
 - Handoff `preview`
@@ -165,3 +165,8 @@ diffship loop <patch-bundle.zip>
 
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。
+
+- M6-02 実装メモ:
+  - `diffship build` は `--include-staged` / `--include-unstaged` / `--include-untracked` と `--no-committed` を受け付ける
+  - untracked は現時点では text add-diff のみ。binary/unreadable は File Table に skip note を残し、attachments は M6-03 で扱う
+  - `docs/TRACEABILITY.md` の `Status: Partial` は、Tests か Code のどちらかに `TBD` が残る場合だけ使う（両方埋まっていれば `Implemented`）

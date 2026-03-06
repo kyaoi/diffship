@@ -64,12 +64,10 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 
     let head = git_stdout(root, &["rev-parse", "HEAD"]);
 
-    // Run build with default output directory name.
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmd.current_dir(root).arg("build");
     cmd.assert().success();
 
-    // Find the generated diffship_<timestamp>/ directory.
     let mut bundles = vec![];
     for ent in fs::read_dir(root).unwrap() {
         let ent = ent.unwrap();
@@ -89,12 +87,14 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 
     let handoff = fs::read_to_string(bundle.join("HANDOFF.md")).unwrap();
     assert!(handoff.contains("## TL;DR"));
-    assert!(handoff.contains("Segments included: committed=`yes`"));
+    assert!(handoff.contains(
+        "Segments included: committed=`yes`, staged=`no`, unstaged=`no`, untracked=`no`"
+    ));
     assert!(handoff.contains(&head));
     assert!(handoff.contains("## 3) Parts Index"));
 
     let part = fs::read_to_string(bundle.join("parts").join("part_01.patch")).unwrap();
-    // Default range-mode is last, so we should see the last commit's change.
+    assert!(part.contains("diffship segment: committed"));
     assert!(part.contains("a.txt"));
     assert!(part.contains("+two"));
 }
@@ -230,4 +230,102 @@ fn build_root_mode_works_for_single_commit_repo() {
     let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
     assert!(part.contains("only.txt"));
     assert!(part.contains("+hello"));
+}
+
+#[test]
+fn build_rejects_when_no_sources_are_selected() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("only.txt"), "hello\n").unwrap();
+    commit_all(root, "root");
+
+    let out = root.join("bundle_none");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--no-committed", "--out"])
+        .arg(&out);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("no sources selected"));
+}
+
+#[test]
+fn build_can_include_staged_without_committed() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("tracked.txt"), "staged\n").unwrap();
+    Command::new("git")
+        .args(["add", "tracked.txt"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let out = root.join("bundle_staged");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--no-committed", "--include-staged", "--out"])
+        .arg(&out);
+
+    cmd.assert().success();
+
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("diffship segment: staged"));
+    assert!(!part.contains("diffship segment: committed"));
+    assert!(part.contains("+staged"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains(
+        "Segments included: committed=`no`, staged=`yes`, unstaged=`no`, untracked=`no`"
+    ));
+    assert!(handoff.contains("| staged | M | `tracked.txt` |"));
+}
+
+#[test]
+fn build_can_include_unstaged_and_untracked_text() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("tracked.txt"), "unstaged\n").unwrap();
+    fs::write(root.join("notes.txt"), "hello\nworld\n").unwrap();
+
+    let out = root.join("bundle_worktree");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args([
+            "build",
+            "--no-committed",
+            "--include-unstaged",
+            "--include-untracked",
+            "--out",
+        ])
+        .arg(&out);
+
+    cmd.assert().success();
+
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("diffship segment: unstaged"));
+    assert!(part.contains("diffship segment: untracked"));
+    assert!(part.contains("tracked.txt"));
+    assert!(part.contains("notes.txt"));
+    assert!(part.contains("+unstaged"));
+    assert!(part.contains("+hello"));
+
+    let handoff = fs::read_to_string(out.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains(
+        "Segments included: committed=`no`, staged=`no`, unstaged=`yes`, untracked=`yes`"
+    ));
+    assert!(handoff.contains("| unstaged | M | `tracked.txt` |"));
+    assert!(handoff.contains("| untracked | A | `notes.txt` | 2 | 0 |"));
 }

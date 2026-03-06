@@ -277,3 +277,31 @@ diffship OS の重要な意思決定ログです。
   - Git の初期ブランチ名は環境設定で変わり得て、CI/ユーザー環境で `master` が存在しないケースがある。
 - Implications:
   - テストが環境依存で落ちないようにし、`just ci` を安定させる。
+
+---
+
+## D-022: Handoff の uncommitted sources は segment toggle で段階導入する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship build` は committed をデフォルト ON としつつ、`--include-staged` / `--include-unstaged` / `--include-untracked` で uncommitted sources を追加できるようにする。
+  - committed を外したい場合は `--no-committed` を使う。
+  - untracked はまず text add-diff のみを扱い、binary/unreadable は File Table に skip note を残す。raw attachments は M6-03 で導入する。
+- Rationale:
+  - まず AI に渡す差分の出どころ（segment）を明示できるようにし、後続の attachments/excluded/split を安全に積み増すため。
+- Implications:
+  - `HANDOFF.md` には各 segment の included 状態と base（HEAD / committed range）を明記する。
+
+---
+
+## D-023: Traceability の `Partial` は `TBD` が残る場合だけ使う
+
+- Date: 2026-03-06
+- Decision:
+  - `docs/TRACEABILITY.md` で `Status: Partial` を使うのは、Tests か Code のどちらかに `TBD` が残る場合だけにする。
+  - Tests と Code の両方が具体化されている項目は `Implemented` にする。
+- Rationale:
+  - `scripts/check-traceability.sh` の整合ルールに合わせ、`just trace-check` を安定して通すため。
+- Implications:
+  - 部分実装を表現したい場合でも、どちらか一方は `TBD` を残して `Partial` を使う。
+

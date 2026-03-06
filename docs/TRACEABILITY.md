@@ -47,8 +47,8 @@ Conventions:
 
 ## Sources
 
-- **S-SOURCES-001** — Tests: TBD — Code: `src/sources.rs` — Status: Planned
-- **S-SOURCES-002** — Tests: TBD — Code: `src/sources.rs` — Status: Planned
+- **S-SOURCES-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-SOURCES-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-SOURCES-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
@@ -71,10 +71,10 @@ Conventions:
 
 ## Untracked
 
-- **S-UNTRACKED-001** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
+- **S-UNTRACKED-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-UNTRACKED-002** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
 - **S-UNTRACKED-003** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
-- **S-UNTRACKED-004** — Tests: TBD — Code: `src/untracked.rs` — Status: Planned
+- **S-UNTRACKED-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-UNTRACKED-005** — Tests: TBD — Code: `src/bundle.rs` — Status: Planned
 
 ---

@@ -10,8 +10,8 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` currently supports **committed-only** ranges (default: `last`) and produces the bundle layout.
-> Uncommitted segments (staged/unstaged/untracked), size-based splitting, attachments, and `preview` are still planned.
+> `diffship build` currently supports **committed ranges** (default: `last`) plus optional **staged / unstaged / untracked** sources.
+> Untracked is currently emitted as **text add-diffs only**; size-based splitting, raw attachments, and `preview` are still planned.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
 
@@ -69,7 +69,7 @@ All commands below are implemented.
 - `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
 - `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher)
 
-- `diffship build` — build a handoff bundle (MVP: committed-only ranges)
+- `diffship build` — build a handoff bundle (committed range + optional `--include-staged` / `--include-unstaged` / `--include-untracked`, `--no-committed`)
 
 - `diffship init` — generate `.diffship/` project kit files
 - `diffship status` — show lock state and recent runs (`--json` available)
