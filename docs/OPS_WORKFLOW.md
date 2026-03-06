@@ -6,6 +6,39 @@ It is intentionally human-oriented (what to run, what happens, where to look).
 
 ---
 
+## End-to-end flow (build → AI → loop)
+
+When you start from local Git diffs (not from a pre-made patch bundle), use this sequence:
+
+1) Build a handoff bundle for AI:
+
+```bash
+diffship build --include-staged --include-unstaged --include-untracked
+```
+
+2) Inspect before sharing:
+
+```bash
+diffship preview ./diffship_YYYY-MM-DD_HHMM --list
+diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
+```
+
+3) Send the handoff bundle to AI and receive an AI-produced patch bundle (`patch-bundle.zip`).
+
+4) Apply+verify+promote in one step:
+
+```bash
+diffship loop ./patch-bundle.zip
+```
+
+5) If you need reproducibility checks across two handoff outputs:
+
+```bash
+diffship compare ./bundle_a ./bundle_b.zip
+```
+
+---
+
 ## Concepts
 
 - **session**: a persistent worktree used to avoid touching your main working tree

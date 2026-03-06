@@ -448,6 +448,14 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         });
     }
 
+    apply_packing_fallback(
+        &mut parts,
+        &mut rows,
+        &mut commit_views,
+        &mut exclusions,
+        packing_limits,
+    )?;
+
     enforce_packing_limits(&parts, packing_limits)?;
 
     for part in &parts {
@@ -1000,6 +1008,266 @@ fn parse_binary_mode(raw: &str) -> Result<BinaryMode, ExitError> {
             format!("invalid --binary-mode '{other}' (expected: raw|patch|meta)"),
         )),
     }
+}
+
+#[derive(Debug, Clone)]
+struct PackUnit {
+    origin_part: String,
+    path: String,
+    segment: String,
+    chunk: String,
+    bytes: u64,
+}
+
+fn apply_packing_fallback(
+    parts: &mut Vec<PartOutput>,
+    rows: &mut [FileRow],
+    commit_views: &mut [CommitView],
+    exclusions: &mut Vec<ExclusionEntry>,
+    limits: PackingLimits,
+) -> Result<(), ExitError> {
+    if !parts_exceed_limits(parts, limits) {
+        return Ok(());
+    }
+
+    let units = collect_pack_units(parts);
+    if units.is_empty() {
+        return Ok(());
+    }
+
+    let mut sorted_units = units;
+    sorted_units.sort_by(|a, b| {
+        b.bytes
+            .cmp(&a.bytes)
+            .then(a.path.cmp(&b.path))
+            .then(a.origin_part.cmp(&b.origin_part))
+    });
+
+    let mut bins: Vec<Vec<PackUnit>> = vec![];
+    let mut bin_bytes: Vec<u64> = vec![];
+    let mut dropped: Vec<(PackUnit, String, String)> = vec![];
+
+    for unit in sorted_units {
+        let cost = pack_unit_cost(&unit);
+        if cost > limits.max_bytes_per_part {
+            dropped.push((
+                unit,
+                format!(
+                    "diff unit exceeds max_bytes_per_part={} (estimated with marker overhead)",
+                    limits.max_bytes_per_part
+                ),
+                "Increase --max-bytes-per-part or narrow selected sources/range".to_string(),
+            ));
+            continue;
+        }
+
+        let mut placed = false;
+        for (idx, used) in bin_bytes.iter_mut().enumerate() {
+            if *used + cost <= limits.max_bytes_per_part {
+                *used += cost;
+                bins[idx].push(unit.clone());
+                placed = true;
+                break;
+            }
+        }
+
+        if placed {
+            continue;
+        }
+
+        if bins.len() < limits.max_parts {
+            bin_bytes.push(cost);
+            bins.push(vec![unit]);
+        } else {
+            dropped.push((
+                unit,
+                format!(
+                    "max_parts={} reached during fallback packing",
+                    limits.max_parts
+                ),
+                "Increase --max-parts or narrow selected sources/range".to_string(),
+            ));
+        }
+    }
+
+    let total_units = bins.iter().map(Vec::len).sum::<usize>() + dropped.len();
+    if total_units > 0 && dropped.len() == total_units {
+        return Err(ExitError::new(
+            EXIT_PACKING_LIMITS,
+            format!(
+                "packing limits exceeded: all diff units were excluded by fallback (max_parts={}, max_bytes_per_part={})",
+                limits.max_parts, limits.max_bytes_per_part
+            ),
+        ));
+    }
+
+    let mut rebuilt = Vec::new();
+    let mut part_remap: BTreeMap<(String, String), String> = BTreeMap::new();
+    for (idx, bin) in bins.into_iter().enumerate() {
+        if bin.is_empty() {
+            continue;
+        }
+
+        let part_name = format!("part_{:02}.patch", idx + 1);
+        let mut units = bin;
+        units.sort_by(|a, b| {
+            segment_rank(&a.segment)
+                .cmp(&segment_rank(&b.segment))
+                .then(a.path.cmp(&b.path))
+                .then(a.origin_part.cmp(&b.origin_part))
+        });
+
+        let mut patch = String::new();
+        let mut segs = Vec::<String>::new();
+        let mut current_seg: Option<String> = None;
+        for u in units {
+            if current_seg.as_deref() != Some(u.segment.as_str()) {
+                if !patch.is_empty() && !patch.ends_with('\n') {
+                    patch.push('\n');
+                }
+                patch.push_str(&format!("# === diffship segment: {} ===\n", u.segment));
+                current_seg = Some(u.segment.clone());
+                segs.push(u.segment.clone());
+            }
+            patch.push_str(u.chunk.trim_end());
+            patch.push('\n');
+            part_remap.insert((u.origin_part, u.path), part_name.clone());
+        }
+
+        segs.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)).then(a.cmp(b)));
+        segs.dedup();
+
+        rebuilt.push(PartOutput {
+            name: part_name,
+            patch,
+            segments: segs,
+        });
+    }
+
+    let mut drop_map: BTreeMap<(String, String), (String, String)> = BTreeMap::new();
+    for (u, reason, guidance) in dropped {
+        drop_map.insert((u.origin_part, u.path), (reason, guidance));
+    }
+
+    let mut seen_exclusions = BTreeSet::new();
+    for row in rows.iter_mut() {
+        if !row.part.starts_with("part_") {
+            continue;
+        }
+        let old_part = row.part.clone();
+        let key = (old_part, row.path.clone());
+        if let Some(new_part) = part_remap.get(&key) {
+            row.part = new_part.clone();
+            continue;
+        }
+        if let Some((reason, guidance)) = drop_map.get(&key) {
+            row.part = "-".to_string();
+            if row.note.is_empty() {
+                row.note = "excluded by packing fallback (see excluded.md)".to_string();
+            }
+            let uniq = format!("{}::{}", row.path, reason);
+            if seen_exclusions.insert(uniq) {
+                exclusions.push(ExclusionEntry {
+                    path: row.path.clone(),
+                    reason: reason.clone(),
+                    guidance: guidance.clone(),
+                });
+            }
+        }
+    }
+
+    for cv in commit_views.iter_mut() {
+        for (path, part) in &mut cv.files {
+            let key = (part.clone(), path.clone());
+            if let Some(new_part) = part_remap.get(&key) {
+                *part = new_part.clone();
+            } else if drop_map.contains_key(&key) {
+                *part = "-".to_string();
+            }
+        }
+        cv.files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    }
+
+    if rebuilt.is_empty() {
+        rebuilt.push(PartOutput {
+            name: "part_01.patch".to_string(),
+            patch: "# (no changes)\n".to_string(),
+            segments: vec!["meta".to_string()],
+        });
+    }
+    *parts = rebuilt;
+
+    Ok(())
+}
+
+fn parts_exceed_limits(parts: &[PartOutput], limits: PackingLimits) -> bool {
+    if parts.len() > limits.max_parts {
+        return true;
+    }
+    parts
+        .iter()
+        .any(|p| p.patch.len() as u64 > limits.max_bytes_per_part)
+}
+
+fn collect_pack_units(parts: &[PartOutput]) -> Vec<PackUnit> {
+    let mut out = Vec::new();
+
+    for part in parts {
+        let mut current_seg = "meta".to_string();
+        let mut current_chunk = String::new();
+
+        for line in part.patch.lines() {
+            if let Some(seg) = line
+                .strip_prefix("# === diffship segment: ")
+                .and_then(|s| s.strip_suffix(" ==="))
+            {
+                if !current_chunk.is_empty() {
+                    push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+                    current_chunk.clear();
+                }
+                current_seg = seg.to_string();
+                continue;
+            }
+
+            if line.starts_with("diff --git ") {
+                if !current_chunk.is_empty() {
+                    push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+                    current_chunk.clear();
+                }
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+                continue;
+            }
+
+            if !current_chunk.is_empty() {
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+            }
+        }
+
+        if !current_chunk.is_empty() {
+            push_pack_unit(&mut out, part, &current_seg, &current_chunk);
+        }
+    }
+
+    out
+}
+
+fn push_pack_unit(out: &mut Vec<PackUnit>, part: &PartOutput, segment: &str, chunk: &str) {
+    if let Some(path) = patch_chunk_path(chunk) {
+        out.push(PackUnit {
+            origin_part: part.name.clone(),
+            path,
+            segment: segment.to_string(),
+            chunk: chunk.to_string(),
+            bytes: chunk.len() as u64,
+        });
+    }
+}
+
+fn pack_unit_cost(unit: &PackUnit) -> u64 {
+    // Safety margin for segment headers and separators added during rebuild.
+    unit.bytes + 48
 }
 
 fn enforce_packing_limits(parts: &[PartOutput], limits: PackingLimits) -> Result<(), ExitError> {

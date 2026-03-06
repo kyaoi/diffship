@@ -128,14 +128,17 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PACK-001**: Packing is deterministic for the same inputs.
 - **S-PACK-002**: Units are sorted by (1) bytes desc, (2) path/commit asc.
 - **S-PACK-003**: Pack uses First-Fit Decreasing under profile constraints.
-- **S-PACK-004**: If a single unit cannot fit within `max_bytes_per_part`, fallback order:
-  1) reduce unified context for that unit (e.g., U3 → U1)
-  2) if still too large: exclude the unit with reason, and optionally attach snapshot (default OFF)
+- **S-PACK-004**: If a unit cannot fit within `max_bytes_per_part` (including packing overhead), it is excluded with reason/guidance and listed in `excluded.md` (context-reduction fallback is future work).
 - **S-PACK-005**: Exclusions must be recorded in `excluded.md` with reasons and guidance.
 
 ### 4.3 `diffship preview <handoff-bundle>`
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.
+
+### 4.3.1 `diffship compare <bundle-a> <bundle-b>`
+
+- **S-COMPARE-001**: Compare two handoff bundles and report structural/content differences.
+- **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` byte-level mode.
 
 ### 4.4 Patch bundle format (input contract)
 

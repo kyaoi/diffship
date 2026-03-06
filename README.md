@@ -10,9 +10,10 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
-> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
-> Preview and richer packing fallback strategies are still planned.
+> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks.
+> Remaining handoff gaps are mainly TUI parity for the handoff flow and include/exclude filter flags.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
@@ -80,6 +81,8 @@ All commands below are implemented.
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
 - `diffship build` — generate a handoff bundle (HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md)
+- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`)
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` for raw byte comparison)
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches
@@ -125,6 +128,12 @@ diffship build --yes
 
 # fail in CI when secrets-like content is detected
 diffship build --fail-on-secrets
+
+# inspect a generated bundle
+diffship preview ./diffship_2026-03-06_1200 --list
+
+# compare two bundles for reproducibility checks
+diffship compare ./bundle_a ./bundle_b.zip
 ```
 
 Output layout:

@@ -1,6 +1,6 @@
 # diffship Bundle Format (v1)
 
-This document defines the **bundle contract** produced by `diffship build` and consumed by humans/LLMs (and optionally `diffship preview`).
+This document defines the **bundle contract** produced by `diffship build` and consumed by humans/LLMs (and by `diffship preview` / `diffship compare`).
 
 ---
 

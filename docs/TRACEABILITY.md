@@ -107,9 +107,9 @@ Conventions:
 ## Packing / fallback
 
 - **S-PACK-001** — Tests: `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
-- **S-PACK-002** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
-- **S-PACK-003** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
-- **S-PACK-004** — Tests: TBD — Code: `src/pack.rs` — Status: Planned
+- **S-PACK-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-PACK-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-PACK-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-PACK-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
@@ -125,7 +125,14 @@ Conventions:
 
 ## Preview
 
-- **S-PREVIEW-001** — Tests: TBD — Code: `src/preview.rs` — Status: Planned
+- **S-PREVIEW-001** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
+
+---
+
+## Compare
+
+- **S-COMPARE-001** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
+- **S-COMPARE-002** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -165,7 +172,7 @@ Conventions:
 
 ## Verify
 
-- **S-VERIFY-001** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
+- **S-VERIFY-001** — Tests: `tests/m2_apply_verify.rs`, `tests/m4_verify_profiles.rs` — Code: `src/ops/verify.rs`, `src/ops/config.rs` — Status: Implemented
 - **S-VERIFY-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
 - **S-VERIFY-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
 - **S-VERIFY-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/verify.rs` — Status: Implemented
@@ -174,8 +181,8 @@ Conventions:
 
 ## pack-fix
 
-- **S-PACKFIX-001** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
-- **S-PACKFIX-002** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
+- **S-PACKFIX-001** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-PACKFIX-002** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -242,7 +249,7 @@ Conventions:
 
 - **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
-- **S-RUN-003** — Tests: TBD — Code: `src/ops/pack_fix.rs` — Status: Partial
+- **S-RUN-003** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 

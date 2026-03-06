@@ -24,7 +24,7 @@ This is the current implementation inventory based on:
 |---|---|---|
 | `init` / `status` / `runs` | Implemented | `src/ops/init.rs`, `src/ops/status.rs`, `src/ops/runs.rs`; `tests/m0_integration.rs`; `README.md`, `docs/OPS_WORKFLOW.md` |
 | `apply` / `verify` / `promote` / `loop` | Implemented (core) | `src/ops/apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs`, `src/ops/loop_cmd.rs`; `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs`; `README.md`, `docs/OPS_WORKFLOW.md` |
-| `pack-fix` | Partial | `src/ops/pack_fix.rs` and automatic generation from `verify` failures in `src/ops/verify.rs`; no dedicated `pack-fix` integration test yet |
+| `pack-fix` | Implemented | `src/ops/pack_fix.rs` and automatic generation from `verify` failures in `src/ops/verify.rs`; covered by `tests/m2_pack_fix.rs` |
 | secrets / tasks / ack | Implemented | `src/ops/secrets.rs`, `src/ops/tasks.rs`, `src/ops/promote.rs`; `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs`; `docs/OPS_WORKFLOW.md` |
 | config precedence | Implemented | `src/ops/config.rs`; `tests/m4_config_precedence.rs`; `README.md`, `docs/CONFIG.md` |
 | promotion / commit-policy switching | Implemented | CLI/config wiring in `src/cli.rs`, `src/ops/config.rs`, `src/ops/promote.rs`; tests in `tests/m4_02_promotion_switch.rs` and `tests/m4_config_precedence.rs` |
@@ -41,14 +41,15 @@ This is the current implementation inventory based on:
 | `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
 | `.diffshipignore` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `README.md` |
 | determinism / golden tests | Implemented | deterministic ordering/zip metadata in `src/handoff.rs`; `tests/m6_handoff_determinism.rs`, `tests/golden/m6_simple/*`; `docs/DETERMINISM.md` |
-| `preview` command | Not implemented | no `preview` command in `src/cli.rs`; no `src/preview.rs`; spec-only (`docs/SPEC_V1.md`) |
-| packing limits / binary policy (runtime) | Implemented (v1 baseline) | `--max-parts` / `--max-bytes-per-part` and `EXIT_PACKING_LIMITS` are implemented (`src/cli.rs`, `src/handoff.rs`, `src/exit.rs`); `--include-binary` / `--binary-mode raw|patch|meta` are exposed and tested in `tests/m6_handoff_build.rs`; advanced fallback/repacking remains future work (`S-PACK-002..004`) |
+| `preview` command | Implemented | `src/preview.rs`, `src/cli.rs`; directory/zip bundles are supported; covered by `tests/m6_preview.rs` |
+| `compare` command (bundle reproducibility check) | Implemented | `src/bundle_compare.rs`, `src/cli.rs`; normalized/strict compare is covered by `tests/m6_compare.rs` |
+| packing limits / binary policy (runtime) | Implemented | `--max-parts` / `--max-bytes-per-part` and `EXIT_PACKING_LIMITS` are implemented (`src/cli.rs`, `src/handoff.rs`, `src/exit.rs`); `--include-binary` / `--binary-mode raw|patch|meta` and fallback repacking/exclusion are covered by `tests/m6_handoff_build.rs` |
 
 ### v1 readiness interpretation
 
 - Ops core loop is v1-usable for day-to-day apply/verify/promote with safety defaults.
 - Handoff generation is usable for practical diff handoff.
-- Remaining v1 gaps are mostly around handoff preview and advanced packing fallback strategy.
+- Remaining v1 gaps are mostly around TUI handoff flow parity (`S-TUI-002..004`) and filter include/exclude flags (`S-FILTER-001/003`).
 
 ---
 

@@ -17,6 +17,12 @@ pub enum Command {
     /// Build an AI handoff bundle from committed and optional uncommitted diffs
     Build(BuildArgs),
 
+    /// Preview a handoff bundle (HANDOFF.md / parts)
+    Preview(PreviewArgs),
+
+    /// Compare two handoff bundles for reproducibility checks
+    Compare(CompareArgs),
+
     /// Generate a ChatGPT Project kit under .diffship/
     Init(InitArgs),
 
@@ -61,6 +67,33 @@ pub enum Command {
 
 #[derive(Debug, Args, Default)]
 pub struct TuiArgs {}
+
+#[derive(Debug, Args)]
+pub struct CompareArgs {
+    /// Left bundle path (directory or .zip)
+    pub bundle_a: String,
+
+    /// Right bundle path (directory or .zip)
+    pub bundle_b: String,
+
+    /// Compare raw bytes without normalization
+    #[arg(long, default_value_t = false)]
+    pub strict: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PreviewArgs {
+    /// Handoff bundle path (directory or .zip)
+    pub bundle: String,
+
+    /// Show only a specific part file (e.g. part_01.patch)
+    #[arg(long)]
+    pub part: Option<String>,
+
+    /// List bundle contents and available parts
+    #[arg(long, default_value_t = false)]
+    pub list: bool,
+}
 
 #[derive(Debug, Args)]
 pub struct BuildArgs {

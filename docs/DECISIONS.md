@@ -465,3 +465,43 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `docs/SPEC_V1.md` / `docs/BUNDLE_FORMAT.md` / `docs/TRACEABILITY.md` はこの方針を前提に更新する。
   - `HANDOFF.md` には binary policy（include/mode）を明示し、bundle 利用者が同梱有無を即時判断できるようにする。
+
+---
+
+## D-035: handoff の確認系コマンドとして `preview` / `compare` を追加する
+
+- Date: 2026-03-06
+- Decision:
+  - `diffship preview <bundle>` を実装し、directory/zip どちらの bundle でも `HANDOFF.md` と part を確認できるようにする（`--list`, `--part`）。
+  - `diffship compare <a> <b>` を実装し、determinism 運用向けに normalized 比較（default）と byte-level strict 比較（`--strict`）を提供する。
+- Rationale:
+  - handoff の実運用で「共有前の確認」と「再現比較」をCLI単体で完結させるため。
+- Implications:
+  - README / OPS_WORKFLOW に handoff→AI→ops の導線を明記する。
+
+---
+
+## D-036: verify profile は `[verify.profiles.*]` の local config command で拡張する
+
+- Date: 2026-03-06
+- Decision:
+  - `verify` は `fast|standard|full` に加えて、`[verify.profiles.<name>]` で定義された custom profile を実行可能にする。
+  - custom profile command は sandbox で `sh -lc` 実行する（bundle 由来コマンドは使わない）。
+- Rationale:
+  - リポジトリごとの品質ゲート差を profile 名で吸収し、`loop` の再利用性を高めるため。
+- Implications:
+  - `docs/CONFIG.md` に custom profile の実装済み仕様を追記する。
+
+---
+
+## D-037: packing overflow は First-Fit Decreasing + exclusion で縮退する
+
+- Date: 2026-03-06
+- Decision:
+  - `build` の packing limit 超過時は diff unit を bytes desc で並べ、FFD で再パックする。
+  - 収まらない unit は `excluded.md` に理由/ガイダンスを残して除外する。
+  - すべての unit が除外される場合のみ `EXIT_PACKING_LIMITS` で失敗させる。
+- Rationale:
+  - 単純な即時失敗よりも、読める bundle を可能な範囲で生成し、再実行指針を残すため。
+- Implications:
+  - `S-PACK-002..004` の実装・テストを `src/handoff.rs` / `tests/m6_handoff_build.rs` に寄せる。

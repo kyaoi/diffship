@@ -1,8 +1,10 @@
+mod bundle_compare;
 mod cli;
 mod exit;
 mod git;
 mod handoff;
 mod ops;
+mod preview;
 mod tui;
 
 use clap::Parser;

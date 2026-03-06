@@ -4,6 +4,7 @@ This document describes **how configuration is resolved** and which keys are **a
 
 > diffship is developed with spec-driven development.
 > Some configuration sections (especially handoff/TUI-related ones) are **specified for the future** but not consumed by the current implementation.
+> Ops verify profile commands under `[verify.profiles.*]` are now consumed by the current implementation.
 
 ---
 
@@ -52,6 +53,27 @@ Compatibility aliases (accepted, but not recommended for new configs):
 [ops]
 verify_profile = "standard"
 ```
+
+#### 1.1.1 Custom verify profile commands (implemented)
+
+You can define profile-specific command sequences under `[verify.profiles.<name>]`.
+Each key value is executed as a local shell command (`sh -lc ...`) in the sandbox worktree.
+
+```toml
+[verify]
+default_profile = "custom"
+
+[verify.profiles.custom]
+cmd1 = "cargo fmt --all -- --check"
+cmd2 = "cargo clippy --all-targets --all-features -- -D warnings"
+cmd3 = "cargo test"
+```
+
+Notes:
+
+- If `[verify].default_profile` names a custom profile, it is accepted even when it is not `fast|standard|full`.
+- CLI `--profile` still has top precedence and can override to `fast|standard|full` or another configured custom profile.
+- Commands are loaded only from local config sources (global/project), not from the patch bundle.
 
 ### 1.2 Promotion mode + target branch
 

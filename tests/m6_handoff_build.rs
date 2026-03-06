@@ -373,7 +373,7 @@ fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
 }
 
 #[test]
-fn build_fails_with_exit_3_when_max_parts_is_exceeded() {
+fn build_max_parts_overflow_falls_back_by_merging_commit_units() {
     let td = init_repo();
     let root = td.path();
 
@@ -404,10 +404,14 @@ fn build_fails_with_exit_3_when_max_parts_is_exceeded() {
             "--out",
         ])
         .arg(&out);
-    cmd.assert()
-        .failure()
-        .code(3)
-        .stderr(predicates::str::contains("max_parts=1"));
+    cmd.assert().success();
+
+    assert!(out.join("parts").join("part_01.patch").exists());
+    assert!(!out.join("parts").join("part_02.patch").exists());
+    assert!(!out.join("excluded.md").exists());
+    let part = fs::read_to_string(out.join("parts").join("part_01.patch")).unwrap();
+    assert!(part.contains("a.txt"));
+    assert!(part.contains("b.txt"));
 }
 
 #[test]
@@ -430,6 +434,43 @@ fn build_fails_with_exit_3_when_part_bytes_limit_is_exceeded() {
         .failure()
         .code(3)
         .stderr(predicates::str::contains("max_bytes_per_part=1"));
+}
+
+#[test]
+fn build_part_bytes_overflow_repacks_into_multiple_parts() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    fs::write(root.join("b.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let baseline = root.join("bundle_baseline");
+    let mut base_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    base_cmd
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&baseline)
+        .assert()
+        .success();
+    let part = fs::read_to_string(baseline.join("parts").join("part_01.patch")).unwrap();
+    let limit = (part.len() as u64).saturating_sub(10);
+    assert!(limit > 0);
+
+    let out = root.join("bundle_repacked");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--max-bytes-per-part", &limit.to_string(), "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.join("parts").join("part_01.patch").exists());
+    assert!(out.join("parts").join("part_02.patch").exists());
+    assert!(!out.join("excluded.md").exists());
 }
 
 #[test]

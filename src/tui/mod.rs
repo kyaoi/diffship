@@ -410,6 +410,11 @@ impl App {
         )?;
         writeln_trunc(
             out,
+            "Handoff preview is available via CLI: diffship preview <bundle> [--list|--part ...]",
+            w,
+        )?;
+        writeln_trunc(
+            out,
             "Keys: i=edit path, Enter=run, c=clear message, ↑/↓ scroll",
             w,
         )?;

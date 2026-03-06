@@ -65,8 +65,15 @@ pub fn cmd(git_root: &Path, args: VerifyArgs) -> Result<(), ExitError> {
             ..Default::default()
         },
     )?;
+    let verify_commands = cfg.verify_commands_for_selected_profile();
 
-    let out = verify_locked(git_root, &run_id, &cfg.verify_profile, created_at)?;
+    let out = verify_locked(
+        git_root,
+        &run_id,
+        &cfg.verify_profile,
+        verify_commands.as_deref(),
+        created_at,
+    )?;
     if out.ok {
         println!("diffship verify: ok");
         println!("  run_id  : {}", run_id);
@@ -95,6 +102,7 @@ pub fn verify_locked(
     git_root: &Path,
     run_id: &str,
     profile: &str,
+    custom_profile_commands: Option<&[String]>,
     created_at: String,
 ) -> Result<VerifyOut, ExitError> {
     let run_dir = run::run_dir(git_root, run_id);
@@ -119,7 +127,7 @@ pub fn verify_locked(
         ));
     }
 
-    let plan = build_verify_plan(&sandbox_path, profile);
+    let plan = build_verify_plan(&sandbox_path, profile, custom_profile_commands);
 
     let out_dir = run_dir.join("verify");
     fs::create_dir_all(&out_dir)
@@ -236,7 +244,26 @@ struct VerifyCommand {
     argv: Vec<String>,
 }
 
-fn build_verify_plan(repo_root: &Path, profile: &str) -> Vec<VerifyCommand> {
+fn build_verify_plan(
+    repo_root: &Path,
+    profile: &str,
+    custom_profile_commands: Option<&[String]>,
+) -> Vec<VerifyCommand> {
+    if let Some(cmds) = custom_profile_commands
+        && !cmds.is_empty()
+    {
+        return cmds
+            .iter()
+            .enumerate()
+            .map(|(idx, cmd)| {
+                plan_argv(
+                    &format!("cfg_{}_{}", profile, idx + 1),
+                    vec!["sh".into(), "-lc".into(), cmd.to_string()],
+                )
+            })
+            .collect();
+    }
+
     // Heuristic defaults for M2:
     // - If the repo has justfile and `just` is available: use just recipes.
     // - Else if the repo looks like a Rust crate: use cargo-based checks.
@@ -290,8 +317,12 @@ fn build_verify_plan(repo_root: &Path, profile: &str) -> Vec<VerifyCommand> {
 fn plan_cmd(bin: &str, args: Vec<String>) -> VerifyCommand {
     let mut argv = vec![bin.to_string()];
     argv.extend(args);
+    plan_argv(bin, argv)
+}
+
+fn plan_argv(name: &str, argv: Vec<String>) -> VerifyCommand {
     VerifyCommand {
-        name: bin.to_string(),
+        name: name.to_string(),
         argv,
     }
 }
