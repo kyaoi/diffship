@@ -269,6 +269,12 @@ Typical output:
 - `secrets.md` when secrets-like content is detected
 - `plan.toml` when exported
 
+Default output naming:
+
+- if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name
+- the timestamp is rendered in the local system timezone
+- if the base path already exists, diffship creates a suffixed name such as `diffship_YYYY-MM-DD_HHMM_2`, then `_3`, and so on
+
 See `docs/BUNDLE_FORMAT.md` for the bundle contract.
 
 ---

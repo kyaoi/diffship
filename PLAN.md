@@ -163,6 +163,7 @@ diffship loop <patch-bundle.zip>
 ## メモ（詰まったらここに書く）
 
 - blocked理由、調査ログ、設計メモなど
+- 2026-03-07: default handoff output naming is now local-time based and auto-suffixes collisions for omitted `--out`.
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。
 - Traceability の `Partial` は Tests/Code のどちらかに `TBD` が残る場合だけ使う。

@@ -168,6 +168,10 @@ Output layout:
 - secrets.md (when secrets-like content is detected; paths + reasons only)
 - .diffshipignore is respected when present
 
+Default output naming:
+- when `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name in the user's local timezone
+- if that directory already exists, diffship appends `_2`, `_3`, ... instead of failing
+
 ## Configuration
 
 diffship merges config sources with precedence:

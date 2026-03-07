@@ -81,6 +81,10 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     cmd.current_dir(root).arg("build");
     cmd.assert().success();
 
+    let mut second = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    second.current_dir(root).arg("build");
+    second.assert().success();
+
     let mut bundles = vec![];
     for ent in fs::read_dir(root).unwrap() {
         let ent = ent.unwrap();
@@ -91,7 +95,9 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
             }
         }
     }
-    assert_eq!(bundles.len(), 1);
+    bundles.sort();
+    assert_eq!(bundles.len(), 2);
+    assert_ne!(bundles[0], bundles[1]);
 
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());

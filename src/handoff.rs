@@ -205,7 +205,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let p = PathBuf::from(o);
             if p.is_absolute() { p } else { cwd.join(p) }
         }
-        None => cwd.join(format!("diffship_{}", timestamp_yyyymmdd_hhmm()?)),
+        None => default_output_dir(&cwd)?,
     };
 
     if out_dir.exists() {
@@ -973,8 +973,43 @@ fn render_segmented_patch(segments: &[SegmentOutput]) -> String {
     out
 }
 
+fn default_output_dir(cwd: &Path) -> Result<PathBuf, ExitError> {
+    let timestamp = timestamp_yyyymmdd_hhmm()?;
+    Ok(default_output_dir_for_timestamp(cwd, &timestamp))
+}
+
+fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str) -> PathBuf {
+    let base = cwd.join(format!("diffship_{timestamp}"));
+    if !base.exists() {
+        return base;
+    }
+
+    for suffix in 2.. {
+        let candidate = cwd.join(format!("diffship_{timestamp}_{suffix}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("numeric suffix search is unbounded");
+}
+
 fn timestamp_yyyymmdd_hhmm() -> Result<String, ExitError> {
-    let now = time::OffsetDateTime::now_utc();
+    let now = current_local_time().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    format_output_timestamp(now)
+}
+
+fn current_local_time() -> Result<time::OffsetDateTime, ExitError> {
+    let offset = time::UtcOffset::current_local_offset().map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to detect local time offset: {e}"),
+        )
+    })?;
+    Ok(time::OffsetDateTime::now_utc().to_offset(offset))
+}
+
+fn format_output_timestamp(now: time::OffsetDateTime) -> Result<String, ExitError> {
     let fmt = format_description::parse("[year]-[month]-[day]_[hour][minute]")
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("invalid time format: {e}")))?;
     now.format(&fmt)
@@ -2968,6 +3003,8 @@ fn add_dir_recursive<W: Write + io::Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use time::{Date, Month, PrimitiveDateTime, Time, UtcOffset};
 
     #[test]
     fn auto_split_becomes_file_for_single_commit() {
@@ -2986,5 +3023,27 @@ mod tests {
             effective_split_by(Some("auto"), Some(&plan)).unwrap(),
             SplitBy::File
         );
+    }
+
+    #[test]
+    fn format_output_timestamp_uses_local_offset_fields() {
+        let offset = UtcOffset::from_hms(9, 0, 0).unwrap();
+        let date = Date::from_calendar_date(2026, Month::March, 7).unwrap();
+        let time = Time::from_hms(2, 18, 0).unwrap();
+        let dt = PrimitiveDateTime::new(date, time)
+            .assume_utc()
+            .to_offset(offset);
+        assert_eq!(format_output_timestamp(dt).unwrap(), "2026-03-07_1118");
+    }
+
+    #[test]
+    fn default_output_dir_adds_numeric_suffix_when_timestamp_exists() {
+        let td = tempfile::tempdir().unwrap();
+        let cwd = td.path();
+        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118")).unwrap();
+        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118_2")).unwrap();
+        let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118");
+
+        assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_3"));
     }
 }

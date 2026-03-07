@@ -668,3 +668,19 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - dedicated な import/export command は現時点では追加しない。
   - `diffship init` の config stub と関連 docs は、profile 定義の持ち回り方法を明示する。
+
+---
+
+## D-049: default handoff output path は local time ベースで衝突時に自動採番する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship build` で `--out` を省略した場合、既定出力名は `diffship_YYYY-MM-DD_HHMM` とし、時刻は local system timezone で描画する。
+  - 同じ分に複数回 build して base path が既に存在する場合は、`_2`, `_3`, ... を末尾に付けて次の空き path を選ぶ。
+  - 明示的な `--out` 指定時は従来どおり既存 path をエラーとする。
+- Rationale:
+  - handoff bundle 名は user が普段見ているローカル時刻と一致しているほうが扱いやすいため。
+  - 分単位 naming の collision で build が失敗すると日常利用で不要な再実行が必要になるため。
+- Implications:
+  - `S-OUT-001` の文言を local timestamp + collision suffix を含む形に明確化する。
+  - `tests/m6_handoff_build.rs` と `src/handoff.rs` unit tests で naming behavior を固定する。
