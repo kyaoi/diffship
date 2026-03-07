@@ -146,6 +146,10 @@ fn build_can_export_and_replay_plan_toml() {
         .assert()
         .success();
     assert!(plan_a.exists());
+    let plan_a_text = fs::read_to_string(&plan_a).unwrap();
+    assert!(plan_a_text.contains("profile = \"20x512\""));
+    assert!(plan_a_text.contains("max_parts = 20"));
+    assert!(plan_a_text.contains("max_bytes_per_part = 536870912"));
 
     let out_b = root.join("bundle_plan_b");
     let plan_b = out_b.join("plan.toml");
@@ -161,6 +165,10 @@ fn build_can_export_and_replay_plan_toml() {
         .assert()
         .success();
     assert!(plan_b.exists());
+    let plan_b_text = fs::read_to_string(&plan_b).unwrap();
+    assert!(plan_b_text.contains("profile = \"20x512\""));
+    assert!(plan_b_text.contains("max_parts = 20"));
+    assert!(plan_b_text.contains("max_bytes_per_part = 536870912"));
 
     let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     cmp.current_dir(root)

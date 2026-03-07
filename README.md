@@ -18,6 +18,7 @@ It focuses on the *ops* side of an AI workflow:
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
 > `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.
+> The exported handoff plan records the selected profile name plus resolved numeric limits; named profile catalogs remain config-driven via the handoff/profile config sections.
 > Remaining handoff work is mainly future-extension territory (for example compare/TUI UX polish), not the current v1 handoff core. These are tracked as v1.1+ polish items rather than blockers for the current contract.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
@@ -153,6 +154,10 @@ diffship compare ./bundle_a ./bundle_b.zip --json
 # export and replay a build plan
 diffship build --include-untracked --plan-out ./diffship_plan.toml
 diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
+
+# share named profiles via config, not via plan.toml
+# project: .diffship/config.toml or repo-root .diffship.toml
+# global:  ~/.config/diffship/config.toml
 ```
 
 Output layout:

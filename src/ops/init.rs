@@ -140,9 +140,14 @@ default_profile = "standard" # fast|standard|full
 default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.profiles."<name>"]
 
 # Example custom handoff profile:
+# Copy `[handoff.profiles.*]` stanzas into another repo or `~/.config/diffship/config.toml`
+# if you want to share the same named limits across projects.
 # [handoff.profiles."team-ci"]
 # max_parts = 8
 # max_bytes_per_part = 104857600
+#
+# `plan.toml` exports the selected profile name plus resolved numeric limits.
+# It does not export the full profile catalog.
 
 [ops.promote]
 mode = "commit"           # none|working-tree|commit

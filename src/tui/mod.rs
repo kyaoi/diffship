@@ -930,8 +930,9 @@ impl App {
             .write_to_path(&path)
             .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
         self.handoff.message = format!(
-            "Plan exported: {}\nReplay: {}",
+            "Plan exported: {} (profile={} + resolved limits)\nReplay: {}",
             path.display(),
+            self.handoff.plan.profile.as_deref().unwrap_or("none"),
             crate::plan::HandoffPlan::replay_shell_command_with_overrides(
                 &path.display().to_string(),
                 &self.handoff.plan,

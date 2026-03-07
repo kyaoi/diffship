@@ -476,6 +476,11 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         resolved_plan
             .write_to_path(&plan_path)
             .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+        println!(
+            "diffship build: wrote plan {} (profile={}, resolved limits)",
+            plan_path.display(),
+            resolved_plan.profile.as_deref().unwrap_or("none")
+        );
     }
 
     handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;

@@ -156,9 +156,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（優先順）
 
-1) named handoff profile の持ち回り UX（config stub / docs / replay 説明）を補強し、`plan.toml` が export するもの・しないものを明示する
-2) compare/TUI の追加 polish は v1.1 backlog として整理し、現行 v1 core の完了条件からは外す
-3) raw zip container byte equality は必要性が出た場合のみ v1.1+ で再検討する
+1) compare/TUI の追加 polish は v1.1 backlog として整理し、現行 v1 core の完了条件からは外す
+2) raw zip container byte equality は必要性が出た場合のみ v1.1+ で再検討する
+3) dedicated な profile import/export command は、config/plan ベースの現行 UX で不足が出た場合のみ v1.1+ で再検討する
 
 ## メモ（詰まったらここに書く）
 

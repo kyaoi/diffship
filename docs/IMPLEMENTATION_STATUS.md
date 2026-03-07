@@ -36,7 +36,7 @@ This is the current implementation inventory based on:
 |---|---|---|
 | `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md` |
 | committed / staged / unstaged / untracked collection | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md` |
-| split-by / profiles / part split | Implemented | split-by, named handoff profiles (`20x512`, `10x100`, custom config), and part emission exist in `src/handoff.rs`, `src/handoff_config.rs`, `src/cli.rs`, `src/tui/mod.rs`; limits/profile behavior is covered by `tests/m6_handoff_build.rs`; docs are synced in `docs/CONFIG.md`, `README.md` |
+| split-by / profiles / part split | Implemented | split-by, named handoff profiles (`20x512`, `10x100`, custom config), and part emission exist in `src/handoff.rs`, `src/handoff_config.rs`, `src/cli.rs`, `src/tui/mod.rs`; limits/profile behavior is covered by `tests/m6_handoff_build.rs`; docs and generated config stub now explain that profile catalogs live in config while `plan.toml` exports the selected profile + resolved limits |
 | `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
 | `excluded.md` / `attachments.zip` / `secrets.md` | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/BUNDLE_FORMAT.md` |
 | filters (`.diffshipignore` + `--include` / `--exclude`) | Implemented | `src/filter.rs`, `src/handoff.rs`, `src/cli.rs`, `src/tui/mod.rs`; `tests/m6_handoff_build.rs`, `src/filter.rs` unit tests; `README.md` |

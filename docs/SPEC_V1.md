@@ -120,7 +120,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 #### 4.2.7 Packing profiles
 
 - **S-PROFILE-001**: Support named handoff packing profiles, including built-in `20x512` (default) and `10x100`.
-- **S-PROFILE-002**: Support project/global config defaults and custom profile definitions for handoff packing limits.
+- **S-PROFILE-002**: Support project/global config defaults and custom profile definitions for handoff packing limits. The profile catalog itself remains config-scoped rather than embedded into `plan.toml`.
 
 #### 4.2.8 Output
 
@@ -140,7 +140,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 #### 4.2.10 Plan export / replay
 
 - **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
-- **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format.
+- **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format, including the selected `profile` name plus resolved numeric limits (but not the full profile catalog).
 
 ### 4.3 `diffship preview <handoff-bundle>`
 

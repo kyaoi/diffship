@@ -180,6 +180,7 @@ max_bytes_per_part = 104857600
 ```
 
 The generated `plan.toml` records `profile` plus resolved numeric limits so replay remains stable even if config later changes.
+To share named profiles across repositories, copy the relevant `[handoff.profiles.*]` stanzas into the target repo config (or into `~/.config/diffship/config.toml` for global reuse). `plan.toml` is intentionally narrower: it exports the selected profile name plus resolved limits, not the full profile catalog.
 
 ### 3.2 Diff options
 

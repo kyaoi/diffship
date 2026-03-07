@@ -62,6 +62,9 @@ fn m0_init_status_runs_happy_path() {
     // Generated files
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
     assert!(root.join(".diffship").join("config.toml").exists());
+    let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
+    assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
+    assert!(cfg.contains("It does not export the full profile catalog."));
 
     // status --json
     let out = diffship_cmd()

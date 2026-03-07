@@ -652,3 +652,19 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `docs/SPEC_V1.md` / `README.md` / `docs/IMPLEMENTATION_STATUS.md` では strict の説明を extracted-entry byte comparison に揃える。
   - `tests/m6_compare.rs` に、container bytes は異なるが strict compare は等価とみなすケースを追加する。
+
+---
+
+## D-048: named handoff profile の持ち回りは config を正本とし、`plan.toml` は選択結果だけを export する
+
+- Date: 2026-03-07
+- Decision:
+  - named handoff profile の定義は project/global config（`[handoff.profiles.*]` / compatibility `[profiles.*]`）を正本とする。
+  - `plan.toml` は selected profile name と resolved numeric limits を export するが、profile catalog 全体は埋め込まない。
+  - UX 補強は、generated config stub・README・BUNDLE_FORMAT・TUI/export message で「どこに profile 定義があり、何が replay/export されるか」を明示することで行う。
+- Rationale:
+  - profile catalog を `plan.toml` に複製すると、config と plan のどちらが正本か曖昧になりやすいため。
+  - 現在の replay contract は「選択結果を再現する」ことで十分であり、profile 定義の配布は config 管理に寄せたほうが説明しやすいため。
+- Implications:
+  - dedicated な import/export command は現時点では追加しない。
+  - `diffship init` の config stub と関連 docs は、profile 定義の持ち回り方法を明示する。
