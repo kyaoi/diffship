@@ -31,11 +31,107 @@ Non-negotiable expectations:
 - update docs, tests, and traceability together when behavior changes
 - never assume diffship will run arbitrary commands that came from AI output
 - never emit placeholder manifest values in an ops-compatible patch bundle
-- if required metadata is unavailable, fall back to unified diffs / file edits / review notes instead of inventing fields
+- if required metadata is unavailable, either ask for it or fall back according to the mode-selection rules below
+- choose **exactly one** return mode and label it clearly
 
 ---
 
-## 2. Customize this section: repository identity
+## 2. Core contract: response envelope
+
+At the top of your response, state exactly one mode:
+
+- `MODE: OPS_PATCH_BUNDLE`
+- `MODE: NONOPS_EDIT_PACKAGE`
+- `MODE: ANALYSIS_ONLY`
+
+Do not mix modes.
+
+Examples:
+
+```text
+MODE: OPS_PATCH_BUNDLE
+```
+
+```text
+MODE: NONOPS_EDIT_PACKAGE
+```
+
+```text
+MODE: ANALYSIS_ONLY
+```
+
+If you choose `NONOPS_EDIT_PACKAGE` or `ANALYSIS_ONLY`, also state plainly that the result must **not** be fed to `diffship loop` as-is.
+
+---
+
+## 3. Core contract: mode-selection rules
+
+Choose modes in this order:
+
+1. Use `MODE: OPS_PATCH_BUNDLE` only when all of the following are true:
+   - the user wants a loop-ready or apply-ready artifact
+   - the exact target `base_commit` is known
+   - the change can be represented within diffship patch restrictions
+   - you can produce the required bundle structure exactly
+2. Use `MODE: ANALYSIS_ONLY` when the user wants a loop-ready artifact but the exact `base_commit` is missing or another hard precondition is unavailable.
+3. Use `MODE: NONOPS_EDIT_PACKAGE` only when:
+   - the user explicitly accepts a non-ops fallback, or
+   - the user asked for file edits / overlay output rather than a loop-ready bundle.
+
+Important behavior:
+
+- If the user clearly wants something they can pass to `diffship loop`, **do not** silently downgrade to a non-ops zip just because `base_commit` is missing.
+- In that situation, prefer `MODE: ANALYSIS_ONLY` and say exactly what is missing (usually `git rev-parse HEAD`).
+- Reserve non-ops zips for cases where the user actually wants or accepts a non-ops fallback.
+
+### Exact artifact trees to emit
+
+When you emit a zip or directory artifact, make the tree unmistakable.
+
+For `MODE: OPS_PATCH_BUNDLE`, emit exactly one top-level directory such as:
+
+```text
+patchship_YYYY-MM-DD_HHMM/
+  manifest.yaml
+  changes/
+    0001.patch
+    0002.patch
+  summary.md                # optional
+  constraints.yaml          # optional
+  checks_request.yaml       # optional
+  commit_message.txt        # optional
+  tasks/                    # optional
+    USER_TASKS.md
+    TASKS.yaml
+    ENV_TEMPLATE.env
+```
+
+For `MODE: NONOPS_EDIT_PACKAGE`, emit exactly one top-level directory such as:
+
+```text
+DO_NOT_LOOP_nonops_YYYY-MM-DD_HHMM/
+  README_NOT_OPS.md
+  overlay/
+    ... full file contents ...
+  edits/
+    0001-unified.diff
+  meta/
+    commit_message.txt
+    verification_checklist.md
+```
+
+For `MODE: ANALYSIS_ONLY`, do not emit a zip unless the user explicitly asks for one:
+
+```text
+MODE: ANALYSIS_ONLY
+(no bundle tree)
+```
+
+Never mix these trees. Do not put `README_NOT_OPS.md` inside a patch bundle, and do not put `manifest.yaml` inside a non-ops package.
+
+---
+
+## 4. Customize this section: repository identity
 
 Replace this section with project-specific facts.
 
@@ -61,7 +157,7 @@ Example:
 
 ---
 
-## 3. Customize this section: read order for this repository
+## 5. Customize this section: read order for this repository
 
 List the files the AI must read before making changes.
 Put the repository-specific read order here, not just the generic diffship defaults.
@@ -86,7 +182,7 @@ Example:
 
 ---
 
-## 4. Customize this section: directory map and ownership boundaries
+## 6. Customize this section: directory map and ownership boundaries
 
 Explain which directories matter and what kinds of changes are expected or forbidden.
 
@@ -102,7 +198,7 @@ Add repo-specific rows for generated code, migrations, vendor code, deployment f
 
 ---
 
-## 5. Customize this section: commands and quality gates
+## 7. Customize this section: commands and quality gates
 
 Record the real commands the AI should optimize for.
 
@@ -130,9 +226,9 @@ If a command is expensive, flaky, or platform-specific, say so explicitly.
 
 ---
 
-## 6. Core contract: what the AI is expected to produce
+## 8. Core contract: what the AI is expected to produce
 
-### 6.1 For review or planning tasks
+### 8.1 For review or planning tasks
 
 When the user asks for analysis only, produce:
 
@@ -141,7 +237,7 @@ When the user asks for analysis only, produce:
 - missing tests or docs if behavior changed
 - next-step tasks with completion conditions when asked
 
-### 6.2 For implementation tasks
+### 8.2 For implementation tasks
 
 When the user asks for code changes, produce the smallest complete change that matches the task:
 
@@ -151,11 +247,11 @@ When the user asks for code changes, produce the smallest complete change that m
 - a clear commit message proposal
 
 If the environment supports diffship patch bundles **and** you know the exact target `base_commit` **and** the requested change can be represented within the patch restrictions below, prefer returning an ops-compatible patch bundle.
-Otherwise return unified diffs or file-by-file edits.
+Otherwise follow the mode-selection rules above.
 
-### 6.3 Required output shape for ops-compatible patch bundles
+### 8.3 Required output shape for ops-compatible patch bundles
 
-The expected structure is:
+The expected structure is exactly:
 
 ```text
 patchship_YYYY-MM-DD_HHMM/
@@ -182,13 +278,66 @@ Required contract details:
 - do not touch `.git/` or `.diffship/`
 - do not include secrets
 - do not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
-- if the requested change would require refused metadata in this environment, return unified diffs / file edits / review notes instead of an invalid patch bundle
+- if the requested change would require refused metadata in this environment, return `MODE: ANALYSIS_ONLY` or an explicitly accepted non-ops fallback instead of an invalid patch bundle
+- reserve the `patchship_...` name for bundles that are already valid ops inputs
+
+Required placement rules:
+
+- the archive must contain exactly one top-level directory
+- `manifest.yaml` must be at the bundle root, not nested under `meta/`, `overlay/`, or an extra parent directory
+- `changes/` must be at the bundle root and contain ordered patch files
+
+Recommended minimal `manifest.yaml`:
+
+```yaml
+protocol_version: "1"
+task_id: "replace-with-task-id"
+base_commit: "<exact 40-hex SHA>"
+apply_mode: git-apply
+touched_files:
+  - path/to/file.ext
+```
+
+### 8.4 Required output shape for non-ops edit packages
+
+Use this only when the mode-selection rules allow `MODE: NONOPS_EDIT_PACKAGE`. The tree should be visibly different from a loop-ready patch bundle.
+
+```text
+DO_NOT_LOOP_nonops_YYYY-MM-DD_HHMM/
+  README_NOT_OPS.md
+  overlay/
+  edits/
+  meta/
+```
+
+Rules:
+
+- include `README_NOT_OPS.md` at the bundle root
+- the first sentence must be: `This artifact is intentionally not ops-compatible and must not be fed to diffship loop.`
+- never include a fake or placeholder `manifest.yaml`
+- never use the `patchship_...` prefix
+- prefer the `DO_NOT_LOOP_` prefix so humans do not mistake the archive for an ops bundle
+
+### 8.5 Self-check before finalizing an ops bundle
+
+Before returning `MODE: OPS_PATCH_BUNDLE`, verify all of the following:
+
+1. the archive has exactly one top-level directory
+2. the bundle root contains `manifest.yaml`
+3. the bundle root contains `changes/`
+4. `changes/` contains at least one ordered patch file such as `0001.patch`
+5. `manifest.yaml` uses a real `base_commit`
+6. `apply_mode` is `git-apply` or `git-am`
+7. no forbidden patch metadata is present
+8. the archive does not contain `README_NOT_OPS.md`
+
+If any item fails, do not return `MODE: OPS_PATCH_BUNDLE`.
 
 ---
 
-## 7. Core contract: meaning of files the user may provide
+## 9. Core contract: meaning of files the user may provide
 
-### 7.1 Handoff-side files
+### 9.1 Handoff-side files
 
 - `HANDOFF.md`: the map; read this first
 - `parts/part_XX.patch`: the primary code diff payload
@@ -197,7 +346,7 @@ Required contract details:
 - `secrets.md`: secret warnings; never print secret values back
 - `plan.toml`: replayable build settings for the handoff bundle
 
-### 7.2 Ops-side files
+### 9.2 Ops-side files
 
 - `manifest.yaml`: patch bundle metadata and apply contract; this must already be valid when delivered
 - `changes/*.patch`: the patch payload to apply
@@ -205,9 +354,9 @@ Required contract details:
 - `tasks/USER_TASKS.md`: manual work required from the user
 - `tasks/ENV_TEMPLATE.env`: environment variable template with placeholders only
 
-Do not use `tasks/USER_TASKS.md` to ask the user to repair an invalid manifest or change `apply_mode`. If the bundle cannot be made valid, return a non-ops format instead.
+Do not use `tasks/USER_TASKS.md` to ask the user to repair an invalid manifest or change `apply_mode`. If the bundle cannot be made valid, use the mode-selection rules instead.
 
-### 7.3 Project guidance files
+### 9.3 Project guidance files
 
 - `docs/SPEC_V1.md`: source of truth for product behavior
 - `docs/BUNDLE_FORMAT.md`: handoff bundle contract
@@ -217,7 +366,7 @@ Do not use `tasks/USER_TASKS.md` to ask the user to repair an invalid manifest o
 
 ---
 
-## 8. Customize this section: project-specific change rules
+## 10. Customize this section: project-specific change rules
 
 Use this section for local rules that are too specific for the generic contract.
 
@@ -242,7 +391,7 @@ Example:
 
 ---
 
-## 9. Core contract: additional deliverables beyond file edits
+## 11. Core contract: additional deliverables beyond file edits
 
 Depending on the task, the AI may also need to provide:
 
@@ -257,38 +406,42 @@ When manual user action is required, document it in `tasks/USER_TASKS.md`.
 
 ---
 
-## 10. Customize this section: ready-to-send prompts for users
+## 12. Customize this section: ready-to-send prompts for users
 
-Add a few repository-specific prompts the user can paste into an AI tool.
+Add repository-specific prompts that users can copy.
 
-Suggested shapes:
+Suggested examples:
 
-- review-only prompt
-- implementation prompt
-- docs-sync prompt
-- regression triage prompt
-
-Example:
+### Ask for a loop-ready artifact
 
 ```text
-Read `docs/SPEC_V1.md`, `docs/DECISIONS.md`, and `tests/m6_handoff_build.rs` first.
-The current target repo HEAD is `<paste git rev-parse HEAD here>`.
-Implement the requested change with the smallest possible diff.
-Only return an ops-compatible patch bundle if you can use that exact SHA in `manifest.yaml`
-and can satisfy the diffship patch-bundle restrictions.
-Otherwise return unified diffs or file-by-file edits.
-Update docs and traceability in the same change.
-Finish only when `just ci` would be expected to pass.
+Read `.diffship/AI_GUIDE.md`, `.diffship/PROJECT_KIT.md`, and the listed repository docs first.
+Return `MODE: OPS_PATCH_BUNDLE` only if you can produce a valid diffship patch bundle.
+Here is the exact target base commit: <paste git rev-parse HEAD here>.
+If that information is insufficient or the patch would violate diffship restrictions, do not create a fallback zip.
+Instead return `MODE: ANALYSIS_ONLY` and tell me exactly what is missing.
+```
+
+### Ask for a non-ops fallback explicitly
+
+```text
+A loop-ready bundle is not required for this task.
+If needed, you may return `MODE: NONOPS_EDIT_PACKAGE` with a `DO_NOT_LOOP_nonops_.../` root and `README_NOT_OPS.md` at the top.
+```
+
+### Ask for analysis only
+
+```text
+Do not produce any zip for this task.
+Return `MODE: ANALYSIS_ONLY` with findings, file references, and the smallest next-step plan.
 ```
 
 ---
 
-## 11. Core contract: operating rules
+## 13. Core contract: operating rules
 
 1. Read the spec and relevant contracts first.
 2. Keep scope tight; avoid unrelated refactors.
 3. Update tests and docs together when behavior changes.
 4. Prefer deterministic output ordering and stable file contents.
 5. Never embed secrets or ask diffship to run arbitrary AI-provided commands.
-6. Never ask the user to fix placeholder values inside a supposedly ops-compatible bundle.
-7. If the user will run `diffship loop`, remind them to keep the repo clean and store incoming zips outside the repo or under `.diffship/`.

@@ -25,6 +25,7 @@ diffship does not:
 
 - run arbitrary commands provided by the AI bundle
 - push to remotes or open pull requests by itself
+- accept arbitrary zip structures in `diffship loop`
 
 ---
 
@@ -34,8 +35,8 @@ Typical loop:
 
 1. Build a handoff bundle from local changes.
 2. Send the bundle to an AI assistant.
-3. Receive a patch bundle or concrete edit plan.
-4. Apply it with diffship in a sandbox.
+3. Receive one of the supported return modes described below.
+4. Apply only an ops-compatible patch bundle with diffship.
 5. Run local verification.
 6. Promote only after verification passes.
 
@@ -44,6 +45,8 @@ Before running `diffship loop`, do this preflight:
 - keep the repository working tree clean (`git status --short` should not show unrelated files)
 - store incoming patch bundle zips **outside the repo** or under `.diffship/` so the zip itself does not make the working tree dirty
 - if you want an ops-compatible patch bundle, provide the current target repo HEAD SHA (`git rev-parse HEAD`) to the AI up front
+- if you want a loop-ready artifact, tell the AI explicitly that missing `base_commit` should result in a request for the SHA or `MODE: ANALYSIS_ONLY`, **not** an auto-generated fallback zip
+- remember that `diffship loop` accepts only an **ops-compatible patch bundle**; it does **not** accept review notes, unified-diff-only zips, overlay bundles, or arbitrary non-ops archives
 
 Minimal commands:
 
@@ -61,7 +64,66 @@ diffship pack-fix --run-id <run-id>
 
 ---
 
-## 3. Customize this section: repository identity
+## 3. Core workflow: supported AI return modes
+
+The AI must choose **exactly one** return mode.
+
+| Mode | Allowed input to `diffship loop`? | What you should see |
+|---|---|---|
+| `OPS_PATCH_BUNDLE` | Yes | `manifest.yaml` and `changes/*.patch` under one bundle root |
+| `NONOPS_EDIT_PACKAGE` | No | `README_NOT_OPS.md` plus `overlay/`, `edits/`, or `meta/` |
+| `ANALYSIS_ONLY` | No | plain analysis / plan / explanation, usually no zip |
+
+Human checklist before calling `diffship loop`:
+
+1. confirm the archive is an `OPS_PATCH_BUNDLE`
+2. confirm the extracted bundle root contains `manifest.yaml`
+3. confirm the extracted bundle root contains `changes/`
+4. stop immediately if you see `README_NOT_OPS.md`
+5. stop immediately if the archive name or root path contains `DO_NOT_LOOP`
+
+### Tree cheat sheet
+
+Use the archive tree itself as the first classifier.
+
+Valid loop-ready bundle:
+
+```text
+patchship_YYYY-MM-DD_HHMM/
+  manifest.yaml
+  changes/
+    0001.patch
+  commit_message.txt        # optional
+  summary.md                # optional
+  tasks/                    # optional
+```
+
+Intentionally non-loop-ready bundle:
+
+```text
+DO_NOT_LOOP_nonops_YYYY-MM-DD_HHMM/
+  README_NOT_OPS.md
+  overlay/
+  edits/
+  meta/
+```
+
+Analysis-only response:
+
+```text
+MODE: ANALYSIS_ONLY
+(no zip required)
+```
+
+Rules of thumb:
+
+- A loop-ready zip always has `manifest.yaml` and `changes/` at the same bundle root.
+- A non-ops zip always has `README_NOT_OPS.md` at the bundle root and should look obviously different from a patch bundle.
+- Do not accept loose files at zip root; expect exactly one top-level directory.
+
+---
+
+## 4. Customize this section: repository identity
 
 Replace this section with project-specific facts.
 
@@ -87,7 +149,7 @@ Example:
 
 ---
 
-## 4. Customize this section: read-first files
+## 5. Customize this section: read-first files
 
 List the files a contributor or AI assistant should read before touching code in this repository.
 
@@ -111,9 +173,11 @@ Example:
 
 ---
 
-## 5. Core workflow: patch bundle contract the AI must follow
+## 6. Core workflow: patch bundle contract the AI must follow
 
-Patch bundles should contain one top-level directory:
+Patch bundles should contain exactly one top-level directory. The zip root must not contain loose files beside that directory.
+
+Expected tree:
 
 ```text
 patchship_YYYY-MM-DD_HHMM/
@@ -134,19 +198,64 @@ Key rules:
 
 - `manifest.yaml` must include the exact current `base_commit` for the target repo; never leave placeholders such as `REPLACE_WITH_REPO_HEAD`
 - `apply_mode` must be exactly `git-apply` or `git-am`
-- if the exact `base_commit` is unavailable, ask for it or return a unified diff / file edits / review notes instead of an ops-compatible patch bundle
+- if the exact `base_commit` is unavailable and you asked for loop-ready output, the AI should request the SHA or return `MODE: ANALYSIS_ONLY` instead of fabricating a fallback zip
 - paths must be repo-relative only
 - do not touch `.git/` or `.diffship/`
 - do not include secrets
 - keep file ordering and output deterministic
 - patches must not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
 - do not use `tasks/USER_TASKS.md` to ask the user to repair an otherwise invalid patch bundle; tasks are for real user-owned follow-up work only
+- reserve the `patchship_...` name for bundles that are already valid ops inputs
+
+Required marker placement:
+
+- `manifest.yaml` must sit directly under `patchship_.../`
+- `changes/` must sit directly under `patchship_.../`
+- optional files may sit beside them, not inside `overlay/` or another nested parent
+
+Recommended minimal `manifest.yaml`:
+
+```yaml
+protocol_version: "1"
+task_id: "replace-with-task-id"
+base_commit: "<exact 40-hex SHA>"
+apply_mode: git-apply
+touched_files:
+  - path/to/file.ext
+```
 
 If manual user work is required, the AI should use `tasks/USER_TASKS.md` and `tasks/ENV_TEMPLATE.env`.
 
 ---
 
-## 6. Customize this section: directory map and ownership boundaries
+## 7. Core workflow: non-ops fallback contract
+
+If the AI cannot produce a valid ops-compatible patch bundle, it should either:
+
+- return `MODE: ANALYSIS_ONLY`, or
+- return `MODE: NONOPS_EDIT_PACKAGE` **only when the user explicitly accepts a non-ops fallback**
+
+Non-ops archives should use a clearly unsafe-for-loop shape such as:
+
+```text
+DO_NOT_LOOP_nonops_YYYY-MM-DD_HHMM/
+  README_NOT_OPS.md
+  overlay/
+  edits/
+  meta/
+```
+
+Rules for non-ops archives:
+
+- include `README_NOT_OPS.md` at the bundle root
+- start the first sentence with: `This artifact is intentionally not ops-compatible and must not be fed to diffship loop.`
+- never include a fake `manifest.yaml`
+- never use the `patchship_...` prefix
+- prefer the `DO_NOT_LOOP_` prefix so humans do not mistake it for a patch bundle
+
+---
+
+## 8. Customize this section: directory map and ownership boundaries
 
 Explain which directories are safe to edit, generated, sensitive, or user-owned.
 
@@ -162,7 +271,7 @@ Add rows for migrations, generated code, vendor directories, infra config, or an
 
 ---
 
-## 7. Customize this section: local commands and gates
+## 9. Customize this section: local commands and gates
 
 Record the real commands contributors should run here.
 
@@ -190,7 +299,7 @@ If some commands are slow, flaky, or require local services, note that explicitl
 
 ---
 
-## 8. Core workflow: commit and promotion behavior
+## 10. Core workflow: commit and promotion behavior
 
 Patch transport and commit behavior are separate:
 
@@ -202,7 +311,7 @@ If `commit_message.txt` is missing, diffship may use a deterministic fallback.
 
 ---
 
-## 9. Customize this section: project-specific operating rules
+## 11. Customize this section: project-specific operating rules
 
 Use this section for rules that are specific to this repository but important for every task.
 
@@ -219,14 +328,10 @@ Example:
 
 ```md
 - Keep commit messages in Conventional Commit style.
-- Do not edit `api/generated/` by hand; regenerate it from the schema.
-- If a database migration is required, stop and ask before writing migration files.
-- Frontend changes must preserve the design tokens in `web/src/theme/`.
+- Update `docs/TRACEABILITY.md` when behavior changes.
+- Do not hand-edit generated API clients under `clients/generated/`.
+- Stop and ask before writing production migrations.
 ```
-
----
-
-## 10. Core workflow: handling manual user tasks
 
 If the AI cannot complete the change safely on its own, it should leave explicit user tasks.
 
@@ -247,17 +352,16 @@ Expected shape for `tasks/USER_TASKS.md`:
 - [ ] Re-run `diffship verify --profile standard`
 ```
 
-Do not use manual tasks to patch over missing manifest fields or other bundle-contract violations.
-
 ---
 
-## 11. Customize this section: ready-to-run workflows
+## 12. Customize this section: ready-to-run workflows
 
 Add a few project-specific command recipes that contributors can copy directly.
 
 Suggested examples:
 
 - build only the relevant handoff bundle
+- ask the AI for a loop-ready bundle with the current HEAD SHA
 - apply and verify a returned patch bundle
 - inspect runs or failed tasks
 - prepare a reprompt bundle
@@ -268,27 +372,27 @@ Example:
 git rev-parse HEAD
 diffship build --include 'src/*.rs' --include 'docs/*.md'
 diffship preview ./.diffship/handoffs/diffship_2026-03-07_1118
-diffship loop ~/.cache/diffship/patchship_fix.zip
-# or keep incoming bundles under .diffship/ if you want them inside the repo
-diffship loop ./.diffship/incoming/patchship_fix.zip
+# ask the AI for MODE: OPS_PATCH_BUNDLE; if base_commit is missing, require ANALYSIS_ONLY instead of a fallback zip
+diffship loop ./incoming/patchship_fix.zip
 diffship runs --json
 diffship pack-fix --run-id <run-id>
 ```
 
 ---
 
-## 12. Core workflow: what to include when sending work to AI
+## 13. Core workflow: what to include when sending work to AI
 
 When asking an AI assistant for help, include only the files that matter:
 
 - the handoff bundle or patch bundle
 - the relevant spec / contract docs
 - the generated local guides under `.diffship/` when they add repository context
-- the current target repo HEAD SHA when you want an ops-compatible patch bundle
 - any specific failure logs or run IDs the AI needs
+- the exact `git rev-parse HEAD` when you need loop-ready output
 
 Avoid sending:
 
 - unrelated generated artifacts
 - secrets
 - broad copies of the repository when a focused bundle is enough
+- ambiguous requests such as “make a zip I can use later” without saying whether you want `OPS_PATCH_BUNDLE`, `NONOPS_EDIT_PACKAGE`, or `ANALYSIS_ONLY`
