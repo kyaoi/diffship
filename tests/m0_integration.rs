@@ -63,6 +63,12 @@ fn m0_init_status_runs_happy_path() {
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
     assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
     assert!(root.join(".diffship").join("config.toml").exists());
+    let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
+    assert!(kit.contains("# DiffshipOS Project Kit"));
+    assert!(kit.contains("Core workflow: what diffship is"));
+    assert!(kit.contains("Customize this section: repository identity"));
+    assert!(kit.contains("Core workflow: patch bundle contract the AI must follow"));
+    assert!(kit.contains("Customize this section: local commands and gates"));
     let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
     assert!(ai.contains("# DiffshipOS AI Guide"));
     assert!(ai.contains("Core contract: what diffship is"));

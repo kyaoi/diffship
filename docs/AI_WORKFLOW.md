@@ -17,6 +17,7 @@ If the repository was initialized with `diffship init`, also provide the generat
 
 If you maintain a custom init template directory, keep the repository-specific parts of `AI_PROJECT_TEMPLATE.md`
 inside the sections marked "Customize this section" so the generated `.diffship/AI_GUIDE.md` stays easy to update.
+Apply the same rule to `PROJECT_KIT_TEMPLATE.md` so the generated `.diffship/PROJECT_KIT.md` remains a concise local workflow guide.
 
 * **The spec is the single source of truth**:
 

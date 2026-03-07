@@ -343,6 +343,13 @@ Missing files fall back to the repository templates and then to built-in default
 
 That makes it practical to keep one stable diffship contract while still generating a repo-specific `.diffship/AI_GUIDE.md`.
 
+`PROJECT_KIT_TEMPLATE.md` follows the same pattern for the human-facing guide:
+
+- core workflow sections describe the default diffship loop
+- "Customize this section" blocks hold repo-specific commands, ownership boundaries, and operating rules
+
+That keeps `.diffship/PROJECT_KIT.md` useful as a local onboarding document instead of a copy of generic product docs.
+
 ### 6.2 Full loop
 
 ```bash
