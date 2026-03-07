@@ -77,6 +77,12 @@ fn m0_init_status_runs_happy_path() {
     assert!(ai.contains("Core contract: meaning of files the user may provide"));
     assert!(ai.contains("Core contract: additional deliverables beyond file edits"));
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
+    assert!(cfg.contains("Use this file in two layers"));
+    assert!(cfg.contains("Customize this section: choose default verify behavior"));
+    assert!(cfg.contains("Customize this section: choose default handoff packing behavior"));
+    assert!(cfg.contains(
+        "Customize this section: local-only commands to run automatically after a successful apply"
+    ));
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
     assert!(cfg.contains("output_dir = \"./artifacts/handoffs\""));

@@ -181,15 +181,24 @@ fn default_config_stub() -> String {
 #
 # See also: docs/CONFIG.md
 # Precedence: CLI > manifest > project > global > default
+#
+# Use this file in two layers:
+# - Keep the core defaults aligned with how this repository actually uses diffship
+# - Edit the "Customize this section" blocks with repo-specific defaults and local-only commands
+
+# Customize this section: choose default verify behavior for this repository.
+# Use a built-in profile (`fast`, `standard`, `full`) or define `[verify.profiles."<name>"]` below.
 
 [verify]
 default_profile = "standard" # fast|standard|full
 
+# Customize this section: choose default handoff packing behavior.
+# `output_dir` is the parent directory for auto-generated bundle names.
 [handoff]
 default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.profiles."<name>"]
 # output_dir = "./artifacts/handoffs" # optional parent dir for auto-generated bundle names
 
-# Example custom handoff profile:
+# Customize this section: add named handoff profiles shared by this repository or team.
 # Copy `[handoff.profiles.*]` stanzas into another repo or `~/.config/diffship/config.toml`
 # if you want to share the same named limits across projects.
 # [handoff.profiles."team-ci"]
@@ -199,14 +208,16 @@ default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.prof
 # `plan.toml` exports the selected profile name plus resolved numeric limits.
 # It does not export the full profile catalog.
 
+# Customize this section: choose how successful verified runs are promoted.
 [ops.promote]
 mode = "commit"           # none|working-tree|commit
 target_branch = "develop"
 
+# Customize this section: decide whether diffship commits automatically after verify succeeds.
 [ops.commit]
 policy = "auto"            # auto|manual
 
-# Optional commands to run automatically in the sandbox after a successful apply.
+# Customize this section: local-only commands to run automatically after a successful apply.
 # These are local-only config values; patch bundles cannot define them.
 # [ops.post_apply]
 # cmd1 = "just fmt-fix"

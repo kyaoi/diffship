@@ -4,6 +4,7 @@ This document describes **how configuration is resolved** and which keys are **a
 
 > diffship is developed with spec-driven development.
 > Ops verify profile commands under `[verify.profiles.*]` and handoff settings under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
+> The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt.
 
 ---
 

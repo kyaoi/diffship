@@ -350,6 +350,11 @@ That makes it practical to keep one stable diffship contract while still generat
 
 That keeps `.diffship/PROJECT_KIT.md` useful as a local onboarding document instead of a copy of generic product docs.
 
+The generated `.diffship/config.toml` now follows the same idea:
+
+- core defaults stay close to the repository's actual diffship workflow
+- "Customize this section" comments show where to set repo-specific defaults such as verify profile, handoff profile, output directory, promotion mode, and post-apply commands
+
 ### 6.2 Full loop
 
 ```bash
