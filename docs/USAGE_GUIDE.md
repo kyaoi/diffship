@@ -28,6 +28,8 @@ In short:
 4. receive a patch bundle back
 5. run `diffship loop`
 
+For the human workflow of what to send to ChatGPT/Claude/Codex, which response format to request, and how to use the result afterward, see `docs/AI_HANDOFF_FLOW.md`.
+
 ---
 
 ## 2. Install and setup

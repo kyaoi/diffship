@@ -198,6 +198,7 @@ just ci
 
 - **Spec (v1, source of truth):** `docs/SPEC_V1.md`
 - **Detailed usage guide:** `docs/USAGE_GUIDE.md`
+- **AI handoff flow:** `docs/AI_HANDOFF_FLOW.md`
 - **Patch bundle contract:** `docs/PATCH_BUNDLE_FORMAT.md`
 - **Ops workflow guide:** `docs/OPS_WORKFLOW.md`
 - **Config:** `docs/CONFIG.md`

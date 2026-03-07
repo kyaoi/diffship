@@ -2,6 +2,8 @@
 
 This document explains how to collaborate with AI assistants (ChatGPT / Claude / Codex, etc.) while developing **diffship** with **spec-driven development**.
 
+For the practical handoff flow from `diffship build` to "what to send AI / what output to request / how to use the response", see `docs/AI_HANDOFF_FLOW.md`.
+
 > TL;DR: **Spec → Tests → Implementation → Traceability → Gates**. Don’t break the chain.
 
 ---
@@ -126,4 +128,3 @@ Tips:
 * Before “what to do”, state **what must not change**
 * Decide upfront: are you changing the **spec** or changing the **implementation**?
 * When unsure, start with a **review-only** request (Section 4)
-
