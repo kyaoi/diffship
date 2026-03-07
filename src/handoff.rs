@@ -201,15 +201,12 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let resolved_plan = HandoffPlan::from_build_args(&args);
 
     let out_dir = match &args.out {
-        Some(o) => {
-            let p = PathBuf::from(o);
-            if p.is_absolute() { p } else { cwd.join(p) }
-        }
+        Some(o) => resolve_user_path(&cwd, o)?,
         None => default_output_dir(
             &args
                 .out_dir
                 .as_deref()
-                .map_or_else(|| cwd.clone(), |raw| resolve_output_parent_dir(&cwd, raw)),
+                .map_or_else(|| Ok(cwd.clone()), |raw| resolve_user_path(&cwd, raw))?,
         )?,
     };
 
@@ -477,7 +474,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
 
     if let Some(plan_out) = args.plan_out.as_deref() {
-        let plan_path = resolve_plan_path(&cwd, plan_out);
+        let plan_path = resolve_plan_path(&cwd, plan_out)?;
         resolved_plan
             .write_to_path(&plan_path)
             .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
@@ -539,7 +536,7 @@ fn resolve_build_args(
             "--plan cannot be combined with other explicit handoff selection flags; export a new plan or replay the plan as-is",
         ));
     }
-    let path = resolve_plan_path(cwd, &plan_path);
+    let path = resolve_plan_path(cwd, &plan_path)?;
     let plan = HandoffPlan::from_file(&path).map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
     let mut effective = plan.into_build_args(args.plan, args.plan_out);
     effective.out_dir = args.out_dir;
@@ -573,13 +570,8 @@ fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
         || args.max_bytes_per_part.is_some()
 }
 
-fn resolve_plan_path(cwd: &Path, raw: &str) -> PathBuf {
-    let path = PathBuf::from(raw);
-    if path.is_absolute() {
-        path
-    } else {
-        cwd.join(path)
-    }
+fn resolve_plan_path(cwd: &Path, raw: &str) -> Result<PathBuf, ExitError> {
+    resolve_user_path(cwd, raw)
 }
 
 #[derive(Debug, Clone)]
@@ -1006,12 +998,38 @@ fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str) -> PathBuf {
     unreachable!("numeric suffix search is unbounded");
 }
 
-fn resolve_output_parent_dir(cwd: &Path, raw: &str) -> PathBuf {
+fn resolve_user_path(cwd: &Path, raw: &str) -> Result<PathBuf, ExitError> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    resolve_user_path_with_home(cwd, raw, home.as_deref())
+}
+
+fn resolve_user_path_with_home(
+    cwd: &Path,
+    raw: &str,
+    home: Option<&Path>,
+) -> Result<PathBuf, ExitError> {
+    if raw == "~" {
+        return home
+            .map(Path::to_path_buf)
+            .ok_or_else(|| ExitError::new(EXIT_GENERAL, "cannot expand '~' without HOME"));
+    }
+    if let Some(rest) = raw.strip_prefix("~/") {
+        let home =
+            home.ok_or_else(|| ExitError::new(EXIT_GENERAL, "cannot expand '~/' without HOME"))?;
+        return Ok(home.join(rest));
+    }
+    if raw.starts_with('~') {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("unsupported home shorthand path: {raw}"),
+        ));
+    }
+
     let path = PathBuf::from(raw);
     if path.is_absolute() {
-        path
+        Ok(path)
     } else {
-        cwd.join(path)
+        Ok(cwd.join(path))
     }
 }
 
@@ -3066,5 +3084,30 @@ mod tests {
         let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118");
 
         assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_3"));
+    }
+
+    #[test]
+    fn resolve_user_path_with_home_expands_tilde_prefix() {
+        let cwd = Path::new("/work/repo");
+        let home = Path::new("/home/tester");
+
+        assert_eq!(
+            resolve_user_path_with_home(cwd, "~", Some(home)).unwrap(),
+            home
+        );
+        assert_eq!(
+            resolve_user_path_with_home(cwd, "~/handoffs/out", Some(home)).unwrap(),
+            home.join("handoffs/out")
+        );
+    }
+
+    #[test]
+    fn resolve_user_path_with_home_rejects_tilde_user_form() {
+        let cwd = Path::new("/work/repo");
+        let err = resolve_user_path_with_home(cwd, "~alice/out", Some(Path::new("/home/tester")))
+            .unwrap_err();
+
+        assert_eq!(err.code, EXIT_GENERAL);
+        assert!(err.to_string().contains("unsupported home shorthand path"));
     }
 }

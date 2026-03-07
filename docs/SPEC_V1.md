@@ -124,7 +124,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 #### 4.2.8 Output
 
-- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`, where `<timestamp>` is formatted in the local system timezone as `YYYY-MM-DD_HHMM`; if that path already exists, diffship MUST choose the next available suffixed path (`_2`, `_3`, ...). `--out-dir <dir>` or `[handoff].output_dir` MAY change the parent directory of that generated bundle name, while `--out <path>` continues to set the exact output path.
+- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`, where `<timestamp>` is formatted in the local system timezone as `YYYY-MM-DD_HHMM`; if that path already exists, diffship MUST choose the next available suffixed path (`_2`, `_3`, ...). `--out-dir <dir>` or `[handoff].output_dir` MAY change the parent directory of that generated bundle name, while `--out <path>` continues to set the exact output path. For these path-like options, a leading tilde-slash form such as `~/handoffs` MUST resolve against the user's `HOME`; `~user/...` shorthand is rejected.
 - **S-OUT-002**: `--zip` optionally produces a zip bundle with the same layout.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.

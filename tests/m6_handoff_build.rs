@@ -265,6 +265,50 @@ output_dir = "artifacts/from-config"
 }
 
 #[test]
+fn build_project_config_out_dir_supports_tilde_home() {
+    let td = init_repo();
+    let root = td.path();
+    let home = td.path().join("fake-home");
+    fs::create_dir_all(&home).unwrap();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    write_project_config(
+        root,
+        r#"
+[handoff]
+output_dir = "~/handoffs/from-config"
+"#,
+    );
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.env("HOME", &home).current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let out_dir = home.join("handoffs").join("from-config");
+    let bundles = fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if !ent.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = ent.file_name().to_string_lossy().to_string();
+            if !name.starts_with("diffship_") {
+                return None;
+            }
+            Some(ent.path())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(bundles.len(), 1);
+    assert!(bundles[0].join("HANDOFF.md").exists());
+}
+
+#[test]
 fn build_can_export_and_replay_plan_toml() {
     let td = init_repo();
     let root = td.path();

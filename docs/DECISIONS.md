@@ -715,4 +715,5 @@ diffship OS の重要な意思決定ログです。
   - `--out` の exact-path semantics を維持したまま、project/global default を自然に追加できるため。
 - Implications:
   - `src/handoff_config.rs` が `[handoff].output_dir` を解決し、`resolve_build_args` で `BuildArgs.out_dir` に反映する。
+  - path 解決は `src/handoff.rs` に集約し、`[handoff].output_dir` / `--out-dir` / `--out` / `--plan` / `--plan-out` で `~/...` を `HOME` 基準に展開する。
   - init stub / config docs / handoff build tests を更新する。

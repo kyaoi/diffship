@@ -295,6 +295,15 @@ Project or global config can also set this default:
 output_dir = "./artifacts/handoffs"
 ```
 
+Tilde-slash paths are also accepted here:
+
+```toml
+[handoff]
+output_dir = "~/ghq/github.com/kyaoi/diffship/.diffship/handoffs"
+```
+
+diffship expands that path against the current user's `HOME`. `~user/...` is intentionally unsupported.
+
 See `docs/BUNDLE_FORMAT.md` for the bundle contract.
 
 ---
