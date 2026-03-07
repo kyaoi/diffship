@@ -1,6 +1,6 @@
 # diffship Bundle Format (v1)
 
-This document defines the **bundle contract** produced by `diffship build` and consumed by humans/LLMs (and optionally `diffship preview`).
+This document defines the **bundle contract** produced by `diffship build` and consumed by humans/LLMs (and by `diffship preview` / `diffship compare`).
 
 ---
 
@@ -28,6 +28,7 @@ Human/LLM entrypoint: what the bundle represents and how to read it.
 Must include:
 - TL;DR + recommended reading order
 - Included segments (committed/staged/unstaged/untracked) and bases (e.g., HEAD hash)
+- Applied path filters (`.diffshipignore`, optional `--include`, optional `--exclude`) when present
 - Change map:
   - changed tree
   - file table (path, status, segment, ins/del where available, bytes, part)
@@ -44,6 +45,7 @@ See `docs/HANDOFF_TEMPLATE.md` for a recommended structure.
 - UTF-8, LF
 - Deterministic ordering (see `docs/DETERMINISM.md`)
 - Each part MUST contain clear segment markers (headers) so a reader can see which segment a hunk belongs to.
+- When packing fallback is active, diff context MAY be reduced (`U1` / `U0`) to keep a unit inside the configured byte limit.
 
 ---
 
@@ -63,11 +65,16 @@ Must list excluded units with:
   - `untracked/<path>`
   - `binary/<path>`
   - `snapshot/<path>` (only if enabled)
+- Binary entries are opt-in (`--include-binary`); default policy excludes binary content.
 - `HANDOFF.md` MUST list what was attached and why.
 
 ---
 
 ## 6. `plan.toml` (optional)
 
-- A replayable description of the selection/options used to build the bundle.
-- TUI should be able to export it; CLI should accept it.
+- A replayable description of the handoff selection/options used to build the bundle.
+- Export with `diffship build --plan-out <path>` (for example `<bundle>/plan.toml`).
+- Replay with `diffship build --plan <path>`.
+- Output path / output parent directory / zip emission are CLI-time concerns and may be supplied when replaying the plan.
+- Current plan payload includes the selected `profile` name plus resolved numeric limit fields, so replay remains stable if config later changes.
+- Named profile definitions themselves stay in config (`[handoff.profiles.*]` / `[profiles.*]`); `plan.toml` is an export of the chosen selection, not a profile catalog dump.

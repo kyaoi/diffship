@@ -57,6 +57,10 @@ Notes:
 - `notes`: string
 - `tasks_required`: bool (if true, the bundle should include `tasks/USER_TASKS.md`)
 - `secrets_ack_required`: bool (if true, ops should require explicit user acknowledgement)
+- `verify_profile`: string (fast|standard|full; bundle-level default)
+- `target_branch`: string (promotion target branch name)
+- `promotion_mode`: string (none|working-tree|commit)
+- `commit_policy`: string (auto|manual)
 
 ### 2.3 Example
 
@@ -111,4 +115,4 @@ Recommended files:
 - `tasks/TASKS.yaml`: machine-readable tasks (optional)
 - `tasks/ENV_TEMPLATE.env`: optional template for environment variables (never include real secrets)
 
-diffship should surface these tasks prominently during `apply/loop`, and may block promotion depending on policy.
+diffship should surface these tasks prominently during `apply/loop`, and blocks promotion by default until the user acknowledges (use `--ack-tasks`).

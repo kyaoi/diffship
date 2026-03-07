@@ -57,6 +57,12 @@ It supports two workflows:
 
 ---
 
+## 3.1 CLI path handling
+
+- **S-PATH-001**: Filesystem path arguments accepted by diffship CLI commands MUST treat a leading `~/` as the current user's `HOME` and MUST reject tilde-user shorthand.
+
+---
+
 ## 4. Commands
 
 ### 4.1 `diffship` (no args) / `diffship tui`
@@ -65,6 +71,7 @@ It supports two workflows:
 - **S-TUI-002**: TUI guides: range → sources → filters → split/profile → preview → build.
 - **S-TUI-003**: TUI must preview diffs with an internal viewer (colored +/-).
 - **S-TUI-004**: TUI must be able to export a plan file and show an equivalent CLI command.
+- **S-TUI-005**: TUI edit mode MUST surface the current input buffer/help and allow editing handoff plan path and packing limit overrides with keyboard navigation.
 
 ### 4.2 `diffship build`
 
@@ -100,7 +107,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 - **S-UNTRACKED-001**: Untracked is OFF by default; enabled via include-untracked (or TUI toggle).
 - **S-UNTRACKED-002**: Support `--untracked-mode auto|patch|raw|meta`.
-- **S-UNTRACKED-003**: In `auto`, text/small files become patch; binary/large become raw attachment.
+- **S-UNTRACKED-003**: In `auto`, text/small files become patch; large text files become raw attachment; binary files follow section 4.2.5 (default excluded unless `--include-binary`).
 - **S-UNTRACKED-004**: In `patch`, untracked should be represented as add-diffs (e.g., `/dev/null → file`) when possible.
 - **S-UNTRACKED-005**: In `raw`, untracked is bundled into `attachments.zip` under a stable path prefix.
 
@@ -116,26 +123,42 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-SPLIT-002**: `commit` split applies to committed range only; other segments remain file-level units.
 - **S-SPLIT-003**: `auto` chooses commit split if committed range spans multiple commits; otherwise file split.
 
-#### 4.2.7 Output
+#### 4.2.7 Packing profiles
 
-- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`.
+- **S-PROFILE-001**: Support named handoff packing profiles, including built-in `20x512` (default) and `10x100`.
+- **S-PROFILE-002**: Support project/global config defaults and custom profile definitions for handoff packing limits. The profile catalog itself remains config-scoped rather than embedded into `plan.toml`.
+
+#### 4.2.8 Output
+
+- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`, where `<timestamp>` is formatted in the local system timezone as `YYYY-MM-DD_HHMM`; if that path already exists, diffship MUST choose the next available suffixed path (`_2`, `_3`, ...). `--out-dir <dir>` or `[handoff].output_dir` MAY change the parent directory of that generated bundle name, while `--out <path>` continues to set the exact output path. For these path-like options, a leading tilde-slash form such as `~/handoffs` MUST resolve against the user's `HOME`; tilde-user shorthand is rejected.
 - **S-OUT-002**: `--zip` optionally produces a zip bundle with the same layout.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.
 
-#### 4.2.8 Packing algorithm and fallback
+#### 4.2.9 Packing algorithm and fallback
 
 - **S-PACK-001**: Packing is deterministic for the same inputs.
 - **S-PACK-002**: Units are sorted by (1) bytes desc, (2) path/commit asc.
 - **S-PACK-003**: Pack uses First-Fit Decreasing under profile constraints.
-- **S-PACK-004**: If a single unit cannot fit within `max_bytes_per_part`, fallback order:
-  1) reduce unified context for that unit (e.g., U3 → U1)
-  2) if still too large: exclude the unit with reason, and optionally attach snapshot (default OFF)
+- **S-PACK-004**: If a unit cannot fit within `max_bytes_per_part`, fallback MUST attempt lower unified diff context levels (`U1`, then `U0`) before excluding it.
 - **S-PACK-005**: Exclusions must be recorded in `excluded.md` with reasons and guidance.
+
+#### 4.2.10 Plan export / replay
+
+- **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
+- **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format, including the selected `profile` name plus resolved numeric limits (but not the full profile catalog).
 
 ### 4.3 `diffship preview <handoff-bundle>`
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.
+- **S-PREVIEW-002**: Support `--json` output for bundle summary (`--list`) and entry text (`HANDOFF.md` / `--part`) so CI can consume preview results.
+
+### 4.3.1 `diffship compare <bundle-a> <bundle-b>`
+
+- **S-COMPARE-001**: Compare two handoff bundles and report structural/content differences.
+- **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` extracted-entry byte mode (without text normalization). Raw zip container metadata equality is out of scope for the current v1 contract.
+- **S-COMPARE-003**: Support `--json` output for machine-readable compare results while preserving non-zero exit on differences.
+- **S-COMPARE-004**: Classify compare differences by area/kind in both human-readable and JSON output.
 
 ### 4.4 Patch bundle format (input contract)
 
@@ -158,6 +181,7 @@ Applies a patch bundle safely.
 - **S-APPLY-006**: Must run a preflight check before mutating (e.g., `git apply --check` or an equivalent dry-run).
 - **S-APPLY-007**: If apply fails after any mutation, must rollback automatically (safe defaults only).
 - **S-APPLY-008**: Must write run logs under `.diffship/runs/<run-id>/` including apply result and errors.
+- **S-APPLY-009**: If locally configured post-apply commands exist, apply MUST run them in the sandbox after the patch is applied, record logs under the run directory, and fail the apply/loop flow if any configured command fails. These commands are local config only and MUST NOT be loaded from the patch bundle.
 
 ### 4.6 Commit policy (manual / auto)
 
@@ -224,6 +248,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-003**: Forbidden prefixes must include `.git/` and `.diffship/` by default.
 - **S-OPS-004**: Path checks must not allow absolute paths or `..` traversal, and must not rely on following symlinks.
 - **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, file mode changes, and rename/copy metadata.
+- **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
 
 ### 7.1 OS mode sessions & worktrees
 
@@ -242,7 +267,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 
 - **S-OPS-SECRETS-001**: Ops MUST scan patch bundle contents and produced diffs/logs for likely secrets and MUST block promotion by default until user acknowledges.
 - **S-OPS-SECRETS-002**: Ops MUST never print secret values; only paths and reasons.
-- **S-OPS-TASKS-001**: If a patch bundle declares required user tasks, diffship MUST surface them prominently and MAY block promotion depending on policy.
+- **S-OPS-TASKS-001**: If a patch bundle declares required user tasks, diffship MUST surface them prominently and MUST block promotion by default until the user acknowledges (use --ack-tasks).
 
 ---
 
@@ -282,3 +307,5 @@ Ops-specific codes:
 - **S-INIT-001**: `diffship init` MUST create `.diffship/` if missing.
 - **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into .diffship/ for user attachment).
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
+- **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files.
+- **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.

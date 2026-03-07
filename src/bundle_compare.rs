@@ -1,0 +1,335 @@
+use crate::cli::CompareArgs;
+use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::pathing::resolve_user_path;
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::Read;
+use std::path::Path;
+use zip::ZipArchive;
+
+#[derive(Debug, Serialize)]
+struct CompareReport {
+    bundle_a: String,
+    bundle_b: String,
+    mode: String,
+    equivalent: bool,
+    areas: BTreeMap<String, usize>,
+    kinds: BTreeMap<String, usize>,
+    diffs: Vec<CompareDiff>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct CompareDiff {
+    area: String,
+    kind: String,
+    path: String,
+    detail: String,
+}
+
+pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let a_path = resolve_user_path(&cwd, &args.bundle_a)?;
+    let b_path = resolve_user_path(&cwd, &args.bundle_b)?;
+
+    let a = load_bundle(&a_path)?;
+    let b = load_bundle(&b_path)?;
+
+    let mut diffs = Vec::new();
+    let mut areas = BTreeMap::new();
+    let mut kinds = BTreeMap::new();
+    let mut keys = BTreeSet::new();
+    keys.extend(a.keys().cloned());
+    keys.extend(b.keys().cloned());
+
+    for k in keys {
+        match (a.get(&k), b.get(&k)) {
+            (Some(_), None) => push_diff(
+                &mut diffs,
+                &mut areas,
+                &mut kinds,
+                &k,
+                "only_in_a",
+                format!("only in A: {k}"),
+            ),
+            (None, Some(_)) => push_diff(
+                &mut diffs,
+                &mut areas,
+                &mut kinds,
+                &k,
+                "only_in_b",
+                format!("only in B: {k}"),
+            ),
+            (Some(ba), Some(bb)) => {
+                let left = normalize_entry(&k, ba, args.strict);
+                let right = normalize_entry(&k, bb, args.strict);
+                if left != right {
+                    push_diff(
+                        &mut diffs,
+                        &mut areas,
+                        &mut kinds,
+                        &k,
+                        "content_differs",
+                        format!("content differs: {k}"),
+                    );
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    let report = CompareReport {
+        bundle_a: a_path.display().to_string(),
+        bundle_b: b_path.display().to_string(),
+        mode: if args.strict {
+            "strict".to_string()
+        } else {
+            "normalized".to_string()
+        },
+        equivalent: diffs.is_empty(),
+        areas: areas.clone(),
+        kinds: kinds.clone(),
+        diffs: diffs.clone(),
+    };
+    if args.json {
+        print_json(&report)?;
+        if diffs.is_empty() {
+            return Ok(());
+        }
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "bundle comparison failed (see JSON diff output)",
+        ));
+    }
+
+    if diffs.is_empty() {
+        println!("diffship compare: equivalent");
+        println!("  A: {}", a_path.display());
+        println!("  B: {}", b_path.display());
+        println!(
+            "  mode: {}",
+            if args.strict { "strict" } else { "normalized" }
+        );
+        return Ok(());
+    }
+
+    eprintln!("diffship compare: different");
+    eprintln!(
+        "  mode: {}",
+        if args.strict { "strict" } else { "normalized" }
+    );
+    if !areas.is_empty() {
+        eprintln!("  areas: {}", render_count_map(&areas));
+    }
+    if !kinds.is_empty() {
+        eprintln!("  kinds: {}", render_count_map(&kinds));
+    }
+    for d in &diffs {
+        eprintln!("- [{}/{}] {}", d.area, d.kind, d.path);
+    }
+    Err(ExitError::new(
+        EXIT_GENERAL,
+        "bundle comparison failed (see diff list above)",
+    ))
+}
+
+fn push_diff(
+    diffs: &mut Vec<CompareDiff>,
+    areas: &mut BTreeMap<String, usize>,
+    kinds: &mut BTreeMap<String, usize>,
+    path: &str,
+    kind: &str,
+    detail: String,
+) {
+    let area = classify_area(path).to_string();
+    *areas.entry(area.clone()).or_insert(0) += 1;
+    *kinds.entry(kind.to_string()).or_insert(0) += 1;
+    diffs.push(CompareDiff {
+        area,
+        kind: kind.to_string(),
+        path: path.to_string(),
+        detail,
+    });
+}
+
+fn classify_area(path: &str) -> &'static str {
+    if path == "HANDOFF.md" {
+        "handoff"
+    } else if path.starts_with("parts/") && path.ends_with(".patch") {
+        "patch"
+    } else if path == "attachments.zip" {
+        "attachments"
+    } else if path == "excluded.md" {
+        "excluded"
+    } else if path == "secrets.md" {
+        "secrets"
+    } else if path == "plan.toml" {
+        "plan"
+    } else {
+        "other"
+    }
+}
+
+fn render_count_map(counts: &BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {
+    let s = serde_json::to_string_pretty(value)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render JSON: {e}")))?;
+    println!("{s}");
+    Ok(())
+}
+
+fn load_bundle(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, ExitError> {
+    if path.is_dir() {
+        return load_bundle_from_dir(path);
+    }
+    if path.is_file() {
+        return load_bundle_from_zip(path);
+    }
+    Err(ExitError::new(
+        EXIT_GENERAL,
+        format!("bundle path not found: {}", path.display()),
+    ))
+}
+
+fn load_bundle_from_dir(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, ExitError> {
+    fn walk(base: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) -> Result<(), ExitError> {
+        let mut entries = fs::read_dir(dir)
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read dir: {e}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read dir entry: {e}")))?;
+        entries.sort_by_key(|e| e.file_name());
+        for ent in entries {
+            let path = ent.path();
+            if path.is_dir() {
+                walk(base, &path, out)?;
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(base)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let bytes = fs::read(&path).map_err(|e| {
+                    ExitError::new(
+                        EXIT_GENERAL,
+                        format!("failed to read {}: {e}", path.display()),
+                    )
+                })?;
+                out.insert(rel, bytes);
+            }
+        }
+        Ok(())
+    }
+
+    let mut out = BTreeMap::new();
+    walk(root, root, &mut out)?;
+    Ok(out)
+}
+
+fn load_bundle_from_zip(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, ExitError> {
+    let file = fs::File::open(path)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to open zip: {e}")))?;
+    let mut zip = ZipArchive::new(file)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("invalid zip bundle: {e}")))?;
+
+    let mut out = BTreeMap::new();
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to read zip entry at index {}: {e}", i),
+            )
+        })?;
+        if f.is_dir() {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        f.read_to_end(&mut bytes).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to read zip entry {}: {e}", f.name()),
+            )
+        })?;
+        out.insert(f.name().replace('\\', "/"), bytes);
+    }
+    Ok(out)
+}
+
+fn normalize_entry(path: &str, bytes: &[u8], strict: bool) -> Vec<u8> {
+    if strict {
+        return bytes.to_vec();
+    }
+
+    if path == "HANDOFF.md"
+        && let Ok(s) = String::from_utf8(bytes.to_vec())
+    {
+        return normalize_handoff(&s).into_bytes();
+    }
+    if path.starts_with("parts/")
+        && path.ends_with(".patch")
+        && let Ok(s) = String::from_utf8(bytes.to_vec())
+    {
+        return normalize_patch(&s).into_bytes();
+    }
+    bytes.to_vec()
+}
+
+fn normalize_handoff(s: &str) -> String {
+    let s = replace_hex40_runs(s);
+    let mut lines = Vec::new();
+    for line in s.lines() {
+        if line.starts_with("- Bundle: `") {
+            lines.push("- Bundle: `<BUNDLE>`".to_string());
+            continue;
+        }
+        if line.starts_with("| `part_") {
+            let mut cols = line.split('|').map(str::to_string).collect::<Vec<_>>();
+            if cols.len() == 7 {
+                cols[4] = " <BYTES> ".to_string();
+                lines.push(cols.join("|"));
+                continue;
+            }
+        }
+        if line.trim_start().starts_with("- approx bytes: `") {
+            lines.push("- approx bytes: `<BYTES>`".to_string());
+            continue;
+        }
+        lines.push(line.to_string());
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
+fn normalize_patch(s: &str) -> String {
+    let mut out = String::new();
+    for line in replace_hex40_runs(s).lines() {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+fn replace_hex40_runs(s: &str) -> String {
+    let chars = s.chars().collect::<Vec<_>>();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let end = i + 40;
+        if end <= chars.len() && chars[i..end].iter().all(|c| c.is_ascii_hexdigit()) {
+            out.push_str("<HEX40>");
+            i = end;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
