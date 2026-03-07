@@ -2,11 +2,22 @@
 
 This document explains how to collaborate with AI assistants (ChatGPT / Claude / Codex, etc.) while developing **diffship** with **spec-driven development**.
 
+For the practical handoff flow from `diffship build` to "what to send AI / what output to request / how to use the response", see `docs/AI_HANDOFF_FLOW.md`.
+
 > TL;DR: **Spec → Tests → Implementation → Traceability → Gates**. Don’t break the chain.
 
 ---
 
 ## 0) Preconditions
+
+If the repository was initialized with `diffship init`, also provide the generated local guides when they are relevant:
+
+- `.diffship/PROJECT_KIT.md`
+- `.diffship/AI_GUIDE.md`
+
+If you maintain a custom init template directory, keep the repository-specific parts of `AI_PROJECT_TEMPLATE.md`
+inside the sections marked "Customize this section" so the generated `.diffship/AI_GUIDE.md` stays easy to update.
+Apply the same rule to `PROJECT_KIT_TEMPLATE.md` so the generated `.diffship/PROJECT_KIT.md` remains a concise local workflow guide.
 
 * **The spec is the single source of truth**:
 
@@ -126,4 +137,3 @@ Tips:
 * Before “what to do”, state **what must not change**
 * Decide upfront: are you changing the **spec** or changing the **implementation**?
 * When unsure, start with a **review-only** request (Section 4)
-

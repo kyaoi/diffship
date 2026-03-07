@@ -1,0 +1,8 @@
+# === diffship segment: committed ===
+diff --git a/docs/guide.md b/docs/guide.md
+index <HEX40>..<HEX40> 100644
+--- a/docs/guide.md
++++ b/docs/guide.md
+@@ -1 +1 @@
+-old
++new
