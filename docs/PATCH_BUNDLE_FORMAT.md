@@ -1,7 +1,6 @@
 # Patch Bundle Format (v1)
 
 This document defines the **patch bundle contract** consumed by `diffship apply` / `diffship loop`.
-
 A patch bundle is typically produced by an AI agent and applied locally by a human.
 
 > Design goal: patch bundles should be **strictly machine-validated** before touching the repo.
@@ -13,9 +12,18 @@ A patch bundle is typically produced by an AI agent and applied locally by a hum
 A patch bundle is either:
 
 - a directory, or
-- a zip file containing the directory at its root.
+- a zip file containing exactly one top-level directory at its root.
 
-Recommended layout:
+Minimal accepted tree:
+
+```text
+patchship_YYYY-MM-DD_HHMM/
+  manifest.yaml
+  changes/
+    0001.patch
+```
+
+Full recommended tree:
 
 ```text
 patchship_YYYY-MM-DD_HHMM/
@@ -33,10 +41,23 @@ patchship_YYYY-MM-DD_HHMM/
     ENV_TEMPLATE.env
 ```
 
+Rejected lookalike (not a patch bundle):
+
+```text
+DO_NOT_LOOP_nonops_YYYY-MM-DD_HHMM/
+  README_NOT_OPS.md
+  overlay/
+  edits/
+  meta/
+```
+
 Notes:
 
-- `manifest.yaml` and `changes/*.patch` are required.
-- File names under `changes/` should be ordered (e.g. `0001.patch`, `0002.patch`).
+- `manifest.yaml` and `changes/*.patch` are required at the same bundle root.
+- File names under `changes/` should be ordered (for example `0001.patch`, `0002.patch`).
+- The `patchship_...` name is reserved for bundles that are already valid ops inputs.
+- Archives such as `DO_NOT_LOOP_nonops_...` are **not** patch bundles and must not be passed to `diffship loop`.
+- `manifest.yaml` nested under another directory such as `meta/` or an extra parent folder does not satisfy this contract.
 
 ---
 
@@ -51,7 +72,9 @@ Required preconditions:
 - the producer is returning a bundle that is already valid when delivered
 
 If these conditions are not met, do **not** fabricate fields and do **not** ask the user to repair the bundle afterward.
-Return unified diffs, file-by-file edits, or review notes instead.
+Return `MODE: ANALYSIS_ONLY`, unified diffs, file-by-file edits, or an explicitly accepted non-ops package instead.
+
+If the user asked for something they can pass to `diffship loop`, missing `base_commit` should normally lead to `MODE: ANALYSIS_ONLY`, not a misleading fallback zip.
 
 ---
 
@@ -59,7 +82,7 @@ Return unified diffs, file-by-file edits, or review notes instead.
 
 ### 3.1 Required fields
 
-- `protocol_version`: string (e.g., `1`)
+- `protocol_version`: string (for example `1`)
 - `task_id`: string (free-form)
 - `base_commit`: string (40-hex full SHA recommended)
 - `apply_mode`: `git-apply` or `git-am`
@@ -67,96 +90,66 @@ Return unified diffs, file-by-file edits, or review notes instead.
 
 ### 3.2 Optional fields
 
-- `created_by`: string (e.g., model/agent name)
+- `created_by`: string (for example model/agent name)
 - `created_at`: string (ISO 8601)
 - `requires_docs_update`: bool
 - `requires_plan_update`: bool
 - `notes`: string
 - `tasks_required`: bool (if true, the bundle should include `tasks/USER_TASKS.md`)
 - `secrets_ack_required`: bool (if true, ops should require explicit user acknowledgement)
-- `verify_profile`: string (fast|standard|full; bundle-level default)
+- `verify_profile`: string (`fast|standard|full`; bundle-level default)
 - `target_branch`: string (promotion target branch name)
-- `promotion_mode`: string (none|working-tree|commit)
-- `commit_policy`: string (auto|manual)
+- `promotion_mode`: string (`none|working-tree|commit`)
+- `commit_policy`: string (`auto|manual`)
 
 ### 3.3 Rules
 
-- `base_commit` must be the exact target repo SHA. Never use placeholders such as `REPLACE_WITH_REPO_HEAD`.
-- `apply_mode` must be exactly `git-apply` or `git-am`. Values such as `patch` are invalid.
-- `touched_files` must contain repo-relative paths only.
-- Bundles must not target `.git/` or `.diffship/`.
+- `base_commit` must be the exact target repo SHA.
+- `apply_mode` must be exactly `git-apply` or `git-am`.
+- Placeholder values such as `REPLACE_WITH_REPO_HEAD` are invalid.
+- If the exact `base_commit` is unknown, do not emit a patch bundle.
 
-### 3.4 Example
+Minimal example:
 
 ```yaml
 protocol_version: "1"
-task_id: "OPS-FOUNDATION"
-base_commit: "0123456789abcdef0123456789abcdef01234567"
-apply_mode: "git-apply"
+task_id: "replace-with-task-id"
+base_commit: "<exact 40-hex SHA>"
+apply_mode: git-apply
 touched_files:
-  - "docs/SPEC_V1.md"
-  - "src/main.rs"
-created_by: "ChatGPT"
-requires_docs_update: true
+  - path/to/file.ext
 ```
 
 ---
 
-## 4. `changes/*.patch`
+## 4. Patch restrictions
 
-General requirements:
+The patch payload must be repo-relative and deterministic.
 
-- UTF-8
-- LF line endings
-- deterministic ordering under `changes/`
-- repo-relative paths only (no absolute paths, no traversal)
+Do not include:
 
-Current v1 safety restrictions:
+- binary patches
+- rename / copy metadata
+- file mode metadata (`old mode`, `new mode`, `new file mode`)
+- submodule changes
+- writes into `.git/` or `.diffship/`
+- secrets
 
-- binary patches (`GIT binary patch`) are refused
-- rename/copy metadata (`rename from`, `rename to`, `copy from`, `copy to`) is refused
-- file mode metadata (`old mode`, `new mode`, `new file mode`) is refused
-- submodule changes (mode `160000`) are refused
-
-If the requested change would require one of the refused constructs in the current environment, do not ship an ops-compatible patch bundle.
-Return a non-ops format instead.
+If the requested change cannot be represented without violating these restrictions, do not return a malformed ops bundle.
+Use `MODE: ANALYSIS_ONLY` or an explicitly accepted non-ops fallback instead.
 
 ---
 
-## 5. Optional files
+## 5. Human quick check before `diffship loop`
 
-### 5.1 `summary.md`
+Before passing a zip to `diffship loop`, verify:
 
-Human-facing summary of what the patch intends to do.
+1. the archive is intended to be `MODE: OPS_PATCH_BUNDLE`
+2. the archive root is a single directory
+3. the bundle root contains `manifest.yaml`
+4. the bundle root contains `changes/`
+5. `changes/` contains at least one ordered patch file such as `0001.patch`
+6. the archive does **not** contain `README_NOT_OPS.md`
+7. the archive name or root path does **not** contain `DO_NOT_LOOP`
 
-### 5.2 `constraints.yaml`
-
-Constraints the AI should follow during iteration.
-
-### 5.3 `checks_request.yaml`
-
-A hint for which verification profile to run (e.g. `fast|standard|full`).
-
-### 5.4 `commit_message.txt`
-
-A proposed commit message.
-
-diffship may expose it for copy/paste, and may also use it for auto-commit when commit policy is set to `auto`.
-Commit behavior is controlled by diffship configuration (global/project/CLI) and is independent from `apply_mode`.
-
----
-
-## 6. User tasks
-
-Patch bundles may include a `tasks/` directory to describe actions the user must perform manually (e.g., create `.env`, rotate tokens, run a one-off migration).
-
-Recommended files:
-
-- `tasks/USER_TASKS.md`: human-readable checklist (required if `tasks_required: true`)
-- `tasks/TASKS.yaml`: machine-readable tasks (optional)
-- `tasks/ENV_TEMPLATE.env`: optional template for environment variables (never include real secrets)
-
-Use user tasks only for real follow-up work owned by the user.
-Do not use them to ask the user to fill in missing manifest fields or otherwise repair an invalid bundle.
-
-diffship should surface these tasks prominently during `apply/loop`, and blocks promotion by default until the user acknowledges (use `--ack-tasks`).
+If any check fails, do not run `diffship loop` on that archive.
