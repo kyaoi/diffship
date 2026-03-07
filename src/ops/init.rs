@@ -81,7 +81,18 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
     );
     write_if_needed(&ai_out, &ai_body, args.force, &mut wrote, &mut skipped)?;
 
-    // 3) Config stub
+    // 3) Diffship-local gitignore for generated state
+    let gitignore_out = diffship_dir.join(".gitignore");
+    let gitignore_body = default_gitignore();
+    write_if_needed(
+        &gitignore_out,
+        &gitignore_body,
+        args.force,
+        &mut wrote,
+        &mut skipped,
+    )?;
+
+    // 4) Config stub
     let cfg_out = diffship_dir.join("config.toml");
     let cfg_body = default_config_stub();
     write_if_needed(&cfg_out, &cfg_body, args.force, &mut wrote, &mut skipped)?;
@@ -196,7 +207,7 @@ default_profile = "standard" # fast|standard|full
 # `output_dir` is the parent directory for auto-generated bundle names.
 [handoff]
 default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.profiles."<name>"]
-# output_dir = "./artifacts/handoffs" # optional parent dir for auto-generated bundle names
+output_dir = "./.diffship/artifacts/handoffs" # optional parent dir for auto-generated bundle names
 
 # Customize this section: add named handoff profiles shared by this repository or team.
 # Copy `[handoff.profiles.*]` stanzas into another repo or `~/.config/diffship/config.toml`
@@ -233,6 +244,16 @@ policy = "auto"            # auto|manual
 # lock_path = ".diffship/lock"
 # require_clean_tree = true
 # require_base_commit_match = true
+"#
+    .to_string()
+}
+
+fn default_gitignore() -> String {
+    r#"artifacts/handoffs/
+runs/
+worktrees/
+sessions/
+lock
 "#
     .to_string()
 }

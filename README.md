@@ -78,6 +78,7 @@ diffship init
 It creates files under `.diffship/` (generated):
 
 ```text
+.diffship/.gitignore
 .diffship/PROJECT_KIT.md
 .diffship/AI_GUIDE.md
 .diffship/config.toml
@@ -187,11 +188,11 @@ diffship build --include-untracked --plan-out ./diffship_plan.toml
 diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 
 # place the auto-generated bundle under a custom parent directory
-diffship build --out-dir ./artifacts/handoffs
+diffship build --out-dir ./.diffship/artifacts/handoffs
 
 # or set the same default in config
 # [handoff]
-# output_dir = "./artifacts/handoffs"
+# output_dir = "./.diffship/artifacts/handoffs"
 # output_dir = "~/ghq/github.com/kyaoi/diffship/.diffship/handoffs"
 
 # share named profiles via config, not via plan.toml

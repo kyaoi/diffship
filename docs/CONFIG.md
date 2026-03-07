@@ -188,7 +188,7 @@ Config:
 ```toml
 [handoff]
 default_profile = "20x512"
-output_dir = "./artifacts/handoffs" # optional parent dir for auto-generated bundle names
+output_dir = "./.diffship/artifacts/handoffs" # optional parent dir for auto-generated bundle names
 
 [handoff.profiles."team-ci"]
 max_parts = 8

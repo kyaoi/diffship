@@ -284,16 +284,16 @@ Default output naming:
 Example:
 
 ```bash
-diffship build --out-dir ./artifacts/handoffs
+diffship build --out-dir ./.diffship/artifacts/handoffs
 ```
 
-This produces a bundle under `./artifacts/handoffs/` while keeping the generated bundle name.
+This produces a bundle under `./.diffship/artifacts/handoffs/` while keeping the generated bundle name.
 
 Project or global config can also set this default:
 
 ```toml
 [handoff]
-output_dir = "./artifacts/handoffs"
+output_dir = "./.diffship/artifacts/handoffs"
 ```
 
 Tilde-slash paths are also accepted here:
@@ -319,6 +319,7 @@ diffship init
 
 This writes:
 
+- `.diffship/.gitignore`
 - `.diffship/PROJECT_KIT.md`
 - `.diffship/AI_GUIDE.md`
 - `.diffship/config.toml`
@@ -354,6 +355,7 @@ The generated `.diffship/config.toml` now follows the same idea:
 
 - core defaults stay close to the repository's actual diffship workflow
 - "Customize this section" comments show where to set repo-specific defaults such as verify profile, handoff profile, output directory, promotion mode, and post-apply commands
+- the generated handoff `output_dir` defaults to `./.diffship/artifacts/handoffs` so diffship-owned outputs stay under `.diffship/` after `diffship init`
 
 ### 6.2 Full loop
 
