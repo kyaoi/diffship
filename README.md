@@ -28,13 +28,39 @@ It focuses on the *ops* side of an AI workflow:
 
 ## Install
 
-This repository is currently intended for local use.
+If you only want to install **diffship** as a CLI, you can install it directly from GitHub without manually cloning the repository:
 
 ```bash
-# in this repo
-cargo install --path .
+cargo install --git https://github.com/kyaoi/diffship.git
+```
 
-# or, without installing
+For reproducible installs, you can pin to a specific tag, branch, or commit:
+
+```bash
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.1.0
+# or
+cargo install --git https://github.com/kyaoi/diffship.git --branch main
+# or
+cargo install --git https://github.com/kyaoi/diffship.git --rev <commit>
+```
+
+## Build from source
+
+If you want to inspect the source, make changes, or work from a local checkout:
+
+```bash
+git clone https://github.com/kyaoi/diffship.git
+cd diffship
+cargo build
+```
+
+## Run from source
+
+If you want to run it from a local checkout without installing:
+
+```bash
+git clone https://github.com/kyaoi/diffship.git
+cd diffship
 cargo run -- <subcommand> ...
 ```
 
