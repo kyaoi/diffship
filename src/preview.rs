@@ -1,10 +1,11 @@
 use crate::cli::PreviewArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::pathing::resolve_user_path;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use zip::ZipArchive;
 
 #[derive(Debug, Clone)]
@@ -31,7 +32,9 @@ struct PreviewText {
 }
 
 pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
-    let bundle_path = PathBuf::from(&args.bundle);
+    let cwd = std::env::current_dir()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let bundle_path = resolve_user_path(&cwd, &args.bundle)?;
     let view = load_bundle(&bundle_path)?;
 
     if args.list {

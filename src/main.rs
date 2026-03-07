@@ -6,6 +6,7 @@ mod git;
 mod handoff;
 mod handoff_config;
 mod ops;
+mod pathing;
 mod plan;
 mod preview;
 mod tui;

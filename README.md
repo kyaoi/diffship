@@ -93,6 +93,8 @@ All commands below are implemented.
 - `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` = extracted entry bytes without normalization, `--json`) and classify differences by area/kind
 - `diffship loop <bundle>` — apply → verify → promote
 
+Filesystem path arguments accept leading tilde-slash and resolve it against the current user's `HOME`. Tilde-user shorthand is rejected.
+
 ### Promotion / commit switches
 
 Both `promote` and `loop` accept overrides:

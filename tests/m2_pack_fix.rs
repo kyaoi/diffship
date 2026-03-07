@@ -207,3 +207,42 @@ fn verify_failure_auto_creates_pack_fix_zip() {
     assert!(entries.contains(&"PROMPT.md".to_string()));
     assert!(entries.contains(&"run/verify.json".to_string()));
 }
+
+#[test]
+fn pack_fix_accepts_tilde_out_path() {
+    let td = init_repo();
+    let root = td.path();
+    let home = root.join("fake-home");
+    fs::create_dir_all(&home).unwrap();
+    let base = head(root);
+
+    let patch = make_patch_by_editing_readme(root, "bad \n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = assert_cmd::cargo::cargo_bin_cmd!("diffship")
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+
+    assert_cmd::cargo::cargo_bin_cmd!("diffship")
+        .args(["verify", "--run-id", &run_id])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(9);
+
+    assert_cmd::cargo::cargo_bin_cmd!("diffship")
+        .env("HOME", home.as_os_str())
+        .args(["pack-fix", "--run-id", &run_id, "--out", "~/fixes/out.zip"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    assert!(home.join("fixes").join("out.zip").exists());
+}

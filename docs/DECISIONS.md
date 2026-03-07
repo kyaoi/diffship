@@ -745,3 +745,16 @@ diffship OS の重要な意思決定ログです。
   - `src/ops/config.rs` が `[ops.post_apply]` を解決する。
   - `src/ops/post_apply.rs` が sandbox 実行と `post_apply.json` / log 出力を担う。
   - `apply` と `loop` は hook failure を成功扱いにしない。
+
+## D-054: `~/...` shorthand は shared path resolver で CLI 全体に適用する
+
+- Date: 2026-03-07
+- Decision:
+  - `build` だけでなく、filesystem path を受け取る他の CLI command でも leading `~/...` を `HOME` 基準で解決する。
+  - tilde-user shorthand は引き続き unsupported として明示的に拒否する。
+- Rationale:
+  - ユーザーにとって path shorthand の期待は command ごとに異ならない方が自然だから。
+  - 同じルールを shared helper に寄せた方がテストと docs を保守しやすいから。
+- Implications:
+  - `src/pathing.rs` を shared helper とし、`handoff` / `preview` / `compare` / `apply` / `pack-fix` が利用する。
+  - spec と docs は handoff 専用の説明ではなく、CLI 全体の path rule として説明する。

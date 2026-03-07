@@ -276,6 +276,7 @@ Default output naming:
 
 - `--out <path>` sets the exact output directory path
 - `--out-dir <dir>` places the auto-generated bundle name under a custom parent directory
+- filesystem path arguments such as bundle paths, `--out`, `--out-dir`, `--plan`, and `pack-fix --out` accept leading tilde-slash
 - if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name
 - the timestamp is rendered in the local system timezone
 - if the base path already exists, diffship creates a suffixed name such as `diffship_YYYY-MM-DD_HHMM_2`, then `_3`, and so on
@@ -302,7 +303,7 @@ Tilde-slash paths are also accepted here:
 output_dir = "~/ghq/github.com/kyaoi/diffship/.diffship/handoffs"
 ```
 
-diffship expands that path against the current user's `HOME`. `~user/...` is intentionally unsupported.
+diffship expands that path against the current user's `HOME`. Tilde-user shorthand is intentionally unsupported.
 
 See `docs/BUNDLE_FORMAT.md` for the bundle contract.
 

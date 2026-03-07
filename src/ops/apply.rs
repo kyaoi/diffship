@@ -10,9 +10,10 @@ use crate::ops::run;
 use crate::ops::session;
 use crate::ops::tasks;
 use crate::ops::worktree;
+use crate::pathing::resolve_user_path;
 use serde::Serialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Serialize)]
 struct ApplySummary {
@@ -113,7 +114,9 @@ pub fn apply_locked(
     worktree::assert_is_git_worktree_dir(Path::new(&sandbox.path))?;
 
     // Validate and copy patch bundle into the run dir before touching the sandbox.
-    let bundle_path = PathBuf::from(&args.bundle);
+    let cwd = std::env::current_dir()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let bundle_path = resolve_user_path(&cwd, &args.bundle)?;
     let bundle = patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir)?;
 
     // Surface required user tasks (copied into run_dir by load_and_copy_into_run).

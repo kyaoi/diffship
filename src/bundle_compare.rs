@@ -1,10 +1,11 @@
 use crate::cli::CompareArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::pathing::resolve_user_path;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use zip::ZipArchive;
 
 #[derive(Debug, Serialize)]
@@ -27,8 +28,10 @@ struct CompareDiff {
 }
 
 pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
-    let a_path = PathBuf::from(&args.bundle_a);
-    let b_path = PathBuf::from(&args.bundle_b);
+    let cwd = std::env::current_dir()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
+    let a_path = resolve_user_path(&cwd, &args.bundle_a)?;
+    let b_path = resolve_user_path(&cwd, &args.bundle_b)?;
 
     let a = load_bundle(&a_path)?;
     let b = load_bundle(&b_path)?;

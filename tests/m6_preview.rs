@@ -167,3 +167,39 @@ fn preview_json_outputs_summary_and_entry_text() {
             .is_some_and(|x| x.contains("README.md"))
     );
 }
+
+#[test]
+fn preview_accepts_tilde_bundle_path() {
+    let td = init_repo();
+    let root = td.path();
+    let home = root.join("fake-home");
+    fs::create_dir_all(&home).unwrap();
+
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("README.md"), "tilde\n").unwrap();
+    commit_all(root, "next");
+
+    let out = home.join("bundle_preview_tilde");
+    let mut build = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build
+        .env("HOME", home.as_os_str())
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&out)
+        .assert()
+        .success();
+
+    let mut part = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    part.env("HOME", home.as_os_str())
+        .current_dir(root)
+        .args([
+            "preview",
+            "~/bundle_preview_tilde",
+            "--part",
+            "part_01.patch",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("README.md"));
+}

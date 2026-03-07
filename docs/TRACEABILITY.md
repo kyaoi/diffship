@@ -62,6 +62,12 @@ Conventions:
 
 ---
 
+## CLI path handling
+
+- **S-PATH-001** — Tests: `src/pathing.rs`, `tests/m2_apply_verify.rs`, `tests/m2_pack_fix.rs`, `tests/m6_preview.rs`, `tests/m6_compare.rs`, `tests/m6_handoff_build.rs` — Code: `src/pathing.rs`, `src/handoff.rs`, `src/preview.rs`, `src/bundle_compare.rs`, `src/ops/apply.rs`, `src/ops/pack_fix.rs` — Status: Implemented
+
+---
+
 ## Filters
 
 - **S-FILTER-001** — Tests: `tests/m6_handoff_build.rs`, `src/filter.rs` — Code: `src/filter.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented

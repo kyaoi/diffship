@@ -3,6 +3,7 @@ use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::lock;
 use crate::ops::run;
 use crate::ops::worktree;
+use crate::pathing::resolve_user_path;
 use serde::Deserialize;
 use std::fs;
 use std::io::{self, Write};
@@ -22,6 +23,8 @@ struct VerifyJson {
 /// Default output path: `.diffship/runs/<run-id>/pack-fix.zip`.
 pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
     let created_at = lock::now_rfc3339();
+    let cwd = std::env::current_dir()
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
 
     let lock_path = lock::default_lock_path(git_root);
     let info = lock::make_lock_info(
@@ -53,7 +56,7 @@ pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
     }
 
     let out_path = match &args.out {
-        Some(p) => PathBuf::from(p),
+        Some(p) => resolve_user_path(&cwd, p)?,
         None => run_dir.join("pack-fix.zip"),
     };
 

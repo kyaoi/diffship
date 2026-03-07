@@ -326,3 +326,36 @@ cmd1 = "exit 7"
         .unwrap();
     assert!(latest.join("post_apply.json").exists());
 }
+
+#[test]
+fn m2_apply_accepts_tilde_bundle_path() {
+    let td = init_repo();
+    let root = td.path();
+    let home_td = tempfile::tempdir().unwrap();
+    let home = home_td.path();
+    let base = head(root);
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+    let home_bundle = home.join("bundle");
+    fs::create_dir_all(&home_bundle).unwrap();
+    fs::copy(
+        bundle_root.join("manifest.yaml"),
+        home_bundle.join("manifest.yaml"),
+    )
+    .unwrap();
+    fs::create_dir_all(home_bundle.join("changes")).unwrap();
+    fs::copy(
+        bundle_root.join("changes").join("0001.patch"),
+        home_bundle.join("changes").join("0001.patch"),
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .env("HOME", home)
+        .args(["apply", "~/bundle"])
+        .current_dir(root)
+        .assert()
+        .success();
+}

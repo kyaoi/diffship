@@ -121,6 +121,48 @@ fn compare_normalized_accepts_equivalent_bundles() {
 }
 
 #[test]
+fn compare_accepts_tilde_bundle_paths() {
+    let td = init_repo();
+    let root = td.path();
+    let home = root.join("fake-home");
+    fs::create_dir_all(&home).unwrap();
+
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("README.md"), "next\n").unwrap();
+    commit_all(root, "next");
+
+    let out_a = home.join("bundle_a");
+    let out_b = home.join("bundle_b");
+
+    let mut build_a = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_a
+        .env("HOME", home.as_os_str())
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&out_a)
+        .assert()
+        .success();
+
+    let mut build_b = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_b
+        .env("HOME", home.as_os_str())
+        .current_dir(root)
+        .args(["build", "--zip", "--out"])
+        .arg(&out_b)
+        .assert()
+        .success();
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.env("HOME", home.as_os_str())
+        .current_dir(root)
+        .args(["compare", "~/bundle_a", "~/bundle_b.zip"])
+        .assert()
+        .success()
+        .stdout(contains("diffship compare: equivalent"));
+}
+
+#[test]
 fn compare_reports_real_content_difference() {
     let td = init_repo();
     let root = td.path();
