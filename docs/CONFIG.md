@@ -3,7 +3,7 @@
 This document describes **how configuration is resolved** and which keys are **actually supported** by the current diffship binary.
 
 > diffship is developed with spec-driven development.
-> Ops verify profile commands under `[verify.profiles.*]` and handoff packing profiles under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
+> Ops verify profile commands under `[verify.profiles.*]` and handoff settings under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
 
 ---
 
@@ -153,11 +153,14 @@ CLI:
 
 - `diffship build --profile <name>`
 - `diffship build --max-parts <n> --max-bytes-per-part <bytes>`
+- `diffship build --out-dir <dir>`
 
 Resolution:
 
 - precedence is `CLI > project > global > built-in default`
 - explicit `--max-parts` / `--max-bytes-per-part` override the selected profile values
+- explicit `--out-dir` overrides `[handoff].output_dir`
+- explicit `--out` bypasses `[handoff].output_dir` because it sets the exact output path
 - TUI handoff screen uses the same resolved profile set and can cycle profiles with `h`
 
 Config:
@@ -165,6 +168,7 @@ Config:
 ```toml
 [handoff]
 default_profile = "20x512"
+output_dir = "./artifacts/handoffs" # optional parent dir for auto-generated bundle names
 
 [handoff.profiles."team-ci"]
 max_parts = 8
@@ -181,6 +185,8 @@ max_bytes_per_part = 104857600
 
 The generated `plan.toml` records `profile` plus resolved numeric limits so replay remains stable even if config later changes.
 To share named profiles across repositories, copy the relevant `[handoff.profiles.*]` stanzas into the target repo config (or into `~/.config/diffship/config.toml` for global reuse). `plan.toml` is intentionally narrower: it exports the selected profile name plus resolved limits, not the full profile catalog.
+The optional `[handoff].output_dir` changes the parent directory used for auto-generated bundle names when `--out` is omitted.
+Compatibility alias `[handoff].out_dir` is also accepted.
 
 ### 3.2 Diff options
 

@@ -178,6 +178,93 @@ fn build_rejects_out_and_out_dir_together() {
 }
 
 #[test]
+fn build_project_config_can_set_default_out_dir() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    write_project_config(
+        root,
+        r#"
+[handoff]
+output_dir = "artifacts/from-config"
+"#,
+    );
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let out_dir = root.join("artifacts").join("from-config");
+    let bundles = fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if !ent.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = ent.file_name().to_string_lossy().to_string();
+            if !name.starts_with("diffship_") {
+                return None;
+            }
+            Some(ent.path())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(bundles.len(), 1);
+    assert!(bundles[0].join("HANDOFF.md").exists());
+}
+
+#[test]
+fn build_cli_out_dir_overrides_config_default_out_dir() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    write_project_config(
+        root,
+        r#"
+[handoff]
+output_dir = "artifacts/from-config"
+"#,
+    );
+
+    let cli_dir = root.join("artifacts").join("from-cli");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--out-dir"])
+        .arg(&cli_dir);
+    cmd.assert().success();
+
+    let cli_bundles = fs::read_dir(&cli_dir)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if ent.file_type().ok()?.is_dir() {
+                Some(ent.path())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(cli_bundles.len(), 1);
+
+    let config_dir = root.join("artifacts").join("from-config");
+    assert!(
+        !config_dir.exists() || fs::read_dir(&config_dir).unwrap().next().is_none(),
+        "config out dir should not be used when CLI --out-dir is set"
+    );
+}
+
+#[test]
 fn build_can_export_and_replay_plan_toml() {
     let td = init_repo();
     let root = td.path();

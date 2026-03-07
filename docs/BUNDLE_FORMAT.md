@@ -75,6 +75,6 @@ Must list excluded units with:
 - A replayable description of the handoff selection/options used to build the bundle.
 - Export with `diffship build --plan-out <path>` (for example `<bundle>/plan.toml`).
 - Replay with `diffship build --plan <path>`.
-- Output path / zip emission are CLI-time concerns and may be supplied when replaying the plan.
+- Output path / output parent directory / zip emission are CLI-time concerns and may be supplied when replaying the plan.
 - Current plan payload includes the selected `profile` name plus resolved numeric limit fields, so replay remains stable if config later changes.
 - Named profile definitions themselves stay in config (`[handoff.profiles.*]` / `[profiles.*]`); `plan.toml` is an export of the chosen selection, not a profile catalog dump.

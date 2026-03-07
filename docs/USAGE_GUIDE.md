@@ -256,6 +256,7 @@ Current `plan.toml` behavior:
 - stores the selected profile name
 - stores resolved numeric limits
 - stores handoff selection such as range, sources, filters, split mode, and binary mode
+- does not store runtime output routing such as `--out` or `--out-dir`
 - does not store the entire named profile catalog
 
 Named profile definitions stay in config, not in the plan export.
@@ -286,6 +287,13 @@ diffship build --out-dir ./artifacts/handoffs
 ```
 
 This produces a bundle under `./artifacts/handoffs/` while keeping the generated bundle name.
+
+Project or global config can also set this default:
+
+```toml
+[handoff]
+output_dir = "./artifacts/handoffs"
+```
 
 See `docs/BUNDLE_FORMAT.md` for the bundle contract.
 

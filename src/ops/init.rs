@@ -138,6 +138,7 @@ default_profile = "standard" # fast|standard|full
 
 [handoff]
 default_profile = "20x512"   # built-in: 20x512|10x100 or a custom [handoff.profiles."<name>"]
+# output_dir = "./artifacts/handoffs" # optional parent dir for auto-generated bundle names
 
 # Example custom handoff profile:
 # Copy `[handoff.profiles.*]` stanzas into another repo or `~/.config/diffship/config.toml`

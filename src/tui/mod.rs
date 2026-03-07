@@ -180,6 +180,7 @@ impl App {
             profile: Some(default_profile.selected_name.clone()),
             max_parts: Some(default_profile.max_parts),
             max_bytes_per_part: Some(default_profile.max_bytes_per_part),
+            out_dir: handoff_config.default_output_dir().map(str::to_string),
             ..crate::plan::HandoffPlan::default()
         };
 
@@ -1535,8 +1536,9 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
             handoff.plan.binary_mode
         ),
         format!(
-            "  - zip/out: {} / {}",
+            "  - zip/out-dir/out: {} / {} / {}",
             yes_no(handoff.plan.zip),
+            display_opt(handoff.plan.out_dir.as_deref()),
             display_opt(handoff.plan.out.as_deref())
         ),
         String::new(),

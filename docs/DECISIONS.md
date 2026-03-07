@@ -700,3 +700,19 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `HandoffPlan` の runtime override と replay shell command でも `--out-dir` を扱う。
   - README / Usage Guide / Spec は `--out` と `--out-dir` の役割分担を明記する。
+
+---
+
+## D-051: `[handoff].output_dir` は auto-generated handoff bundle の config default として扱う
+
+- Date: 2026-03-07
+- Decision:
+  - `[handoff].output_dir` を project/global config で受け付け、`--out` 未指定かつ `--out-dir` 未指定のときの default parent directory として使う。
+  - precedence は `--out` > `--out-dir` > `[handoff].output_dir` > current working directory とする。
+  - compatibility として `[handoff].out_dir` も受け付ける。
+- Rationale:
+  - bundle の保存先を毎回 CLI で書かずに固定したいケースがあるため。
+  - `--out` の exact-path semantics を維持したまま、project/global default を自然に追加できるため。
+- Implications:
+  - `src/handoff_config.rs` が `[handoff].output_dir` を解決し、`resolve_build_args` で `BuildArgs.out_dir` に反映する。
+  - init stub / config docs / handoff build tests を更新する。

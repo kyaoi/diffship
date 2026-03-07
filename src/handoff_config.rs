@@ -23,12 +23,14 @@ pub struct ResolvedHandoffProfile {
 #[derive(Debug, Clone)]
 pub struct HandoffConfig {
     default_profile: String,
+    default_output_dir: Option<String>,
     profiles: BTreeMap<String, HandoffProfileDef>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct HandoffConfigOverrides {
     default_profile: Option<String>,
+    default_output_dir: Option<String>,
     profiles: BTreeMap<String, HandoffProfileOverride>,
 }
 
@@ -76,12 +78,17 @@ impl HandoffConfig {
         );
         Self {
             default_profile: DEFAULT_PROFILE_NAME.to_string(),
+            default_output_dir: None,
             profiles,
         }
     }
 
     pub fn available_profile_names(&self) -> Vec<String> {
         self.profiles.keys().cloned().collect()
+    }
+
+    pub fn default_output_dir(&self) -> Option<&str> {
+        self.default_output_dir.as_deref()
     }
 
     pub fn resolve_selection(
@@ -141,12 +148,18 @@ impl HandoffConfig {
         args.profile = Some(resolved.selected_name.clone());
         args.max_parts = Some(resolved.max_parts);
         args.max_bytes_per_part = Some(resolved.max_bytes_per_part);
+        if args.out.is_none() && args.out_dir.is_none() {
+            args.out_dir = self.default_output_dir.clone();
+        }
         Ok((args, resolved))
     }
 
     fn apply_overrides(&mut self, overrides: HandoffConfigOverrides) {
         if let Some(name) = overrides.default_profile {
             self.default_profile = name;
+        }
+        if let Some(path) = overrides.default_output_dir {
+            self.default_output_dir = Some(path);
         }
 
         for (name, override_profile) in overrides.profiles {
@@ -238,6 +251,8 @@ fn parse_config_toml(s: &str) -> HandoffConfigOverrides {
             ["handoff"] => {
                 if key == "default_profile" || key == "profile" {
                     out.default_profile = Some(value);
+                } else if key == "output_dir" || key == "out_dir" {
+                    out.default_output_dir = Some(value);
                 }
             }
             ["handoff", "profiles", profile] | ["profiles", profile] => {
@@ -276,6 +291,7 @@ mod tests {
             r#"
 [handoff]
 default_profile = "team"
+output_dir = "artifacts/handoffs"
 
 [handoff.profiles."team"]
 max_parts = 8
@@ -288,6 +304,10 @@ max_bytes_per_part = 5678
         );
 
         assert_eq!(cfg.default_profile.as_deref(), Some("team"));
+        assert_eq!(
+            cfg.default_output_dir.as_deref(),
+            Some("artifacts/handoffs")
+        );
         assert_eq!(cfg.profiles.get("team").and_then(|p| p.max_parts), Some(8));
         assert_eq!(
             cfg.profiles

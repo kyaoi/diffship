@@ -105,7 +105,7 @@ Conventions:
 
 ## Output
 
-- **S-OUT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/handoff_config.rs` — Status: Implemented
 - **S-OUT-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
