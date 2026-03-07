@@ -323,6 +323,19 @@ This writes:
 - `.diffship/AI_GUIDE.md`
 - `.diffship/config.toml`
 
+To use project-specific init templates:
+
+```bash
+diffship init --template-dir ./templates/diffship
+```
+
+The directory may contain either or both of:
+
+- `PROJECT_KIT_TEMPLATE.md`
+- `AI_PROJECT_TEMPLATE.md`
+
+Missing files fall back to the repository templates and then to built-in defaults.
+
 ### 6.2 Full loop
 
 ```bash

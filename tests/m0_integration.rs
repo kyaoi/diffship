@@ -132,3 +132,32 @@ fn m0_lock_busy_returns_exit_10() {
 
     let _ = child.wait();
 }
+
+#[test]
+fn m0_init_can_use_custom_template_dir() {
+    let td = init_repo();
+    let root = td.path();
+    let templates = tempfile::tempdir().unwrap();
+    fs::write(
+        templates.path().join("PROJECT_KIT_TEMPLATE.md"),
+        "Custom project kit body\n",
+    )
+    .unwrap();
+    fs::write(
+        templates.path().join("AI_PROJECT_TEMPLATE.md"),
+        "Custom AI guide body\n",
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .args(["init", "--template-dir"])
+        .arg(templates.path())
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
+    let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
+    assert!(kit.contains("Custom project kit body"));
+    assert!(ai.contains("Custom AI guide body"));
+}

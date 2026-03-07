@@ -82,6 +82,7 @@ All commands below are implemented.
 - `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher + handoff screen)
 
 - `diffship init` — generate `.diffship/` project kit files, including an AI-facing guide
+  - optional: `--template-dir <dir>` to override `docs/PROJECT_KIT_TEMPLATE.md` and `docs/AI_PROJECT_TEMPLATE.md`
 - `diffship status` — show lock state and recent runs (`--json` available)
 - `diffship runs` — list recent runs (`--json` available)
 - `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)

@@ -284,6 +284,7 @@ Conventions:
 - **S-INIT-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-003** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-004** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-005** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

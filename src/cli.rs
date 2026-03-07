@@ -212,6 +212,10 @@ pub struct InitArgs {
     /// Overwrite existing files under .diffship/
     #[arg(long)]
     pub force: bool,
+
+    /// Directory containing PROJECT_KIT_TEMPLATE.md and/or AI_PROJECT_TEMPLATE.md overrides
+    #[arg(long)]
+    pub template_dir: Option<String>,
 }
 
 #[derive(Debug, Args)]
