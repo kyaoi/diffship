@@ -6,6 +6,8 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
+use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 fn init_repo() -> TempDir {
     let td = tempfile::tempdir().expect("tempdir");
@@ -55,6 +57,18 @@ fn copy_dir(src: &Path, dst: &Path) {
             fs::copy(&src_path, &dst_path).unwrap();
         }
     }
+}
+
+fn write_zip_bundle(path: &Path, entries: &[(&str, &[u8])]) {
+    let file = fs::File::create(path).unwrap();
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    for (name, bytes) in entries {
+        zip.start_file(*name, options).unwrap();
+        use std::io::Write as _;
+        zip.write_all(bytes).unwrap();
+    }
+    zip.finish().unwrap();
 }
 
 #[test]
@@ -273,4 +287,37 @@ fn compare_classifies_structure_differences_by_area() {
         .assert()
         .failure()
         .stderr(contains("[plan/only_in_a] plan.toml"));
+}
+
+#[test]
+fn compare_strict_uses_entry_bytes_not_raw_zip_container_bytes() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let root = td.path();
+
+    let zip_a = root.join("bundle_a.zip");
+    let zip_b = root.join("bundle_b.zip");
+
+    let handoff = b"# Start Here\n";
+    let patch = b"diff --git a/a.txt b/a.txt\n";
+
+    write_zip_bundle(
+        &zip_a,
+        &[("HANDOFF.md", handoff), ("parts/part_01.patch", patch)],
+    );
+    write_zip_bundle(
+        &zip_b,
+        &[("parts/part_01.patch", patch), ("HANDOFF.md", handoff)],
+    );
+
+    let raw_a = fs::read(&zip_a).unwrap();
+    let raw_b = fs::read(&zip_b).unwrap();
+    assert_ne!(raw_a, raw_b, "zip container bytes should differ");
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.args(["compare", "--strict"])
+        .arg(&zip_a)
+        .arg(&zip_b)
+        .assert()
+        .success()
+        .stdout(contains("diffship compare: equivalent"));
 }

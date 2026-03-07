@@ -156,9 +156,9 @@ diffship loop <patch-bundle.zip>
 
 ## Next（優先順）
 
-1) `compare --strict` の contract を「entry bytes」までで固定するか、raw zip container byte equality まで広げるかを判断し、仕様文言とテストを揃える
-2) named handoff profile の持ち回り UX（config stub / docs / replay 説明）を補強し、`plan.toml` が export するもの・しないものを明示する
-3) compare/TUI の追加 polish は v1.1 backlog として整理し、現行 v1 core の完了条件からは外す
+1) named handoff profile の持ち回り UX（config stub / docs / replay 説明）を補強し、`plan.toml` が export するもの・しないものを明示する
+2) compare/TUI の追加 polish は v1.1 backlog として整理し、現行 v1 core の完了条件からは外す
+3) raw zip container byte equality は必要性が出た場合のみ v1.1+ で再検討する
 
 ## メモ（詰まったらここに書く）
 

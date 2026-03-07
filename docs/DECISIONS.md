@@ -636,3 +636,19 @@ diffship OS の重要な意思決定ログです。
   - v1 core と future polish を混ぜると、README 上の完成度表現が過度に弱くなるため。
 - Implications:
   - README / IMPLEMENTATION_STATUS / PLAN.md では「handoff v1 core は実装済み、残件は future-extension」という表現に揃える。
+
+---
+
+## D-047: `compare --strict` は raw zip container ではなく extracted entry bytes を比較する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship compare --strict` は zip コンテナ全体の raw bytes ではなく、bundle 内 entry の raw bytes を正規化なしで比較する。
+  - zip entry order / archive metadata / container-level byte layout の差異だけでは strict diff としない。
+  - raw zip container byte equality が必要になった場合は、別契約として v1.1+ で再検討する。
+- Rationale:
+  - handoff determinism の主目的は bundle 内容の再現確認であり、zip コンテナ実装差や metadata 差でノイズを増やしたくないため。
+  - `docs/DETERMINISM.md` の方針とも整合し、directory bundle と zip bundle の比較も同じ mental model で説明できるため。
+- Implications:
+  - `docs/SPEC_V1.md` / `README.md` / `docs/IMPLEMENTATION_STATUS.md` では strict の説明を extracted-entry byte comparison に揃える。
+  - `tests/m6_compare.rs` に、container bytes は異なるが strict compare は等価とみなすケースを追加する。

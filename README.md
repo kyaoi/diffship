@@ -87,7 +87,7 @@ All commands below are implemented.
 - `diffship promote` — promote a verified run into a target branch
 - `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
 - `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
-- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict`, `--json`) and classify differences by area/kind
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` = extracted entry bytes without normalization, `--json`) and classify differences by area/kind
 - `diffship loop <bundle>` — apply → verify → promote
 
 ### Promotion / commit switches

@@ -56,8 +56,8 @@ For deterministic bundles, avoid embedding unstable metadata:
   - modification time (diffship uses a fixed zip timestamp for generated archives)
   - permissions (when possible)
 
-If strict zip determinism is difficult on all platforms, prefer golden tests that compare **extracted, normalized trees**
-rather than raw zip bytes.
+If strict zip determinism is difficult on all platforms, prefer tests/contracts that compare **extracted trees**
+or **extracted, normalized trees** rather than raw zip container bytes.
 
 ---
 
