@@ -309,3 +309,4 @@ Ops-specific codes:
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
 - **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files.
 - **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.
+- **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.

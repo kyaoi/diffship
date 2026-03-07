@@ -62,6 +62,7 @@ fn m0_init_status_runs_happy_path() {
     // Generated files
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
     assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
+    assert!(root.join(".diffship").join(".gitignore").exists());
     assert!(root.join(".diffship").join("config.toml").exists());
     let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
     assert!(kit.contains("# DiffshipOS Project Kit"));
@@ -76,6 +77,11 @@ fn m0_init_status_runs_happy_path() {
     assert!(ai.contains("Core contract: what the AI is expected to produce"));
     assert!(ai.contains("Core contract: meaning of files the user may provide"));
     assert!(ai.contains("Core contract: additional deliverables beyond file edits"));
+    let gitignore = fs::read_to_string(root.join(".diffship").join(".gitignore")).unwrap();
+    assert_eq!(
+        gitignore,
+        "artifacts/handoffs/\nruns/\nworktrees/\nsessions/\nlock\n"
+    );
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
     assert!(cfg.contains("Use this file in two layers"));
     assert!(cfg.contains("Customize this section: choose default verify behavior"));
@@ -85,7 +91,7 @@ fn m0_init_status_runs_happy_path() {
     ));
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
-    assert!(cfg.contains("output_dir = \"./artifacts/handoffs\""));
+    assert!(cfg.contains("output_dir = \"./.diffship/artifacts/handoffs\""));
 
     // status --json
     let out = diffship_cmd()
