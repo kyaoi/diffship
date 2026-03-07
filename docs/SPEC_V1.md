@@ -300,3 +300,4 @@ Ops-specific codes:
 - **S-INIT-001**: `diffship init` MUST create `.diffship/` if missing.
 - **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into .diffship/ for user attachment).
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
+- **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files.

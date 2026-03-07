@@ -78,7 +78,7 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | 内容 | Done条件 |
 |---|---|---|---|
-| M0-01 | done | `diffship init`（project kit生成） | `.diffship/` が生成され、既存があれば安全にスキップ/`--force`で上書き |
+| M0-01 | done | `diffship init`（project kit生成） | `.diffship/` が生成され、`.diffship/PROJECT_KIT.md` / `.diffship/AI_GUIDE.md` / `config.toml` を既存時は安全にスキップし、`--force`で上書きできる |
 | M0-02 | done | ロック（同時実行防止） | .diffship/lock が作られ、二重起動を拒否できる |
 | M0-03 | done | runsの保存（run-id/ログ） | `.diffship/runs/<run-id>/run.json` が作られ、少なくとも `init` の結果（`init.json`）が保存される（apply/verify は M2 で拡張） |
 | M0-04 | done | M0の統合テスト | 一時git repo上で `init`→`status`→`runs` が通る |

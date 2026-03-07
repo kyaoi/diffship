@@ -53,6 +53,7 @@ It creates files under `.diffship/` (generated):
 
 ```text
 .diffship/PROJECT_KIT.md
+.diffship/AI_GUIDE.md
 .diffship/config.toml
 ```
 
@@ -79,7 +80,7 @@ All commands below are implemented.
 - `diffship` — start the interactive TUI when running in a TTY (same as `diffship tui`)
 - `diffship tui` — start the interactive TUI (status/runs viewer + loop launcher + handoff screen)
 
-- `diffship init` — generate `.diffship/` project kit files
+- `diffship init` — generate `.diffship/` project kit files, including an AI-facing guide
 - `diffship status` — show lock state and recent runs (`--json` available)
 - `diffship runs` — list recent runs (`--json` available)
 - `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)

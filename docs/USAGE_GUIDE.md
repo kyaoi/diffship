@@ -319,6 +319,7 @@ diffship init
 This writes:
 
 - `.diffship/PROJECT_KIT.md`
+- `.diffship/AI_GUIDE.md`
 - `.diffship/config.toml`
 
 ### 6.2 Full loop
@@ -534,6 +535,7 @@ Important repository paths:
 - `docs/OPS_WORKFLOW.md`
 - `.diffship/config.toml`
 - `.diffship/PROJECT_KIT.md`
+- `.diffship/AI_GUIDE.md`
 - `.diffship/runs/<run-id>/`
 
 ---

@@ -61,7 +61,14 @@ fn m0_init_status_runs_happy_path() {
 
     // Generated files
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
+    assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
     assert!(root.join(".diffship").join("config.toml").exists());
+    let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
+    assert!(ai.contains("# DiffshipOS AI Guide"));
+    assert!(ai.contains("What diffship is"));
+    assert!(ai.contains("What the AI is expected to produce"));
+    assert!(ai.contains("Meaning of files the user may provide"));
+    assert!(ai.contains("Additional deliverables beyond file edits"));
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));

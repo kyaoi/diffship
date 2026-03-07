@@ -717,3 +717,16 @@ diffship OS の重要な意思決定ログです。
   - `src/handoff_config.rs` が `[handoff].output_dir` を解決し、`resolve_build_args` で `BuildArgs.out_dir` に反映する。
   - path 解決は `src/handoff.rs` に集約し、`[handoff].output_dir` / `--out-dir` / `--out` / `--plan` / `--plan-out` で `~/...` を `HOME` 基準に展開する。
   - init stub / config docs / handoff build tests を更新する。
+
+## D-052: `diffship init` は human guide と AI guide を分けて生成する
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship init` は `.diffship/PROJECT_KIT.md` に加えて `.diffship/AI_GUIDE.md` も生成する。
+  - `PROJECT_KIT.md` は人向けの運用ガイド、`AI_GUIDE.md` は AI が読むべき workflow / artifact contract / input file semantics / non-file deliverables を固定する。
+- Rationale:
+  - 人向けの説明と AI に守らせたい出力契約を一つの文書に混在させると、どちらにも不要なノイズが入るため。
+  - `diffship init` の目的である「AI が project-specific rules を外さずに作業する」を直接支えるため。
+- Implications:
+  - `docs/AI_PROJECT_TEMPLATE.md` を template source として持ち、`src/ops/init.rs` が `.diffship/AI_GUIDE.md` を出力する。
+  - init integration test と関連 docs を更新する。

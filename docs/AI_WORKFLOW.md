@@ -10,6 +10,11 @@ For the practical handoff flow from `diffship build` to "what to send AI / what 
 
 ## 0) Preconditions
 
+If the repository was initialized with `diffship init`, also provide the generated local guides when they are relevant:
+
+- `.diffship/PROJECT_KIT.md`
+- `.diffship/AI_GUIDE.md`
+
 * **The spec is the single source of truth**:
 
   * `docs/SPEC_V1.md`
