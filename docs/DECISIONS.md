@@ -621,3 +621,18 @@ diffship OS の重要な意思決定ログです。
   - 既存の hotkey ベース編集は入力対象と現在値が見えづらく、CLI parity 上も `--max-parts` / `--max-bytes-per-part` / `--plan-out` 相当が不足していたため。
 - Implications:
   - TUI の handoff screen は v1 core として十分な parity に近づくが、さらに細かい UX polish は future work に残す。
+
+---
+
+## D-046: compare/TUI の追加 polish は v1 blocker ではなく v1.1 backlog として扱う
+
+- Date: 2026-03-07
+- Decision:
+  - `compare` の補助的な表示改善や TUI handoff screen の細かな操作改善は、現行 v1 contract の blocker としては扱わない。
+  - v1 の完了条件は、CLI/TUI parity・plan export/replay・preview/compare・deterministic handoff build が揃っていることとする。
+  - 追加 polish は `PLAN.md` の Next / backlog で管理し、必要になったものだけを v1.1 以降で拾う。
+- Rationale:
+  - 現時点の handoff/ops 導線は README / SPEC / TRACEABILITY の契約を満たしており、残件は usability の改善が中心だから。
+  - v1 core と future polish を混ぜると、README 上の完成度表現が過度に弱くなるため。
+- Implications:
+  - README / IMPLEMENTATION_STATUS / PLAN.md では「handoff v1 core は実装済み、残件は future-extension」という表現に揃える。

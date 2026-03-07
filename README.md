@@ -9,7 +9,7 @@ It focuses on the *ops* side of an AI workflow:
 - **promote** the result back to your target branch (or skip promotion)
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
-> Note: The *handoff* (diff → AI bundle) workflow is **partially implemented**.
+> Note: The *handoff* (diff → AI bundle) workflow is **implemented for the current v1 core**.
 > `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
 > `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks, and `compare` now classifies diffs by area/kind.
@@ -18,7 +18,7 @@ It focuses on the *ops* side of an AI workflow:
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
 > `diffship build --plan-out <path>` and `diffship build --plan <path>` are implemented, and the TUI can export a replayable handoff plan.
-> Remaining handoff work is mainly future-extension territory (for example compare/TUI UX polish), not the current v1 handoff core.
+> Remaining handoff work is mainly future-extension territory (for example compare/TUI UX polish), not the current v1 handoff core. These are tracked as v1.1+ polish items rather than blockers for the current contract.
 > Handoff output ordering and generated zip metadata are normalized so golden tests can compare stable bundle trees / zip bytes.
 > The ops-focused TUI v0 is available: run `diffship` (in a TTY) or `diffship tui`.
 > See `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` for the contract and status.
