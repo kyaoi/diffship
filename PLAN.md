@@ -169,3 +169,4 @@ diffship loop <patch-bundle.zip>
 - In traceability, `Partial` should only be used when `TBD` remains on either the Tests or Code side.
 - Reserved handoff exit codes should keep `#[allow(dead_code)]` until they are actually used.
 - The M6-06 golden normalizer must preserve UTF-8. Hash placeholder replacement should operate on character boundaries, not raw bytes.
+- 2026-03-07: init-generated guides and the patch-bundle contract now document clean-tree preflight, incoming bundle placement (outside the repo or under `.diffship/`), exact `base_commit`, valid `apply_mode` values, and validator-refused patch metadata.

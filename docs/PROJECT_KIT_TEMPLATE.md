@@ -39,9 +39,16 @@ Typical loop:
 5. Run local verification.
 6. Promote only after verification passes.
 
+Before running `diffship loop`, do this preflight:
+
+- keep the repository working tree clean (`git status --short` should not show unrelated files)
+- store incoming patch bundle zips **outside the repo** or under `.diffship/` so the zip itself does not make the working tree dirty
+- if you want an ops-compatible patch bundle, provide the current target repo HEAD SHA (`git rev-parse HEAD`) to the AI up front
+
 Minimal commands:
 
 ```bash
+git rev-parse HEAD
 diffship build
 diffship loop path/to/patch-bundle.zip
 ```
@@ -125,11 +132,15 @@ patchship_YYYY-MM-DD_HHMM/
 
 Key rules:
 
-- `manifest.yaml` must include the correct `base_commit`
+- `manifest.yaml` must include the exact current `base_commit` for the target repo; never leave placeholders such as `REPLACE_WITH_REPO_HEAD`
+- `apply_mode` must be exactly `git-apply` or `git-am`
+- if the exact `base_commit` is unavailable, ask for it or return a unified diff / file edits / review notes instead of an ops-compatible patch bundle
 - paths must be repo-relative only
 - do not touch `.git/` or `.diffship/`
 - do not include secrets
 - keep file ordering and output deterministic
+- patches must not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
+- do not use `tasks/USER_TASKS.md` to ask the user to repair an otherwise invalid patch bundle; tasks are for real user-owned follow-up work only
 
 If manual user work is required, the AI should use `tasks/USER_TASKS.md` and `tasks/ENV_TEMPLATE.env`.
 
@@ -236,6 +247,8 @@ Expected shape for `tasks/USER_TASKS.md`:
 - [ ] Re-run `diffship verify --profile standard`
 ```
 
+Do not use manual tasks to patch over missing manifest fields or other bundle-contract violations.
+
 ---
 
 ## 11. Customize this section: ready-to-run workflows
@@ -252,9 +265,12 @@ Suggested examples:
 Example:
 
 ```bash
+git rev-parse HEAD
 diffship build --include 'src/*.rs' --include 'docs/*.md'
 diffship preview ./.diffship/handoffs/diffship_2026-03-07_1118
-diffship loop ./incoming/patchship_fix.zip
+diffship loop ~/.cache/diffship/patchship_fix.zip
+# or keep incoming bundles under .diffship/ if you want them inside the repo
+diffship loop ./.diffship/incoming/patchship_fix.zip
 diffship runs --json
 diffship pack-fix --run-id <run-id>
 ```
@@ -268,6 +284,7 @@ When asking an AI assistant for help, include only the files that matter:
 - the handoff bundle or patch bundle
 - the relevant spec / contract docs
 - the generated local guides under `.diffship/` when they add repository context
+- the current target repo HEAD SHA when you want an ops-compatible patch bundle
 - any specific failure logs or run IDs the AI needs
 
 Avoid sending:

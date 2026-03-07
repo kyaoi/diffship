@@ -30,6 +30,8 @@ Non-negotiable expectations:
 - produce outputs that diffship can verify or apply safely
 - update docs, tests, and traceability together when behavior changes
 - never assume diffship will run arbitrary commands that came from AI output
+- never emit placeholder manifest values in an ops-compatible patch bundle
+- if required metadata is unavailable, fall back to unified diffs / file edits / review notes instead of inventing fields
 
 ---
 
@@ -148,7 +150,7 @@ When the user asks for code changes, produce the smallest complete change that m
 - relevant docs/spec/traceability updates
 - a clear commit message proposal
 
-If the environment supports diffship patch bundles, prefer returning an ops-compatible patch bundle.
+If the environment supports diffship patch bundles **and** you know the exact target `base_commit` **and** the requested change can be represented within the patch restrictions below, prefer returning an ops-compatible patch bundle.
 Otherwise return unified diffs or file-by-file edits.
 
 ### 6.3 Required output shape for ops-compatible patch bundles
@@ -173,9 +175,14 @@ patchship_YYYY-MM-DD_HHMM/
 Required contract details:
 
 - `manifest.yaml` must include `protocol_version`, `task_id`, `base_commit`, `apply_mode`, and `touched_files`
+- `apply_mode` must be exactly `git-apply` or `git-am`; never use `patch`
+- `base_commit` must be the real target repo SHA supplied by the user or otherwise known from the environment; never use placeholders such as `REPLACE_WITH_REPO_HEAD`
+- if the exact `base_commit` is not known, do **not** fabricate it and do **not** emit an ops-compatible patch bundle
 - patch files must be repo-relative and deterministic
 - do not touch `.git/` or `.diffship/`
 - do not include secrets
+- do not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
+- if the requested change would require refused metadata in this environment, return unified diffs / file edits / review notes instead of an invalid patch bundle
 
 ---
 
@@ -192,11 +199,13 @@ Required contract details:
 
 ### 7.2 Ops-side files
 
-- `manifest.yaml`: patch bundle metadata and apply contract
+- `manifest.yaml`: patch bundle metadata and apply contract; this must already be valid when delivered
 - `changes/*.patch`: the patch payload to apply
 - `commit_message.txt`: commit text diffship may use during promotion
 - `tasks/USER_TASKS.md`: manual work required from the user
 - `tasks/ENV_TEMPLATE.env`: environment variable template with placeholders only
+
+Do not use `tasks/USER_TASKS.md` to ask the user to repair an invalid manifest or change `apply_mode`. If the bundle cannot be made valid, return a non-ops format instead.
 
 ### 7.3 Project guidance files
 
@@ -241,6 +250,7 @@ Depending on the task, the AI may also need to provide:
 - a short verification checklist or commands to run
 - explicit warnings about follow-up user tasks
 - notes on whether docs/spec/traceability must be updated
+- an explicit statement when the response is **not** ops-compatible and must not be fed to `diffship loop` as-is
 
 When commit text is needed for ops flow, put it in `commit_message.txt`.
 When manual user action is required, document it in `tasks/USER_TASKS.md`.
@@ -262,7 +272,11 @@ Example:
 
 ```text
 Read `docs/SPEC_V1.md`, `docs/DECISIONS.md`, and `tests/m6_handoff_build.rs` first.
-Then implement the requested handoff change with the smallest possible diff.
+The current target repo HEAD is `<paste git rev-parse HEAD here>`.
+Implement the requested change with the smallest possible diff.
+Only return an ops-compatible patch bundle if you can use that exact SHA in `manifest.yaml`
+and can satisfy the diffship patch-bundle restrictions.
+Otherwise return unified diffs or file-by-file edits.
 Update docs and traceability in the same change.
 Finish only when `just ci` would be expected to pass.
 ```
@@ -276,3 +290,5 @@ Finish only when `just ci` would be expected to pass.
 3. Update tests and docs together when behavior changes.
 4. Prefer deterministic output ordering and stable file contents.
 5. Never embed secrets or ask diffship to run arbitrary AI-provided commands.
+6. Never ask the user to fix placeholder values inside a supposedly ops-compatible bundle.
+7. If the user will run `diffship loop`, remind them to keep the repo clean and store incoming zips outside the repo or under `.diffship/`.
