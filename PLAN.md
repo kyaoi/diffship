@@ -1,176 +1,171 @@
 # PLAN (diffship OS)
 
-このファイルは、diffship を『AIを用いた開発OS』として育てるための進捗管理の唯一の正です。
-チャットを切り替えても復帰できるように、**現在地・次にやること・完了条件**をここに集約します。
+This file is the single source of truth for progress tracking as diffship evolves into an AI-assisted development OS.
+It collects the current state, the next tasks, and the completion criteria so work can resume cleanly across chats.
 
-## 関連ドキュメント
+## Related Documents
 
-- 仕様: `docs/SPEC_V1.md`
-- Patch bundle 契約: `docs/PATCH_BUNDLE_FORMAT.md`
-- Project kit テンプレ: `docs/PROJECT_KIT_TEMPLATE.md`
-- 設定: `docs/CONFIG.md`
-- トレーサビリティ: `docs/TRACEABILITY.md`
-- 意思決定ログ: `docs/DECISIONS.md`
+- Spec: `docs/SPEC_V1.md`
+- Patch bundle contract: `docs/PATCH_BUNDLE_FORMAT.md`
+- Project kit template: `docs/PROJECT_KIT_TEMPLATE.md`
+- Config: `docs/CONFIG.md`
+- Traceability: `docs/TRACEABILITY.md`
+- Decision log: `docs/DECISIONS.md`
 
 ---
 
-## ゴール
+## Goals
 
-ユーザーが基本的に何も気にせず、
+The target state is that a user can run the following loop without needing to think about the internals:
 
 ```bash
-# 1) handoff（diff → AI bundle）
+# 1) handoff (diff -> AI bundle)
 diffship build [options...]
 
-# 2) ops（AI patch bundle → apply/verify/promote）
+# 2) ops (AI patch bundle -> apply/verify/promote)
 diffship loop <patch-bundle.zip>
 ```
 
-を回せる状態を作る。
+### Required outcomes on the ops side
+- Keep the user's working tree clean via worktree/session/sandbox isolation.
+- Run verify profiles (`fast`, `standard`, `full`).
+- Perform promotion automatically on success.
+- Stop with explicit warnings when secrets or required user actions are involved.
 
-### 成立させたいこと（Ops 側）
-- **作業ツリーを汚さず**（worktree / session / sandbox）
-- **verify を回し**（fast/standard/full）
-- 成功したら **自動で promotion（commit）**
-- 危険（secrets / 要ユーザー作業）なら **必ず止まって警告**
-
-### 成立させたいこと（Handoff 側）
-- Git の差分（committed/staged/unstaged/untracked）を **アップロード制限に合わせて分割**し、
-  **AI が読める入口（HANDOFF.md）**付きの bundle にする
-- `.diffshipignore` / secrets warning を尊重し、**危険/巨大/バイナリ**は除外 or attachments として扱う
-- 同じ入力から **同じ bundle tree / zip bytes** を得られるようにする
+### Required outcomes on the handoff side
+- Split Git diffs (committed/staged/unstaged/untracked) according to upload constraints and produce a bundle with an AI-readable entrypoint (`HANDOFF.md`).
+- Respect `.diffshipignore` and secret warnings, and handle risky/large/binary files via exclusion or attachments.
+- Produce the same bundle tree / zip bytes from the same inputs.
 
 ---
 
-## 公式デフォルト（V1）
+## Official Defaults (V1)
 
 - OS mode: isolated worktrees (session + sandbox)
 - Promotion: `commit`
 - Commit policy: `auto`
 - Verify profile: `standard`
-- Safety: clean-tree必須 / base_commit一致必須 / path guard 有効 / lock 有効
+- Safety: require a clean tree, require base commit match, enable path guards, enable locking
 
 ---
 
-## 運用ルール（保険）
+## Working Rules
 
-- 進捗更新は必ずこの `PLAN.md` を更新する
-- 重要な意思決定（デフォルト変更・安全ポリシー変更）は `docs/DECISIONS.md` に追記
-- 仕様変更を入れたら、同一コミットで `docs/SPEC_V1.md` と `docs/TRACEABILITY.md` も更新する
-- 変更後は必ず通す:
+- Always update this `PLAN.md` when progress changes.
+- Record important decisions (default changes, safety policy changes) in `docs/DECISIONS.md`.
+- If behavior changes, update `docs/SPEC_V1.md` and `docs/TRACEABILITY.md` in the same commit.
+- After changes, always run:
   - `just docs-check`
   - `just trace-check`
 
 ---
 
-## Status 定義
+## Status Definitions
 
-- `todo`: 未着手
-- `doing`: 着手中
-- `blocked`: 障害あり（理由を書く）
-- `done`: 完了
+- `todo`: not started
+- `doing`: in progress
+- `blocked`: blocked (record the reason)
+- `done`: complete
 
 ---
 
 ## Milestones
 
-### M0: OSの背骨（init / lock / runs）
+### M0: OS spine (`init` / lock / runs)
 
-| ID | Status | 内容 | Done条件 |
+| ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M0-01 | done | `diffship init`（project kit生成） | `.diffship/` が生成され、`.diffship/PROJECT_KIT.md` / `.diffship/AI_GUIDE.md` / `config.toml` を既存時は安全にスキップし、`--force`で上書きできる |
-| M0-02 | done | ロック（同時実行防止） | .diffship/lock が作られ、二重起動を拒否できる |
-| M0-03 | done | runsの保存（run-id/ログ） | `.diffship/runs/<run-id>/run.json` が作られ、少なくとも `init` の結果（`init.json`）が保存される（apply/verify は M2 で拡張） |
-| M0-04 | done | M0の統合テスト | 一時git repo上で `init`→`status`→`runs` が通る |
+| M0-01 | done | `diffship init` (project kit generation) | Creates `.diffship/`, safely skips existing `.diffship/PROJECT_KIT.md` / `.diffship/AI_GUIDE.md` / `config.toml`, and overwrites them with `--force` |
+| M0-02 | done | Locking (prevent concurrent execution) | Creates `.diffship/lock` and refuses concurrent execution |
+| M0-03 | done | Run persistence (run-id / logs) | Creates `.diffship/runs/<run-id>/run.json` and stores at least the `init` result (`init.json`); apply/verify extend this in M2 |
+| M0-04 | done | M0 integration tests | `init` -> `status` -> `runs` succeeds on a temporary Git repo |
 
-### M1: worktree/session/sandbox（作業ツリーを汚さない核）
+### M1: worktree / session / sandbox (keep the main tree clean)
 
-| ID | Status | 内容 | Done条件 |
+| ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M1-01 | done | session 作成/再利用 | .diffship/worktrees/ 配下の session を安定して再利用できる |
-| M1-02 | done | sandbox 作成（runごと） | runs（run-id）と対応する sandbox を作れる |
-| M1-03 | done | クリーンアップ方針 | 失敗/中断時でも破綻せず `status` で復旧できる |
+| M1-01 | done | Session creation / reuse | Reliably reuses session worktrees under `.diffship/worktrees/` |
+| M1-02 | done | Sandbox creation (per run) | Creates a sandbox associated with each run-id |
+| M1-03 | done | Cleanup policy | Remains recoverable on failure/interruption and can be diagnosed via `status` |
 
-### M2: apply → verify → promotion（commit）
+### M2: apply -> verify -> promotion (commit)
 
-| ID | Status | 内容 | Done条件 |
+| ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M2-01 | done | patch bundle 検証（構造/manifest/path） | 不正bundleを確実に拒否できる |
-| M2-02 | done | `apply`（sandboxで） | apply成功/失敗がrunに記録され、失敗時はrollbackされる |
-| M2-03 | done | `verify`（standard） | profileでチェックが走り、summaryがrunに保存される |
-| M2-04 | done | promotion=commit | verify成功時に commit が作られる（messageはbundle由来） |
-| M2-05 | done | `loop`（M2結合） | `diffship loop` で成功→commit まで完走 |
-| M2-06 | done | pack-fix（verify失敗時） | `loop` で verify失敗したら自動で reprompt zip を作る |
+| M2-01 | done | Patch bundle validation (structure / manifest / path) | Reliably rejects invalid bundles |
+| M2-02 | done | `apply` (in sandbox) | Records apply success/failure under the run and rolls back on failure |
+| M2-03 | done | `verify` (`standard`) | Runs profile checks and stores summaries under the run |
+| M2-04 | done | `promotion=commit` | Creates a commit on verify success (message derived from the bundle) |
+| M2-05 | done | `loop` (M2 integration) | `diffship loop` completes from success to commit |
+| M2-06 | done | `pack-fix` (on verify failure) | `loop` automatically creates a reprompt zip when verify fails |
 
-### M3: secrets / tasks（止めるべき時に止まる）
+### M3: secrets / tasks (stop when it must stop)
 
-| ID | Status | 内容 | Done条件 |
+| ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M3-01 | done | secrets 検知 → promotion停止 | 危険検知時に必ず止まり、明示ackがないと promoteできない |
-| M3-02 | done | tasks 同梱契約 | bundleの tasks/USER_TASKS.md が run に残り、ユーザーが実行すべき作業が見える |
+| M3-01 | done | Secret detection -> stop promotion | Promotion always stops on risky findings unless explicitly acknowledged |
+| M3-02 | done | Tasks bundle contract | `tasks/USER_TASKS.md` remains in the run and shows the user-required actions |
 
-### M4: 設定（グローバル/プロジェクト/CLI/bundle）
+### M4: configuration (global / project / CLI / bundle)
 
-| ID | Status | 内容 | Done条件 |
+| ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M4-01 | done | 設定ロード優先順位 | CLI > manifest > project > global > default の順で確定する |
-| M4-02 | done | commit/promotion切替 | `--promotion` / `--commit-policy` で挙動を切り替えられる（`none` / `working-tree` / `commit` を個別動作で確認済み） |
+| M4-01 | done | Config load precedence | Resolves settings in the order CLI > manifest > project > global > default |
+| M4-02 | done | Promotion / commit-policy switching | Supports `--promotion` / `--commit-policy` and verifies `none` / `working-tree` / `commit` behavior separately |
+
+### M5: TUI (visibility + execution support)
+
+| ID | Status | Description | Done Criteria |
+|---|---|---|---|
+| M5-01 | done | TUI skeleton (start / exit / navigation) | `diffship` with no args starts the TUI, `q` / `Esc` exits safely, and non-TTY still shows help |
+| M5-02 | done | Read-only status / runs viewer | Shows `status` / `runs` information, run details, apply/verify/promotion state, and errors / exit codes |
+| M5-03 | done | Run artifact navigation (paths / tasks) | Surfaces run-dir and `tasks/USER_TASKS.md` paths clearly enough to copy/reference them |
+| M5-04 | done | Launch `loop` from the TUI | Lets the user choose a bundle, start `loop`, and see progress / result / stop reason |
+| M5-05 | done | CLI parity / tests (CI green) | Keeps the TUI as a thin CLI wrapper, adds smoke tests, and passes `clippy -D warnings` and `just ci` |
+
+### M6: Handoff (diff -> AI bundle)
+
+| ID | Status | Description | Done Criteria |
+|---|---|---|---|
+| M6-01 | done | `diffship build` (handoff bundle generation) | Supports `diffship build --help`, produces a minimal bundle, and matches `docs/BUNDLE_FORMAT.md` |
+| M6-02 | done | Diff collection (committed / staged / unstaged / untracked) | Lets the user select segments and records each segment base in `HANDOFF.md` |
+| M6-03 | done | Splitting (profiles) + excluded / attachments | Implements split / attachments / excluded and stops with `EXIT_PACKING_LIMITS` when `--max-parts` / `--max-bytes-per-part` are exceeded |
+| M6-04 | done | `HANDOFF.md` generation (entrypoint) | Generates TL;DR / change map / parts index using `docs/HANDOFF_TEMPLATE.md` |
+| M6-05 | done | Ignore + secrets warning (handoff side) | Respects `.diffshipignore`, reports secret-like content without leaking values, and can fail when needed |
+| M6-06 | done | Determinism + tests | Produces deterministic ordering / splitting, ships golden tests, and passes `just ci` |
 
 ---
 
-### M5: TUI（操作の見える化 + 実行支援）
+## Inventory Notes (2026-03-07)
 
-| ID | Status | 内容 | Done条件 |
-|---|---|---|---|
-| M5-01 | done | TUI骨格（起動/終了/画面遷移） | `diffship`（引数なし）でTUIが起動し、q/ESCで安全に終了できる。非TTYでは従来通りヘルプを出す。 |
-| M5-02 | done | Read-only: status/runs ビューア | `status`/`runs` 相当の情報を一覧でき、run詳細（apply/verify/promotion）とエラー/exit code が確認できる。 |
-| M5-03 | done | Runアーティファクト導線（paths/tasks） | run dir / tasks/USER_TASKS.md などのパスを画面上で明示し、コピー/参照しやすい導線を用意する（最低限: 表示）。 |
-| M5-04 | done | Action: TUIから `loop` を実行 | TUIから bundle を指定して `loop` を起動でき、進捗/結果（成功/失敗/停止理由）を表示できる（実処理は既存opsを呼ぶ）。 |
-| M5-05 | done | CLI parity / テスト（CI green） | TUIはCLIの薄いラッパに徹し、主要操作の結果がCLIと一致する。最低限の起動/遷移/表示テストを追加し、`clippy -D warnings` と `just ci` が通る。 |
+- The ops core (`init` / `status` / `runs` / `apply` / `verify` / `promote` / `loop`, secrets/tasks/ack, config precedence) is operational.
+- `pack-fix` is implemented with dedicated integration coverage.
+- handoff covers build + source collection + split-by + packing fallback + `HANDOFF.md` generation + attachments/excluded/secrets + determinism.
+- Packing fallback already implements context reduction (`U3 -> U1 -> U0`).
+- Handoff `preview` / `compare` are implemented.
+- Explicit handoff path filters (`--include` / `--exclude`) are implemented and editable from the TUI handoff screen.
+- Handoff plan export / replay (`--plan-out` / `--plan`) is implemented and exportable from the TUI.
+- Named handoff packing profiles (built-in `20x512` / `10x100` plus config default/custom profiles) are implemented.
+- Verify supports custom command profiles via `[verify.profiles.*]`.
+- The TUI includes a handoff screen (range / sources / filters / split / preview / build + equivalent CLI command) with plan export and improved input UX (edit buffer/help, plan path/max limits, Tab navigation).
 
-### M6: Handoff（diff → AI bundle）
+## Next (priority order)
 
-| ID | Status | 内容 | Done条件 |
-|---|---|---|---|
-| M6-01 | done | `diffship build`（handoff bundle生成） | `diffship build --help` があり、最小指定で bundle を生成できる。出力レイアウトが `docs/BUNDLE_FORMAT.md` に一致する。 |
-| M6-02 | done | diff収集（committed/staged/unstaged/untracked） | segments を選択でき、各segmentの基準（committed range / HEAD 等）を `HANDOFF.md` に記録できる。 |
-| M6-03 | done | 分割（profiles）+ excluded/attachments | split/attachments/excluded は実装済み。`--max-parts` / `--max-bytes-per-part` 超過時は `EXIT_PACKING_LIMITS` で停止できる。 |
-| M6-04 | done | `HANDOFF.md` 生成（入口） | `docs/HANDOFF_TEMPLATE.md` の構造に沿って TL;DR / change map / parts index を生成できる。 |
-| M6-05 | done | ignore + secrets warning（handoff側） | `.diffshipignore` を尊重し、secrets らしき内容は値を出さずに警告できる（必要なら fail も可能）。 |
-| M6-06 | done | determinism + テスト | 出力の順序/分割が決定的で、goldenテストを用意し `just ci` が通る。 |
+1. Treat additional compare/TUI polish as a v1.1 backlog item rather than a v1 core blocker.
+2. Revisit raw zip-container byte equality only if a concrete need appears in v1.1+.
+3. Revisit a dedicated profile import/export command only if the current config/plan UX proves insufficient in v1.1+.
 
----
+## Notes
 
-## 棚卸しメモ（2026-03-07）
-
-- ops コア（init/status/runs/apply/verify/promote/loop, secrets/tasks/ack, config precedence）は実用状態。
-- `pack-fix` は専用統合テスト込みで実装済み。
-- handoff は build + source収集 + split-by + packing fallback + HANDOFF生成 + attachments/excluded/secrets + determinism まで実装済み。
-- packing fallback は context reduction（`U3 -> U1 -> U0`）まで実装済み。
-- handoff の `preview` / `compare` は実装済み。
-- handoff の explicit path filter（`--include` / `--exclude`）は実装済み。TUI handoff screen からも編集できる。
-- handoff plan export / replay（`--plan-out` / `--plan`）は実装済み。TUI からも export できる。
-- handoff の named packing profile（built-in `20x512` / `10x100` + config default/custom）は実装済み。
-- verify は `[verify.profiles.*]` の custom command profile を実装済み。
-- TUI には handoff screen（range/sources/filters/split/preview/build + equivalent CLI command 表示）が入り、plan export と input UX 改良（edit buffer/help, plan path/max limits, Tab navigation）まで実装済み。
-
-## Next（優先順）
-
-1) compare/TUI の追加 polish は v1.1 backlog として整理し、現行 v1 core の完了条件からは外す
-2) raw zip container byte equality は必要性が出た場合のみ v1.1+ で再検討する
-3) dedicated な profile import/export command は、config/plan ベースの現行 UX で不足が出た場合のみ v1.1+ で再検討する
-
-## メモ（詰まったらここに書く）
-
-- blocked理由、調査ログ、設計メモなど
-- 2026-03-07: default handoff output naming is now local-time based and auto-suffixes collisions for omitted `--out`.
+- Add blockers, investigation logs, and design notes here when needed.
+- 2026-03-07: default handoff output naming now uses local time and auto-suffixes collisions when `--out` is omitted.
 - 2026-03-07: `--out-dir` can redirect the generated handoff bundle under a custom parent directory without replacing the auto-generated bundle name.
 - 2026-03-07: `[handoff].output_dir` can set the default parent directory for auto-generated handoff bundles.
 - 2026-03-07: leading `~/` is accepted for handoff output and plan paths; tilde-user shorthand remains unsupported.
-- 2026-03-07: `[ops.post_apply]` can run local sandbox commands immediately after apply succeeds; failures stop `apply` / `loop` before promotion.
+- 2026-03-07: `ops.post_apply` can run local sandbox commands immediately after apply succeeds; failures stop `apply` / `loop` before promotion.
 - 2026-03-07: leading `~/` is now accepted across filesystem path arguments (`build` / `preview` / `compare` / `apply` / `pack-fix`); tilde-user shorthand remains unsupported.
-- Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
-  - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。
-- Traceability の `Partial` は Tests/Code のどちらかに `TBD` が残る場合だけ使う。
-- 予約だけ先に入れる handoff exit code には `#[allow(dead_code)]` を付ける。
-- M6-06 golden normalizer は UTF-8 を壊さないこと。hash placeholder 置換は byte 直書きではなく char 境界で進める。
+- Extracting a zip overlay can restore old mtimes, which may cause Cargo to skip rebuilds.
+  - If a subcommand appears missing or similarly stale, try `cargo clean` and then `just ci`.
+- In traceability, `Partial` should only be used when `TBD` remains on either the Tests or Code side.
+- Reserved handoff exit codes should keep `#[allow(dead_code)]` until they are actually used.
+- The M6-06 golden normalizer must preserve UTF-8. Hash placeholder replacement should operate on character boundaries, not raw bytes.

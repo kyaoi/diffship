@@ -1,760 +1,751 @@
 # Decisions (diffship OS)
 
-diffship OS の重要な意思決定ログです。
-チャットを切り替えても『何を決めたか』を失わないために、**結論だけを短く**残します。
+This file records the key decisions for diffship OS.
+It keeps concise conclusions so the rationale survives chat switches and work can resume without re-deriving prior choices.
 
 ---
 
-## D-001: OSとして最強に寄せる（worktree/session/sandbox）
+## D-001: Optimize for OS mode (worktree / session / sandbox)
 
 - Date: 2026-03-01
 - Decision:
-  - ops は isolated worktrees（session + sandbox）で実行し、ユーザーの作業ツリーを汚さない
+  - Run ops in isolated worktrees (session + sandbox) so the user's main working tree stays clean.
 - Rationale:
-  - “apply を繰り返すだけ”の運用を成立させるため
+  - The core operating model is repeated apply/verify loops without polluting the main checkout.
 - Implications:
-  - worktree 管理・クリーンアップ・ロックが必須
+  - Worktree management, cleanup, and locking are mandatory.
 
 ---
 
-## D-002: 公式デフォルト（V1）
+## D-002: Official defaults (V1)
 
 - Date: 2026-03-01
 - Defaults:
   - Promotion: `commit`
   - Commit policy: `auto`
   - Verify profile: `standard`
-  - Safety: clean-tree必須 / base_commit一致必須 / path guard / lock
+  - Safety: require a clean tree, require base commit match, enable path guards, enable locking
 
 ---
 
-## D-003: git-apply / git-am と commit を分離
+## D-003: Separate patch format from commit behavior
 
 - Date: 2026-03-01
 - Decision:
-  - apply_mode（パッチ形式）と commit_policy（コミット方針）を分離して両対応する
+  - Treat `apply_mode` (patch transport) and `commit_policy` (commit behavior) as separate axes.
 - Notes:
-  - `commit_policy=auto` の場合、`apply_mode=git-apply` でも `git commit -F` でコミット可能
+  - With `commit_policy=auto`, `apply_mode=git-apply` can still commit via `git commit -F`.
 
 ---
 
-## D-004: secrets / 要ユーザー作業は勝手に進めない
+## D-004: Do not proceed automatically on secrets or required user work
 
 - Date: 2026-03-01
 - Decision:
-  - secrets らしきものを検知したら promotion を停止し、ユーザーの明示 ack が必要
-  - ユーザーがやるべき作業は bundle の tasks/USER_TASKS.md に同梱する
+  - Stop promotion when secrets-like content is detected unless the user explicitly acknowledges it.
+  - Package required user work in `tasks/USER_TASKS.md`.
 
 ---
 
-## D-005: worktree レイアウトと復旧戦略（status で復帰可能）
+## D-005: Worktree layout and recovery strategy (`status` must recover state)
 
 - Date: 2026-03-01
 - Decision:
-  - worktree は `.diffship/worktrees/` 配下に集約する
-    - session worktree: `.diffship/worktrees/sessions/<session>/`
-    - sandbox worktree: `.diffship/worktrees/sandboxes/<run-id>/`
-  - session state は以下を組み合わせて保持する
-    - git ref: `refs/diffship/sessions/<session>`
-    - state json: `.diffship/sessions/<session>.json`
-  - run と sandbox の紐付けは run dir に保存する
-    - `.diffship/runs/<run-id>/sandbox.json`
+  - Store worktrees under `.diffship/worktrees/`.
+  - Session worktrees live under `.diffship/worktrees/sessions/<session>/`.
+  - Sandbox worktrees live under `.diffship/worktrees/sandboxes/<run-id>/`.
+  - Session state is tracked via both `refs/diffship/sessions/<session>` and `.diffship/sessions/<session>.json`.
+  - Store the run/sandbox linkage in `.diffship/runs/<run-id>/sandbox.json`.
 - Recovery:
-  - `diffship status` は sessions と sandboxes を列挙し、
-    - 中断時に「どの run の sandbox が残っているか」を確認できる
-    - 必要に応じて `git worktree remove --force <path>` で復旧/掃除できる
-  - sandbox 削除は best-effort（成功/失敗どちらでも落ちない）を基本とし、
-    - 取りこぼしは `status` で可視化して回収する
+  - `diffship status` must show sessions and sandboxes so users can see which run a leftover sandbox belongs to.
+  - Recovery may use `git worktree remove --force <path>` when needed.
+  - Sandbox cleanup is best-effort; leftovers are surfaced via `status`.
 
 ---
 
-## D-006: verify profile のデフォルト（M2）
+## D-006: Default verify profile behavior (M2)
 
 - Date: 2026-03-01
 - Decision:
-  - `verify` は「ローカルで定義されたコマンド」を実行する（bundle内のコマンドは実行しない）
-  - M4（設定ロード）実装前の暫定として、以下のヒューリスティクスをデフォルトにする
-    1) `justfile` があり `just` が利用可能 → profile に応じた `just ...` を実行
-    2) `Cargo.toml` がある → profile に応じた `cargo ...` を実行
-    3) それ以外 → `git diff --check` のみ実行
+  - `verify` only runs locally defined commands, never bundle-provided commands.
+  - Before full config loading landed, the fallback order was:
+    1. `justfile` + available `just` -> run `just ...` according to profile
+    2. `Cargo.toml` present -> run `cargo ...` according to profile
+    3. otherwise -> run `git diff --check`
 - Rationale:
-  - diffship 自身（このリポジトリ）では `just` を品質ゲートとして使う
-  - 一方で、任意の Git repo でも `verify` 自体は破綻しないようにする
+  - diffship itself uses `just` as its quality gate.
+  - Generic repositories still need a sane verify fallback.
 
 ---
 
-## D-007: promotion=commit の実装方針（M2-04）
+## D-007: `promotion=commit` implementation strategy (M2-04)
 
 - Date: 2026-03-01
 - Decision:
-  - promotion は sandbox の結果を **target branch に cherry-pick** して反映する
-  - `apply_mode=git-apply` の場合は sandbox 上で `git commit -F` により **1コミット**を作ってから cherry-pick する
-  - promotion の安全条件として、**target branch の HEAD が sandbox の base_commit と一致**しない場合は拒否する
+  - Reflect sandbox results by cherry-picking into the target branch.
+  - For `apply_mode=git-apply`, create one sandbox commit via `git commit -F` before cherry-pick.
+  - Refuse promotion unless the target branch HEAD matches the sandbox `base_commit`.
 - Defaults:
-  - target branch は `develop` を優先し、存在しない場合は現在のブランチへフォールバックする
+  - Prefer `develop` as the target branch, then fall back to the current branch.
 - Artifacts:
-  - `.diffship/runs/<run-id>/promotion.json` に promotion 結果を保存する
+  - Write `.diffship/runs/<run-id>/promotion.json`.
 
 ---
 
-## D-008: loop の実装方針（M2-05）
+## D-008: `loop` implementation strategy (M2-05)
 
 - Date: 2026-03-01
 - Decision:
-  - `loop` は 1つのロックを保持したまま `apply` → `verify` → `promote` を実行する
-  - M2 段階では `loop` 用の run-id は `apply` の run-id を利用し、同 run dir に `verify.json` / `promotion.json` を追記する
-  - verify 失敗時は `pack-fix`（reprompt zip）を作成して終了する（M2-06）
+  - Hold a single lock across `apply -> verify -> promote`.
+  - Reuse the `apply` run-id as the loop run-id and append `verify.json` / `promotion.json` to the same run directory.
+  - On verify failure, create `pack-fix` (reprompt zip) and stop.
 
 ---
 
-## D-009: 未来用の exit code 定数は dead_code を許可して保持
+## D-009: Keep reserved exit codes with `dead_code` allowed
 
 - Date: 2026-03-02
 - Decision:
-  - SPEC に先行して exit code を予約する場合、実装が入るまで `#[allow(dead_code)]` を付けて保持する（`-D warnings` 対策）
+  - When an exit code is reserved ahead of implementation, keep it with `#[allow(dead_code)]` until it is used.
 - Notes:
-  - 予約コードを消すと SPEC/実装の整合が崩れやすいので、予約コードは残す
+  - Removing reserved codes makes the spec/implementation mapping drift more easily.
 
 ---
 
-## D-010: tasks は promotion を止め、--ack-tasks を要求する
+## D-010: Tasks block promotion and require `--ack-tasks`
 
 - Date: 2026-03-03
 - Decision:
-  - bundle に `tasks/USER_TASKS.md` が存在する場合、promotion はデフォルトで停止し、ユーザーの明示 `--ack-tasks` が必要
+  - If a bundle contains `tasks/USER_TASKS.md`, promotion stops by default and requires explicit `--ack-tasks`.
 - Rationale:
-  - 手動作業（env作成/鍵更新/移行など）を飛ばすと壊れるため
+  - Skipping manual work such as env setup, key rotation, or one-off migration steps can break the workflow.
 - Implications:
-  - `diffship apply` は tasks のパスを出力し、run dir に保持する
-  - `diffship promote/loop` は tasks 未ack時に exit=12 で拒否する
+  - `diffship apply` surfaces the tasks path and keeps it in the run directory.
+  - `diffship promote` / `diffship loop` refuse with exit 12 until tasks are acknowledged.
 
 ---
 
-## D-011: 設定ロードの優先順位（config precedence）
+## D-011: Config precedence
 
 - Date: 2026-03-03
 - Decision:
-  - 設定の最終値は以下の優先順位で決める（後勝ち）
-    1) CLI flags
-    2) bundle manifest
-    3) project config（`.diffship/config.toml`）
-    4) global config（`~/.config/diffship/config.toml`）
-    5) built-in defaults
+  - Resolve config in this order (last writer wins):
+    1. CLI flags
+    2. bundle manifest
+    3. project config (`.diffship/config.toml`)
+    4. global config (`~/.config/diffship/config.toml`)
+    5. built-in defaults
 - Notes:
-  - “未指定”は上位で上書きしない（Option は None のまま次の層へ委譲）
-  - これにより「普段のデフォルトを保ちつつ run 単位で安全にオーバーライド」が可能
+  - Unspecified values should not overwrite lower layers; `None` delegates downward.
+  - This preserves stable defaults while allowing safe per-run overrides.
 
 ---
 
-## D-012: M4-02 CLI flags で promotion/commit-policy を切り替える
+## D-012: M4-02 uses CLI flags for promotion / commit-policy switching
 
 - Date: 2026-03-03
 - Decision:
-  - `--promotion`（none|working-tree|commit）と `--commit-policy`（auto|manual）で挙動を切り替えられるようにする
-  - 設定優先順位は D-011 に従い、CLI は最優先で上書きする
+  - Support `--promotion` (`none|working-tree|commit`) and `--commit-policy` (`auto|manual`) as CLI overrides.
+  - CLI stays at the highest precedence per D-011.
 - Rationale:
-  - bundle / project / global のデフォルトを保ちつつ、run 単位で安全にオーバーライドしたい
+  - Users need per-run safety overrides without rewriting bundle/project/global defaults.
 - Notes:
-  - `promotion=none` の場合は promotion をスキップし、run に promotion.json を残す（sandbox は既定で保持）
-  - `commit-policy=manual` の場合、git-apply の promotion は sandbox 側にコミットが存在することを要求する
+  - `promotion=none` skips promotion but still writes `promotion.json` and keeps the sandbox by default.
+  - With `commit-policy=manual`, git-apply promotion requires a pre-existing commit in the sandbox.
 
 ---
 
-## D-013: TUI v0 は「可視化 + 実行支援」に絞り、CLI とパリティを保つ
+## D-013: TUI v0 focuses on visibility + execution support and preserves CLI parity
 
 - Date: 2026-03-04
 - Decision:
-  - TUI は「status/runs の可視化」と「loop 実行の支援」に絞る（まずは read-only 中心）
-  - TUI は既存 ops/CLI を呼び出す薄いラッパとして実装し、**TUIだけにしかない挙動**を作らない（CLI parity）
-  - 起動導線は `diffship tui` を用意しつつ、`diffship`（引数なし）を TTY のときは TUI 起動に寄せる（非TTYは従来のヘルプ/エラー）
+  - Scope the TUI to status/runs visibility plus loop execution support.
+  - Keep it as a thin wrapper over existing ops/CLI code; do not create TUI-only behavior.
+  - Add `diffship tui`, and let `diffship` with no args start the TUI only in TTY contexts.
 - Rationale:
-  - 自動化（CLI/loop）を壊さずに、運用中の「いま何が起きたか」を見える化したい
+  - Users need visibility into active runs without breaking automation.
 - Implications:
-  - 画面は「Runs」「Status」「Run detail/log」「Loop」の最小セットから始める
+  - Start with the minimal screens: Runs, Status, Run detail/log, and Loop.
 
 ---
 
-## D-014: raw mode の描画は CRLF に寄せて端末差を吸収する
+## D-014: Use CRLF in raw mode to avoid terminal-dependent rendering glitches
 
 - Date: 2026-03-04
 - Decision:
-  - crossterm の raw mode 下では `\n` のみだと行頭に戻らず描画が崩れる端末があるため、
-    TUI の 1行出力は `\r\n`（CRLF）で明示的に改行する。
+  - Emit `\r\n` for TUI single-line output in raw mode to avoid line-return issues on some terminals.
 - Rationale:
-  - “次の行が前行の続き列から始まる”崩れを確実に防ぐため。
+  - Plain `\n` can leave the cursor mid-line on certain terminals.
 - Implications:
-  - 出力ヘルパ（writeln_trunc）は CRLF を使う前提で統一する。
+  - `writeln_trunc` standardizes on CRLF output.
 
 ---
 
-## D-015: TUI 起動のデフォルトは TTY のみ、環境変数で無効化できる
+## D-015: Start the TUI automatically only on TTY, with an env var escape hatch
 
 - Date: 2026-03-04
 - Decision:
-  - `diffship`（引数なし）は **TTY のときのみ** TUI を起動する（非TTYは従来どおりヘルプ/エラー）。
-  - `diffship tui` を明示サブコマンドとして用意する。
-  - `DIFFSHIP_NO_TUI=1` 等で自動TUIを無効化できる。
+  - `diffship` with no args starts the TUI only when attached to a TTY.
+  - `diffship tui` remains the explicit subcommand.
+  - `DIFFSHIP_NO_TUI=1` disables auto-TUI.
 - Rationale:
-  - CI / パイプ / スクリプト実行を壊さず、対話時だけ可視化したい。
+  - This preserves CI / pipeline / script behavior while giving interactive users the TUI by default.
 - Implications:
-  - “TUIにしかない挙動”を持たない（CLI parity を保つ）。
+  - The TUI must not introduce behavior unavailable from the CLI.
 
 ---
 
-## D-016: TUI の CLI parity は非TTY前提のスモークテストで固定する
+## D-016: Lock TUI/CLI parity with non-TTY smoke tests
 
 - Date: 2026-03-04
 - Decision:
-  - テストでは非TTY環境で、
-    - `diffship`（引数なし）は help を出して即終了する
-    - `diffship tui` は “requires a TTY” で失敗する
-    を確認する。
-  - ハング防止のため timeout を必ず付ける。
+  - In tests under non-TTY conditions:
+    - `diffship` with no args must print help and exit quickly.
+    - `diffship tui` must fail with a “requires a TTY” message.
+  - Always use timeouts to avoid hangs.
 - Notes:
-  - `assert_cmd::Command::cargo_bin` は deprecated（custom build-dir 非互換）なので `assert_cmd::cargo::cargo_bin_cmd!` を使う。
+  - Use `assert_cmd::cargo::cargo_bin_cmd!` instead of the deprecated `Command::cargo_bin` path.
 
 ---
 
-## D-017: `-D warnings` 運用下ではテストの import も最小化する
+## D-017: Keep test imports minimal under `-D warnings`
 
 - Date: 2026-03-04
 - Decision:
-  - `assert_cmd::prelude::*` のような未使用 import を避け、必要なものだけを import する。
+  - Avoid wildcard imports such as `assert_cmd::prelude::*` when only a subset is needed.
 - Rationale:
-  - `-D warnings` で CI が落ちるのを防ぐ（テストも同じ品質ゲートを通す）。
+  - Tests must pass the same `-D warnings` quality gate as the implementation.
 
 ---
-## D-018: Handoff は `diffship build` から実装を開始し、まずは committed-only を MVP にする
+
+## D-018: Start handoff implementation from `diffship build`, with committed-only as the first MVP
 
 - Date: 2026-03-05
 - Decision:
-  - Handoff bundle の生成コマンドは `diffship build` とし、出力は `docs/BUNDLE_FORMAT.md` / `docs/HANDOFF_TEMPLATE.md` に準拠する
-  - 初期MVPは committed range の bundle 化を最優先し、staged/unstaged/untracked は段階的に追加する
+  - Use `diffship build` as the handoff generation command and match `docs/BUNDLE_FORMAT.md` / `docs/HANDOFF_TEMPLATE.md`.
+  - Prioritize committed range bundling first; staged/unstaged/untracked follow incrementally.
 - Rationale:
-  - 仕様既定のコマンド/契約に合わせ、後戻りを減らす
-  - range指定 + determinism + split を先に固めると拡張が容易
+  - Starting from the final command/contract reduces backtracking.
+  - Range selection + determinism + split rules are the right foundation for later extension.
 - Implications:
-  - 既存の `diffship tui`（ops可視化/loop支援）は維持し、handoffのTUI/previewは後続で扱う
+  - The existing ops TUI remains in place; handoff-specific TUI/preview work comes later.
+
 ---
 
-## D-019: `diffship build` MVP は「committed-only + 1 part」から始め、出力を安定させる
+## D-019: Begin `diffship build` with committed-only + one-part output
 
 - Date: 2026-03-05
 - Decision:
-  - `diffship build` の最初の実装は committed range のみ（staged/unstaged/untracked は後続）。
-  - まずは `parts/part_01.patch` の 1part 固定で bundle レイアウト（`HANDOFF.md` + `parts/`）を確立する。
-  - `--range-mode` は `direct|merge-base|last|root` を受け付け、デフォルトは `last`。
-  - デフォルト出力は `./diffship_YYYY-MM-DD_HHMM/`（同名が存在する場合は失敗）。
-  - `--zip` はディレクトリ出力と同じレイアウトで `.zip` を生成する。
+  - The first `diffship build` implementation supports committed range only.
+  - Establish the layout with fixed `parts/part_01.patch` plus `HANDOFF.md`.
+  - Support `--range-mode direct|merge-base|last|root`, defaulting to `last`.
+  - Default output is `./diffship_YYYY-MM-DD_HHMM/` and originally failed on name collisions.
+  - `--zip` produces the same layout as a zip.
 - Rationale:
-  - まず “AI に渡す入口（HANDOFF.md）と diff の置き場” を固定すると、split / attachments / preview を安全に積み増せる。
-  - range の選択肢は先に揃えておくと、コミット単位 split 等へ繋げやすい。
+  - Fixing the entry document and patch location first makes later split/attachment/preview work safer.
 
 ---
 
-## D-020: 長い render 関数の引数は Context struct にまとめて clippy を通す
+## D-020: Group long render-function arguments into context structs
 
 - Date: 2026-03-05
 - Decision:
-  - `clippy::too-many-arguments` を避けるため、doc レンダリング等の引数が多い関数は `*Inputs` のような Context struct にまとめて渡す。
-  - テストは標準ライブラリの `str::contains` で足りる場合、predicates の `Predicate` trait を持ち込まない。
+  - Use context structs such as `*Inputs` for functions that would otherwise exceed clippy argument-count limits.
+  - In tests, prefer `str::contains` over importing predicate traits when the standard library is enough.
 - Rationale:
-  - `-D warnings` 運用下で、実装都合の `#[allow(..)]` を増やさずに品質ゲートを維持するため。
+  - This preserves the quality gate under `-D warnings` without adding many local `#[allow(...)]`s.
 - Implications:
-  - 「引数が多い関数」は “構造化して渡す” をデフォルトにし、局所 allow は最後の手段にする。
+  - Structured argument passing is the default; local `allow` remains a last resort.
 
 ---
 
-## D-021: テストは default branch 名を仮定しない（main/master を自動検出）
+## D-021: Tests must not assume a default branch name
 
 - Date: 2026-03-05
 - Decision:
-  - 一時リポジトリを使う統合テストでは、`master` などの固定ブランチ名を前提にしない。
-  - 必要な場合は `git rev-parse --abbrev-ref HEAD` で現在ブランチ名を取得し、それを checkout や CLI 引数に使う。
+  - Integration tests using temporary repositories must not assume `master` or any other fixed default branch name.
+  - Detect the current branch with `git rev-parse --abbrev-ref HEAD` when needed.
 - Rationale:
-  - Git の初期ブランチ名は環境設定で変わり得て、CI/ユーザー環境で `master` が存在しないケースがある。
+  - Git default branch names vary by environment.
 - Implications:
-  - テストが環境依存で落ちないようにし、`just ci` を安定させる。
+  - `just ci` remains stable across local and CI environments.
 
 ---
 
-## D-022: Handoff の uncommitted sources は segment toggle で段階導入する
+## D-022: Introduce handoff uncommitted sources as explicit segment toggles
 
 - Date: 2026-03-06
 - Decision:
-  - `diffship build` は committed をデフォルト ON としつつ、`--include-staged` / `--include-unstaged` / `--include-untracked` で uncommitted sources を追加できるようにする。
-  - committed を外したい場合は `--no-committed` を使う。
-  - （段階導入の初期案）untracked はまず text add-diff を扱い、binary/unreadable の扱いは次段階で拡張する。
+  - `diffship build` keeps committed changes on by default and adds uncommitted sources via `--include-staged`, `--include-unstaged`, and `--include-untracked`.
+  - `--no-committed` disables the committed segment.
+  - The initial staged rollout handled textual untracked files first; binary/unreadable behavior was added later.
 - Rationale:
-  - まず AI に渡す差分の出どころ（segment）を明示できるようにし、後続の attachments/excluded/split を安全に積み増すため。
+  - Segment toggles make the source of each diff explicit and support later attachments/excluded/splitting work safely.
 - Implications:
-  - `HANDOFF.md` には各 segment の included 状態と base（HEAD / committed range）を明記する。
+  - `HANDOFF.md` must record which segments were included and what base they used.
 
 ---
 
-## D-023: Traceability の `Partial` は `TBD` が残る場合だけ使う
+## D-023: Only use `Partial` in traceability when `TBD` remains
 
 - Date: 2026-03-06
 - Decision:
-  - `docs/TRACEABILITY.md` で `Status: Partial` を使うのは、Tests か Code のどちらかに `TBD` が残る場合だけにする。
-  - Tests と Code の両方が具体化されている項目は `Implemented` にする。
+  - In `docs/TRACEABILITY.md`, `Status: Partial` is only valid when either the Tests or Code side still contains `TBD`.
+  - If both sides point to concrete paths, the status is `Implemented`.
 - Rationale:
-  - `scripts/check-traceability.sh` の整合ルールに合わせ、`just trace-check` を安定して通すため。
-- Implications:
-  - 部分実装を表現したい場合でも、どちらか一方は `TBD` を残して `Partial` を使う。
+  - This matches `scripts/check-traceability.sh` and keeps `just trace-check` stable.
 
 ---
 
-## D-024: M6-03 の split / untracked 方針
+## D-024: Split / untracked policy for M6-03
 
 - Date: 2026-03-06
 - Decision:
-  - `--split-by auto|file|commit` を導入し、`commit` は committed range にのみ適用する。
-  - `auto` は committed range が複数コミットなら `commit`、それ以外は `file` に寄せる。
-  - untracked は `--untracked-mode auto|patch|raw|meta` を持ち、`auto` は **text/small → patch / binary-or-unreadable-or-large → attachments.zip** とする。
-  - `meta` のときは内容を同梱せず `excluded.md` に理由と再実行ガイダンスを残す。
+  - Add `--split-by auto|file|commit`, with `commit` applying only to committed ranges.
+  - `auto` selects `commit` when the committed range spans multiple commits, otherwise `file`.
+  - Untracked handling uses `--untracked-mode auto|patch|raw|meta`, where `auto` means text/small -> patch and binary/unreadable/large -> `attachments.zip`.
+  - `meta` records the omission plus rerun guidance in `excluded.md`.
 - Rationale:
-  - AI に読みやすい commit view を出しつつ、巨大/非UTF-8ファイルで handoff を壊さないため。
+  - This keeps commit views AI-readable without breaking on huge or non-UTF-8 files.
 - Implications:
-  - `HANDOFF.md` には Commit View / Attachments / Exclusions セクションを条件付きで出す。
-  - staged / unstaged / untracked は file-level unit のままとする。
+  - `HANDOFF.md` conditionally emits Commit View / Attachments / Exclusions.
+  - Staged / unstaged / untracked remain file-level units.
 
 ---
 
-## D-025: docs-check 対象の README では生成物名を path backtick として書かない
+## D-025: Do not write generated output names in README as repo path references
 
 - Date: 2026-03-06
 - Decision:
-  - `README.md` で **生成される出力物**（HANDOFF.md / parts/ / attachments.zip / excluded.md など）を inline code の path 参照として書かない。
-  - それらは repo に存在するドキュメント/実装ファイルではないため、通常テキストとして記述する。
-  - `zip::write::FileOptions` はこのリポジトリの依存版（0.6 系）に合わせ、型注釈は `FileOptions` をそのまま使う。
+  - In `README.md`, generated outputs such as `HANDOFF.md`, `parts/`, `attachments.zip`, and `excluded.md` should not be written as inline-code path references that doc-check interprets as repo files.
+  - Keep `zip::write::FileOptions` typing aligned with the repository's current dependency version.
 - Rationale:
-  - `scripts/check-doc-links.sh` は README の backtick path を実在ファイルとして検証するため、生成物名を code path で書くと docs-check が落ちる。
-  - 依存 crate の API 断面に合わせて型注釈を保守し、環境差分でビルドを壊さないため。
+  - `scripts/check-doc-links.sh` validates inline-code paths as if they were real repository paths.
 - Implications:
-  - README では「実在する repo パス」と「実行後に生成される成果物」を書き分ける。
-  - 依存 crate のメジャー更新時は `FileOptions` 周辺の型注釈を再確認する。
+  - Distinguish repo files from runtime-generated outputs in docs.
 
 ---
 
-## D-026: HANDOFF.md は bundle の入口ドキュメントに固定する
+## D-026: `HANDOFF.md` is always the bundle entrypoint
 
 - Date: 2026-03-06
 - Decision:
-  - `diffship build` が生成する HANDOFF.md は、bundle 全体の入口ドキュメントとして扱う。
-  - 最低限 `Start Here` / `TL;DR` / `Change Map` / `Parts Index` を毎回含める。
-  - `Parts Index` は quick index と part details の二段構成にし、読む順番を決めやすくする。
+  - Treat `HANDOFF.md` as the bundle entry document.
+  - Always include at least `Start Here`, `TL;DR`, `Change Map`, and `Parts Index`.
+  - Keep `Parts Index` in two layers: quick index and part details.
 - Rationale:
-  - AI や人間が bundle を開いたとき、最初に何を読めばよいか迷わないようにするため。
+  - The AI or human reader must know what to read first without guesswork.
 - Implications:
-  - テストでは章立てと first patch の導線を確認し、出力の入口構造を壊さない。
+  - Tests must protect both section structure and the first-patch reading path.
 
 ---
 
-## D-027: M6-05 の ignore / secrets warning 方針
+## D-027: Ignore and secrets warning policy for M6-05
 
 - Date: 2026-03-06
 - Decision:
-  - build 側は `.diffshipignore` を直接読み、committed / staged / unstaged / untracked の各 segment に同じ除外ルールを適用する。
-  - secrets-like content を検知した場合は `secrets.md` と `HANDOFF.md` に **path + reason only** で記録し、値は出さない。
-  - 非TTYで secrets が出た場合は `--yes` がない限り exit code 4 で止める。CI では `--fail-on-secrets` を使う。
+  - Build reads `.diffshipignore` directly and applies the same exclusion rules to all segments.
+  - When secrets-like content is detected, record path + reason only in `secrets.md` and `HANDOFF.md`.
+  - In non-TTY mode, secrets stop the build with exit 4 unless `--yes` is given; CI should use `--fail-on-secrets`.
 - Rationale:
-  - handoff bundle をそのまま外部 AI に渡すことを想定すると、build 時点で共有リスクを見せる必要があるため。
-  - ignore は source type ごとに挙動がズレると bundle の説明可能性が下がるため、全 segment で一貫適用にする。
+  - Handoff bundles are meant to be shared with external AI, so sharing risk must be surfaced at build time.
 - Implications:
-  - `diffship build` は `--yes` / `--fail-on-secrets` を持つ。
-  - HANDOFF.md は secrets warning / ignore active の状態を入口で明示する。
+  - `diffship build` includes `--yes` / `--fail-on-secrets`.
+  - `HANDOFF.md` exposes secrets-warning and ignore-active state at the entrypoint.
 
 ---
 
-## D-028: 予約だけ先に入れる handoff exit code には `#[allow(dead_code)]` を付ける
+## D-028: Reserved handoff exit codes keep `#[allow(dead_code)]`
 
 - Date: 2026-03-06
 - Decision:
-  - handoff 側でも、SPEC 先行で exit code を予約する場合は実装が参照するまで `#[allow(dead_code)]` を付ける。
-  - 今回の `EXIT_PACKING_LIMITS=3` は将来の size/profile 制御用として残し、未使用警告だけ抑制する。
+  - Apply the same reserved-exit-code pattern to handoff codes.
+  - Keep `EXIT_PACKING_LIMITS=3` reserved with `#[allow(dead_code)]` until used.
 - Rationale:
-  - `clippy -D warnings` を壊さずに、SPEC と実装の番号対応を維持するため。
-- Implications:
-  - exit code の削除ではなく「予約したまま許容する」を基本にする。
-  - 将来 M6-06 以降で packing limit 系の失敗を実装したら `allow` を外す。
+  - This keeps `clippy -D warnings` clean while preserving spec/code alignment.
 
 ---
 
-## D-029: M6-06 では handoff 出力順序と zip metadata を固定し、golden tests を追加する
+## D-029: Fix handoff output ordering and zip metadata for determinism
 
 - Date: 2026-03-06
 - Decision:
-  - `HANDOFF.md` の File Table など、bundle内の一覧は **docs → config → source → tests → other** のカテゴリ順、その後 path 昇順、最後に segment 順（committed → staged → unstaged → untracked）で固定する。
-  - diffship が生成する zip（bundle zip / attachments.zip）は、entry順をソートし、zip metadata の mtime は固定値（zip crate default）を使う。
-  - determinism は `tests/m6_handoff_determinism.rs` と `tests/golden/` の fixture で守る。
+  - Fix `HANDOFF.md` listing order to docs -> config -> source -> tests -> other, then path order, then segment order committed -> staged -> unstaged -> untracked.
+  - Sort generated zip entries and use fixed zip metadata behavior.
+  - Protect determinism with `tests/m6_handoff_determinism.rs` and `tests/golden/` fixtures.
 - Rationale:
-  - 同じ入力から同じ bundle tree / zip bytes を得られるようにして、golden tests と bundle比較を安定させるため。
+  - Deterministic trees and zip bytes keep golden tests and bundle comparison stable.
 - Implications:
-  - 今後 ordering rule を変える場合は `docs/DETERMINISM.md` と golden fixture を同時更新する。
-  - zip metadata を変える場合は raw zip 比較テストも見直す。
+  - Ordering or metadata rule changes require simultaneous updates to `docs/DETERMINISM.md` and fixtures.
 
 ---
 
-## D-030: golden 正規化は UTF-8 を保持する
+## D-030: Golden normalization must preserve UTF-8
 
 - Date: 2026-03-06
 - Decision:
-  - golden fixture 比較用の正規化では、40桁hex置換をしても UTF-8 記号（例: `→`）を壊さない実装にする。
+  - Golden normalization must not break UTF-8 symbols such as `→` while replacing 40-char hex strings.
 - Rationale:
-  - byte 単位で文字列を再構成すると、非ASCII文字が文字化けして golden test が偽陽性で落ちるため。
+  - Byte-wise reconstruction can corrupt non-ASCII text and cause false-positive golden failures.
 - Implications:
-  - placeholder 置換は char 境界で進める。
-  - golden は「実出力差」だけを検出し、正規化起因の差分を混ぜない。
+  - Placeholder replacement operates on character boundaries.
 
 ---
 
-## D-031: 2026-03-06 棚卸し結果に基づく計画補正
+## D-031: Plan correction after the 2026-03-06 inventory
 
 - Date: 2026-03-06
 - Decision:
-  - M4-02（promotion/commit-policy切替）を `doing` に戻す。理由: `working-tree` は現在 `commit` と同じ経路で、専用 no-commit 挙動が未実装。
-  - M6-03（profiles + packing limits）を `doing` に戻す。理由: split/attachments/excluded は実装済みだが、profile上限（max parts / max bytes）と `EXIT_PACKING_LIMITS` 実動が未実装。
-  - `pack-fix` は実装済みとして扱うが、専用統合テスト不足を残課題として明示する。
+  - Move M4-02 (`promotion` / `commit-policy` switching) back to `doing` at that time because `working-tree` still behaved like `commit`.
+  - Move M6-03 (profiles + packing limits) back to `doing` because size limits and `EXIT_PACKING_LIMITS` were not yet active.
+  - Treat `pack-fix` as implemented but keep dedicated integration coverage as an explicit follow-up.
 - Rationale:
-  - 「done」を実装実態と一致させ、README / PLAN / TRACEABILITY の過大表現を避けるため。
+  - “done” needed to match the actual implementation and avoid overstating status in README / PLAN / TRACEABILITY.
 - Implications:
-  - 次優先は E2E運用ドキュメント、packing limits / binary policy、promotion `working-tree` 分離、preview導線。
+  - The next priorities became end-to-end operational docs, packing limits / binary policy, promotion `working-tree` separation, and preview flow.
 
 ---
 
-## D-032: `promotion=working-tree` は no-commit で target working tree に反映する
+## D-032: `promotion=working-tree` updates the target working tree without committing
 
 - Date: 2026-03-06
 - Decision:
-  - `promotion=working-tree` では、sandbox の結果差分を target branch の working tree に適用し、commit は作らない。
-  - `promotion=commit` は従来どおり commit を作成して反映する。
-  - `promotion=none` は反映自体を行わない。
+  - `promotion=working-tree` applies sandbox results to the target branch working tree without creating a commit.
+  - `promotion=commit` keeps creating a commit.
+  - `promotion=none` performs no promotion.
 - Rationale:
-  - `none|working-tree|commit` の3モードを意味的に分離し、CLI契約（spec）と挙動を一致させるため。
+  - The three modes need distinct semantics that match the CLI contract.
 - Implications:
-  - `working-tree` 実行後は target branch の HEAD は不変で、working tree が変更状態になる。
-  - 事前の base_commit 一致チェックは `commit` と同様に維持する。
+  - `working-tree` leaves target HEAD unchanged while modifying the working tree.
+  - Base-commit matching remains required.
 
 ---
 
-## D-033: handoff build で packing limits を実動化する
+## D-033: Enforce packing limits in handoff build
 
 - Date: 2026-03-06
 - Decision:
-  - `diffship build` に `--max-parts` / `--max-bytes-per-part` を追加し、生成 part が上限を超える場合は exit code 3（`EXIT_PACKING_LIMITS`）で停止する。
-  - デフォルト上限は `max_parts=20`, `max_bytes_per_part=536870912`（512 MiB）とする。
+  - Add `--max-parts` / `--max-bytes-per-part` and stop with exit 3 (`EXIT_PACKING_LIMITS`) when generated parts exceed the configured limits.
+  - Default limits are `max_parts=20` and `max_bytes_per_part=536870912` (512 MiB).
 - Rationale:
-  - アップロード制限の超過を build 時点で機械的に検知し、handoff 失敗理由を明確化するため。
+  - Upload limit violations should be detected mechanically during build.
 - Implications:
-  - `EXIT_PACKING_LIMITS` は予約コードから実使用コードへ移行する。
-  - この段階では「上限超過時の再分割/自動縮退」ではなく、明示エラー停止を優先する。
+  - `EXIT_PACKING_LIMITS` moves from reserved to active use.
+  - This stage preferred explicit failure over automatic repartitioning.
 
 ---
 
-## D-034: binary policy は default exclude + 明示 opt-in とする
+## D-034: Binary policy is default-exclude with explicit opt-in
 
 - Date: 2026-03-06
 - Decision:
-  - handoff の binary content はデフォルトで除外する（`--include-binary` がない限り同梱しない）。
-  - `--include-binary` 指定時は `--binary-mode raw|patch|meta`（default: `raw`）で扱いを切り替える。
-  - `auto` untracked の解釈は「text/small → patch、large text → raw、binary は binary policy に従う」に統一する。
+  - Exclude binary content by default.
+  - When `--include-binary` is used, support `--binary-mode raw|patch|meta` with default `raw`.
+  - Unify `auto` untracked behavior as text/small -> patch, large text -> raw, binary -> binary policy.
 - Rationale:
-  - デフォルト共有時の情報露出を抑えつつ、必要時のみ明示的に binary を同梱できるようにするため。
-  - `S-UNTRACKED-003` と `S-BINARY-001` の衝突を避け、説明可能な1つの方針に寄せるため。
+  - Default sharing should minimize information exposure while still allowing explicit inclusion.
+  - This resolves the previous overlap between `S-UNTRACKED-003` and `S-BINARY-001`.
 - Implications:
-  - `docs/SPEC_V1.md` / `docs/BUNDLE_FORMAT.md` / `docs/TRACEABILITY.md` はこの方針を前提に更新する。
-  - `HANDOFF.md` には binary policy（include/mode）を明示し、bundle 利用者が同梱有無を即時判断できるようにする。
+  - Update `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md`, and `docs/TRACEABILITY.md` around this policy.
+  - Show binary policy in `HANDOFF.md`.
 
 ---
 
-## D-035: handoff の確認系コマンドとして `preview` / `compare` を追加する
+## D-035: Add `preview` / `compare` as handoff inspection commands
 
 - Date: 2026-03-06
 - Decision:
-  - `diffship preview <bundle>` を実装し、directory/zip どちらの bundle でも `HANDOFF.md` と part を確認できるようにする（`--list`, `--part`）。
-  - `diffship compare <a> <b>` を実装し、determinism 運用向けに normalized 比較（default）と byte-level strict 比較（`--strict`）を提供する。
+  - Add `diffship preview <bundle>` for reading `HANDOFF.md` and parts from directory or zip bundles.
+  - Add `diffship compare <a> <b>` for normalized comparison by default plus strict byte-oriented comparison via `--strict`.
 - Rationale:
-  - handoff の実運用で「共有前の確認」と「再現比較」をCLI単体で完結させるため。
+  - Users need both pre-share inspection and reproducibility checks from the CLI alone.
 - Implications:
-  - README / OPS_WORKFLOW に handoff→AI→ops の導線を明記する。
+  - README and ops workflow docs should show the handoff -> AI -> ops flow.
 
 ---
 
-## D-036: verify profile は `[verify.profiles.*]` の local config command で拡張する
+## D-036: Extend verify profiles via local config commands
 
 - Date: 2026-03-06
 - Decision:
-  - `verify` は `fast|standard|full` に加えて、`[verify.profiles.<name>]` で定義された custom profile を実行可能にする。
-  - custom profile command は sandbox で `sh -lc` 実行する（bundle 由来コマンドは使わない）。
+  - Support custom verify profiles under `[verify.profiles.<name>]` in addition to `fast|standard|full`.
+  - Run custom profile commands via `sh -lc` inside the sandbox.
 - Rationale:
-  - リポジトリごとの品質ゲート差を profile 名で吸収し、`loop` の再利用性を高めるため。
+  - Repositories need profile names that map to local quality gates.
 - Implications:
-  - `docs/CONFIG.md` に custom profile の実装済み仕様を追記する。
+  - `docs/CONFIG.md` must document the implemented custom profile behavior.
 
 ---
 
-## D-037: packing overflow は First-Fit Decreasing + exclusion で縮退する
+## D-037: Packing overflow falls back to First-Fit Decreasing plus exclusion
 
 - Date: 2026-03-06
 - Decision:
-  - `build` の packing limit 超過時は diff unit を bytes desc で並べ、FFD で再パックする。
-  - 収まらない unit は `excluded.md` に理由/ガイダンスを残して除外する。
-  - すべての unit が除外される場合のみ `EXIT_PACKING_LIMITS` で失敗させる。
+  - On packing overflow, sort diff units by descending size and repack with FFD.
+  - Move units that still do not fit to `excluded.md` with reason/guidance.
+  - Only fail with `EXIT_PACKING_LIMITS` when everything gets excluded.
 - Rationale:
-  - 単純な即時失敗よりも、読める bundle を可能な範囲で生成し、再実行指針を残すため。
+  - Producing a still-readable bundle is better than failing immediately when partial output is possible.
 - Implications:
-  - `S-PACK-002..004` の実装・テストを `src/handoff.rs` / `tests/m6_handoff_build.rs` に寄せる。
+  - Concentrate the implementation/tests in `src/handoff.rs` and `tests/m6_handoff_build.rs`.
 
 ---
 
-## D-038: TUI に handoff screen を追加し、build の等価 CLI を常に表示する
+## D-038: Add a handoff screen to the TUI and always show the equivalent CLI
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship tui` に handoff screen を追加し、range/sources/split/binary/out を切り替えながら preview/build できるようにする。
-  - TUI は handoff 専用ロジックを持たず、`src/plan.rs` の `HandoffPlan` から CLI 引数を再構成して既存 `diffship build` を呼ぶ。
-  - internal preview は一時 bundle を生成して最初の patch part を色付きで表示する。
+  - Add a TUI handoff screen that can switch range/sources/split/binary/output and run preview/build.
+  - Reuse `src/plan.rs` to reconstruct CLI arguments rather than creating TUI-only logic.
+  - Implement internal preview by generating a temporary bundle and showing the first patch part.
 - Rationale:
-  - handoff 導線を TUI でも辿れるようにしつつ、CLI parity を壊さないため。
+  - Users should be able to follow the handoff flow in the TUI without breaking CLI parity.
 - Implications:
-  - plan export/replay 自体は後続タスクとして残し、現段階では「等価 CLI の表示」までを先行実装する。
+  - Plan export/replay remained a follow-up task at that stage; equivalent CLI display shipped first.
 
 ---
 
-## D-039: explicit path filter は `.diffshipignore` と併用し、全 segment に同じ条件を適用する
+## D-039: Explicit path filters combine with `.diffshipignore` and apply to all segments
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship build` に repeatable `--include <glob>` / `--exclude <glob>` を追加する。
-  - 判定順は `.diffshipignore` と `--exclude` を優先し、その後 `--include` が空なら許可、指定ありなら一致した path のみ許可とする。
-  - 同じ filter 条件を committed/staged/unstaged/untracked の全 segment に適用し、`HANDOFF.md` に選択条件を記録する。
+  - Add repeatable `--include <glob>` / `--exclude <glob>` to `diffship build`.
+  - Apply `.diffshipignore` and `--exclude` first; if `--include` is empty allow the path, otherwise require a match.
+  - Apply the same filter rules to committed/staged/unstaged/untracked and record them in `HANDOFF.md`.
 - Rationale:
-  - handoff の bundle 内容を説明可能にしつつ、source category ごとに filter 挙動がズレるのを防ぐため。
+  - Bundle contents must remain explainable and consistent across source categories.
 - Implications:
-  - TUI handoff screen でも include/exclude を編集可能にし、CLI と同じ bundle を再現できるようにする。
+  - The TUI handoff screen should also edit include/exclude patterns.
 
 ---
 
-## D-040: packing overflow では context reduction を exclusion より先に試す
+## D-040: Try context reduction before exclusion on packing overflow
 
 - Date: 2026-03-07
 - Decision:
-  - packing fallback で unit が byte limit に収まらない場合、まず unified diff context を `U1`、必要なら `U0` に縮退させる。
-  - context reduction 後も収まらない unit だけを `excluded.md` に送る。
-  - reduction が発生した file row には `HANDOFF.md` 上でその旨を残す。
+  - When a unit does not fit, first reduce unified diff context to `U1` and then `U0` before excluding it.
+  - Only send units to `excluded.md` if they still do not fit after reduction.
+  - Mark reduced-context file rows in `HANDOFF.md`.
 - Rationale:
-  - 完全除外より先に diff の保持率を上げ、AI に最低限必要な変更行を残したい。
+  - Keeping the changed lines is better than excluding the file outright.
 - Implications:
-  - `docs/SPEC_V1.md` の packing fallback 契約を future work から current behavior に更新する。
+  - The packing fallback contract in `docs/SPEC_V1.md` moves from future work to current behavior.
 
 ---
 
-## D-041: `preview` / `compare` の `--json` は stdout に固定し、compare の差分時も exit code は維持する
+## D-041: `preview --json` / `compare --json` always write to stdout, and compare keeps non-zero exit on diff
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship preview --json` は summary/entry content を pretty JSON で stdout に出す。
-  - `diffship compare --json` は compare report を stdout に出し、差分ありの場合でも non-zero exit を維持する。
+  - `diffship preview --json` prints pretty JSON to stdout.
+  - `diffship compare --json` prints a compare report to stdout and still returns non-zero on differences.
 - Rationale:
-  - CI から stdout をそのまま parse できるようにしつつ、失敗判定は exit code で扱いたいため。
+  - CI should parse stdout directly while still using exit codes for pass/fail.
 - Implications:
-  - README / OPS_WORKFLOW に CI 向けの `--json` 利用例を追記する。
+  - README and ops workflow docs should show CI-oriented `--json` usage.
 
 ---
 
-## D-042: plan.toml は handoff selection を保持し、output/runtime flags は replay 時に重ねる
+## D-042: `plan.toml` stores handoff selection, while runtime/output flags are replay-time overrides
 
 - Date: 2026-03-07
 - Decision:
-  - `plan.toml` には range/sources/filters/split/binary/packing limits などの handoff selection を保存する。
-  - `out` / `zip` / `yes` / `fail-on-secrets` は plan に固定せず、`diffship build --plan <file> ...` の replay 時に CLI から重ねる。
-  - TUI の replay command 表示は、この runtime flags を含めた実行例を出す。
+  - `plan.toml` stores range/sources/filters/split/binary/packing selection.
+  - `out`, `zip`, `yes`, and `fail-on-secrets` are not fixed inside the plan and are applied at replay time.
+  - The TUI replay command should include runtime flag examples.
 - Rationale:
-  - export 元 bundle path を plan に焼き込むと replay 先が固定されて扱いにくくなるため。
+  - Baking output paths into the plan makes replay unnecessarily rigid.
 - Implications:
-  - `docs/BUNDLE_FORMAT.md` には「output path は replay 時に与えられる」前提を明記する。
+  - `docs/BUNDLE_FORMAT.md` must state that output paths are supplied at replay time.
 
 ---
 
-## D-043: handoff packing profile は named presets + config default で解決する
+## D-043: Resolve handoff packing profiles through named presets plus config defaults
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship build` に `--profile <name>` を追加し、built-in `20x512`（default）と `10x100` を提供する。
-  - global / project config から `[handoff].default_profile` と `[handoff.profiles.<name>]` を読み、custom profile を追加できるようにする。
-  - compatibility として `[profiles.<name>]` も受け付ける。
-  - TUI handoff screen は同じ profile set を使い、`h` キーで profile を切り替える。
-  - `plan.toml` には `profile` と resolved limit 値を両方保持する。
+  - Add `--profile <name>` with built-ins `20x512` (default) and `10x100`.
+  - Load `[handoff].default_profile` and `[handoff.profiles.<name>]` from global/project config, with compatibility support for `[profiles.<name>]`.
+  - Reuse the same profile set in the TUI and allow cycling with `h`.
+  - Store both the selected `profile` name and resolved numeric limits in `plan.toml`.
 - Rationale:
-  - upload limit を数値直打ちだけにせず、再利用可能な名前付き設定として持ち回せるようにするため。
-  - TUI / CLI / replay の parity を保ったまま、repo ごとの handoff size policy を config で固定したいため。
+  - Named profiles make upload constraints reusable across repos and preserve CLI/TUI/replay parity.
 - Implications:
-  - `HANDOFF.md` の TL;DR profile 表記は内部名 `m6` ではなく実際の profile 名を表示する。
-  - `diffship init` の config stub に handoff profile 設定例を追記する。
+  - `HANDOFF.md` should show the actual profile name rather than an internal label.
+  - The init config stub should include an example handoff profile definition.
 
 ---
 
-## D-044: compare は差分を area/kind に分類して返す
+## D-044: `compare` reports differences by area and kind
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship compare` の差分は `area`（`handoff|patch|attachments|excluded|secrets|plan|other`）と `kind`（`only_in_a|only_in_b|content_differs`）に分類する。
-  - human-readable 出力では `[area/kind] path` 形式で列挙し、集計も併記する。
-  - `--json` 出力でも `areas` / `kinds` 集計と各 diff の分類情報を保持する。
+  - Classify compare diffs by `area` (`handoff|patch|attachments|excluded|secrets|plan|other`) and `kind` (`only_in_a|only_in_b|content_differs`).
+  - Human-readable output uses `[area/kind] path` plus counts.
+  - JSON output also includes `areas` / `kinds` aggregates and per-diff classification.
 - Rationale:
-  - bundle の差分理由を README/HANDOFF/parts/attachments のどこに起因するか素早く切り分けられるようにするため。
-  - determinism チェック時に「実質 patch 差分」か「周辺メタ差分」かを機械的に扱いやすくするため。
+  - This makes it easier to tell whether a difference is in patch content or surrounding metadata.
 - Implications:
-  - compare の exit code 契約は変更しない。差分があれば分類付きでも non-zero のまま。
+  - Exit-code behavior does not change: differences remain non-zero.
 
 ---
 
-## D-045: TUI handoff input は live buffer + field navigation を持つ
+## D-045: TUI handoff input uses a live buffer plus field navigation
 
 - Date: 2026-03-07
 - Decision:
-  - handoff screen に edit buffer/help 表示を追加し、現在どの field を編集中かを常時見えるようにする。
-  - `plan path`, `max parts`, `max bytes per part` を TUI から編集可能にする。
-  - handoff field の編集中は `Tab` / `Shift+Tab` で次/前 field に移動できるようにする。
+  - Add edit buffer/help display to the handoff screen.
+  - Make `plan path`, `max parts`, and `max bytes per part` editable from the TUI.
+  - Use `Tab` / `Shift+Tab` to move between editable handoff fields.
 - Rationale:
-  - 既存の hotkey ベース編集は入力対象と現在値が見えづらく、CLI parity 上も `--max-parts` / `--max-bytes-per-part` / `--plan-out` 相当が不足していたため。
+  - The previous hotkey-only model made the current target/value too hard to see and did not cover key CLI parity knobs.
 - Implications:
-  - TUI の handoff screen は v1 core として十分な parity に近づくが、さらに細かい UX polish は future work に残す。
+  - The TUI handoff screen reaches near-v1-core parity; finer UX polish remains future work.
 
 ---
 
-## D-046: compare/TUI の追加 polish は v1 blocker ではなく v1.1 backlog として扱う
+## D-046: Additional compare/TUI polish is v1.1 backlog, not a v1 blocker
 
 - Date: 2026-03-07
 - Decision:
-  - `compare` の補助的な表示改善や TUI handoff screen の細かな操作改善は、現行 v1 contract の blocker としては扱わない。
-  - v1 の完了条件は、CLI/TUI parity・plan export/replay・preview/compare・deterministic handoff build が揃っていることとする。
-  - 追加 polish は `PLAN.md` の Next / backlog で管理し、必要になったものだけを v1.1 以降で拾う。
+  - Treat additional display polish in `compare` and small TUI input improvements as v1.1 backlog items.
+  - Define v1 completion as CLI/TUI parity, plan export/replay, preview/compare, and deterministic handoff build.
 - Rationale:
-  - 現時点の handoff/ops 導線は README / SPEC / TRACEABILITY の契約を満たしており、残件は usability の改善が中心だから。
-  - v1 core と future polish を混ぜると、README 上の完成度表現が過度に弱くなるため。
+  - The current handoff/ops flow already satisfies the documented v1 contract; remaining gaps are mostly usability polish.
 - Implications:
-  - README / IMPLEMENTATION_STATUS / PLAN.md では「handoff v1 core は実装済み、残件は future-extension」という表現に揃える。
+  - README / IMPLEMENTATION_STATUS / PLAN use “handoff v1 core is implemented; remaining work is future extension.”
 
 ---
 
-## D-047: `compare --strict` は raw zip container ではなく extracted entry bytes を比較する
+## D-047: `compare --strict` compares extracted entry bytes, not raw zip container bytes
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship compare --strict` は zip コンテナ全体の raw bytes ではなく、bundle 内 entry の raw bytes を正規化なしで比較する。
-  - zip entry order / archive metadata / container-level byte layout の差異だけでは strict diff としない。
-  - raw zip container byte equality が必要になった場合は、別契約として v1.1+ で再検討する。
+  - `diffship compare --strict` compares raw bundle entry bytes without normalization, not the zip container as a single byte blob.
+  - Differences limited to zip entry ordering, archive metadata, or container layout do not count as strict differences.
+  - If raw zip-container byte equality is ever needed, treat it as a separate future contract.
 - Rationale:
-  - handoff determinism の主目的は bundle 内容の再現確認であり、zip コンテナ実装差や metadata 差でノイズを増やしたくないため。
-  - `docs/DETERMINISM.md` の方針とも整合し、directory bundle と zip bundle の比較も同じ mental model で説明できるため。
+  - The real goal is bundle-content reproducibility, not sensitivity to container implementation noise.
 - Implications:
-  - `docs/SPEC_V1.md` / `README.md` / `docs/IMPLEMENTATION_STATUS.md` では strict の説明を extracted-entry byte comparison に揃える。
-  - `tests/m6_compare.rs` に、container bytes は異なるが strict compare は等価とみなすケースを追加する。
+  - Align `docs/SPEC_V1.md`, `README.md`, and `docs/IMPLEMENTATION_STATUS.md` with this contract.
+  - Keep coverage in `tests/m6_compare.rs` for equivalent-content / different-container cases.
 
 ---
 
-## D-048: named handoff profile の持ち回りは config を正本とし、`plan.toml` は選択結果だけを export する
+## D-048: Named handoff profiles are owned by config; `plan.toml` exports only the selected result
 
 - Date: 2026-03-07
 - Decision:
-  - named handoff profile の定義は project/global config（`[handoff.profiles.*]` / compatibility `[profiles.*]`）を正本とする。
-  - `plan.toml` は selected profile name と resolved numeric limits を export するが、profile catalog 全体は埋め込まない。
-  - UX 補強は、generated config stub・README・BUNDLE_FORMAT・TUI/export message で「どこに profile 定義があり、何が replay/export されるか」を明示することで行う。
+  - Treat project/global config (`[handoff.profiles.*]` and compatibility `[profiles.*]`) as the source of truth for named handoff profiles.
+  - `plan.toml` exports the selected profile name plus resolved numeric limits, not the full profile catalog.
+  - Clarify this via the generated config stub, README, BUNDLE_FORMAT docs, and TUI/export messaging.
 - Rationale:
-  - profile catalog を `plan.toml` に複製すると、config と plan のどちらが正本か曖昧になりやすいため。
-  - 現在の replay contract は「選択結果を再現する」ことで十分であり、profile 定義の配布は config 管理に寄せたほうが説明しやすいため。
+  - Duplicating the profile catalog into `plan.toml` makes the source of truth ambiguous.
 - Implications:
-  - dedicated な import/export command は現時点では追加しない。
-  - `diffship init` の config stub と関連 docs は、profile 定義の持ち回り方法を明示する。
+  - Do not add a dedicated import/export command yet.
+  - The init config stub and related docs should explain how to share profile definitions.
 
 ---
 
-## D-049: default handoff output path は local time ベースで衝突時に自動採番する
+## D-049: Default handoff output names use local time and auto-number collisions
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship build` で `--out` を省略した場合、既定出力名は `diffship_YYYY-MM-DD_HHMM` とし、時刻は local system timezone で描画する。
-  - 同じ分に複数回 build して base path が既に存在する場合は、`_2`, `_3`, ... を末尾に付けて次の空き path を選ぶ。
-  - 明示的な `--out` 指定時は従来どおり既存 path をエラーとする。
+  - When `--out` is omitted, use `diffship_YYYY-MM-DD_HHMM` based on the local system timezone.
+  - If the path already exists, choose `_2`, `_3`, ... automatically.
+  - Explicit `--out` keeps the previous “existing path is an error” behavior.
 - Rationale:
-  - handoff bundle 名は user が普段見ているローカル時刻と一致しているほうが扱いやすいため。
-  - 分単位 naming の collision で build が失敗すると日常利用で不要な再実行が必要になるため。
+  - Users expect bundle names to match their local time and do not want same-minute collisions to fail.
 - Implications:
-  - `S-OUT-001` の文言を local timestamp + collision suffix を含む形に明確化する。
-  - `tests/m6_handoff_build.rs` と `src/handoff.rs` unit tests で naming behavior を固定する。
+  - Clarify `S-OUT-001` accordingly and fix tests around naming behavior.
 
 ---
 
-## D-050: `--out-dir` は auto-generated handoff bundle 名の親ディレクトリだけを差し替える
+## D-050: `--out-dir` changes only the parent directory of the auto-generated handoff bundle name
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship build --out-dir <dir>` を追加し、既定の `diffship_<timestamp>` bundle 名を維持したまま生成先の親ディレクトリを変えられるようにする。
-  - `--out <path>` は従来どおり exact output path として扱う。
-  - `--out` と `--out-dir` の同時指定は曖昧なので拒否する。
+  - Add `diffship build --out-dir <dir>` so users can change the parent directory while keeping the auto-generated bundle name.
+  - Keep `--out <path>` as an exact output path.
+  - Reject using both `--out` and `--out-dir` together.
 - Rationale:
-  - ユーザーは「bundle 名は自動生成のまま」「保存先だけ変えたい」ことがあり、`--out` に完全な path を毎回書くのは冗長だから。
-  - `--out` の既存意味を変えずに要望を満たせるため。
+  - Users often want to keep the generated name but place it elsewhere.
 - Implications:
-  - `HandoffPlan` の runtime override と replay shell command でも `--out-dir` を扱う。
-  - README / Usage Guide / Spec は `--out` と `--out-dir` の役割分担を明記する。
+  - `HandoffPlan` replay and generated shell commands must include `--out-dir`.
+  - Docs must explain the role split between `--out` and `--out-dir`.
 
 ---
 
-## D-051: `[handoff].output_dir` は auto-generated handoff bundle の config default として扱う
+## D-051: `[handoff].output_dir` is the config default for auto-generated handoff output parents
 
 - Date: 2026-03-07
 - Decision:
-  - `[handoff].output_dir` を project/global config で受け付け、`--out` 未指定かつ `--out-dir` 未指定のときの default parent directory として使う。
-  - precedence は `--out` > `--out-dir` > `[handoff].output_dir` > current working directory とする。
-  - compatibility として `[handoff].out_dir` も受け付ける。
+  - Accept `[handoff].output_dir` in project/global config as the default parent directory when neither `--out` nor `--out-dir` is given.
+  - The precedence is `--out` > `--out-dir` > `[handoff].output_dir` > current working directory.
+  - Also accept `[handoff].out_dir` as a compatibility alias.
 - Rationale:
-  - bundle の保存先を毎回 CLI で書かずに固定したいケースがあるため。
-  - `--out` の exact-path semantics を維持したまま、project/global default を自然に追加できるため。
+  - Users often want a stable default handoff output parent without specifying it on every build.
 - Implications:
-  - `src/handoff_config.rs` が `[handoff].output_dir` を解決し、`resolve_build_args` で `BuildArgs.out_dir` に反映する。
-  - path 解決は `src/handoff.rs` に集約し、`[handoff].output_dir` / `--out-dir` / `--out` / `--plan` / `--plan-out` で `~/...` を `HOME` 基準に展開する。
-  - init stub / config docs / handoff build tests を更新する。
+  - `src/handoff_config.rs` resolves `[handoff].output_dir` into `BuildArgs.out_dir`.
+  - Path resolution is centralized and docs/tests are updated accordingly.
 
-## D-052: `diffship init` は human guide と AI guide を分けて生成する
+---
+
+## D-052: `diffship init` generates separate human and AI guides
 
 - Date: 2026-03-07
 - Decision:
-  - `diffship init` は `.diffship/PROJECT_KIT.md` に加えて `.diffship/AI_GUIDE.md` も生成する。
-  - `PROJECT_KIT.md` は人向けの運用ガイド、`AI_GUIDE.md` は AI が読むべき workflow / artifact contract / input file semantics / non-file deliverables を固定する。
+  - Generate `.diffship/PROJECT_KIT.md` and `.diffship/AI_GUIDE.md` separately.
+  - `PROJECT_KIT.md` is the human workflow guide; `AI_GUIDE.md` captures the workflow, artifact contracts, file semantics, and non-file deliverables the AI must respect.
 - Rationale:
-  - 人向けの説明と AI に守らせたい出力契約を一つの文書に混在させると、どちらにも不要なノイズが入るため。
-  - `diffship init` の目的である「AI が project-specific rules を外さずに作業する」を直接支えるため。
+  - Combining human guidance and AI output contracts in one file adds noise for both audiences.
 - Implications:
-  - `docs/AI_PROJECT_TEMPLATE.md` を template source として持ち、`src/ops/init.rs` が `.diffship/AI_GUIDE.md` を出力する。
-  - init integration test と関連 docs を更新する。
+  - Use `docs/AI_PROJECT_TEMPLATE.md` as the template source for `.diffship/AI_GUIDE.md`.
+  - Keep init integration coverage and docs in sync.
 
-## D-053: post-apply commands は local config only の sandbox hook として扱う
+---
+
+## D-053: post-apply commands are local-config-only sandbox hooks
 
 - Date: 2026-03-07
 - Decision:
-  - `[ops.post_apply]` に列挙したコマンドを、patch apply 成功直後に sandbox 内で自動実行する。
-  - command source は local config のみとし、patch bundle manifest からは解決しない。
-  - いずれかの command が失敗したら `apply` / `loop` は失敗扱いにし、logs を run directory に残す。
+  - Run commands listed under `[ops.post_apply]` immediately after a successful patch apply inside the sandbox.
+  - Only resolve them from local config, never from the patch bundle manifest.
+  - If any command fails, mark `apply` / `loop` as failed and keep logs in the run directory.
 - Rationale:
-  - formatter や doc/spec consistency checks を apply 後に自動実行したい需要があるため。
-  - 一方で AI bundle から任意コマンドを注入させるのは safety policy に反するため、local config に限定する必要がある。
+  - Users want automatic formatter / docs/spec consistency commands after apply.
+  - Bundle-provided arbitrary commands would violate the safety model.
 - Implications:
-  - `src/ops/config.rs` が `[ops.post_apply]` を解決する。
-  - `src/ops/post_apply.rs` が sandbox 実行と `post_apply.json` / log 出力を担う。
-  - `apply` と `loop` は hook failure を成功扱いにしない。
+  - `src/ops/config.rs` resolves `[ops.post_apply]`.
+  - `src/ops/post_apply.rs` owns sandbox execution and `post_apply.json` / log output.
+  - Hook failures are not treated as success.
 
-## D-054: `~/...` shorthand は shared path resolver で CLI 全体に適用する
+---
+
+## D-054: Apply `~/...` shorthand across the CLI with a shared path resolver
 
 - Date: 2026-03-07
 - Decision:
-  - `build` だけでなく、filesystem path を受け取る他の CLI command でも leading `~/...` を `HOME` 基準で解決する。
-  - tilde-user shorthand は引き続き unsupported として明示的に拒否する。
+  - Use the same `~/...` -> `HOME` rule across CLI commands that accept filesystem paths, not only handoff build.
+  - Continue to reject tilde-user shorthand.
 - Rationale:
-  - ユーザーにとって path shorthand の期待は command ごとに異ならない方が自然だから。
-  - 同じルールを shared helper に寄せた方がテストと docs を保守しやすいから。
+  - Users expect shorthand path behavior to stay consistent across commands.
+  - A shared helper is simpler to test and document.
 - Implications:
-  - `src/pathing.rs` を shared helper とし、`handoff` / `preview` / `compare` / `apply` / `pack-fix` が利用する。
-  - spec と docs は handoff 専用の説明ではなく、CLI 全体の path rule として説明する。
+  - `src/pathing.rs` is the shared helper used by handoff / preview / compare / apply / pack-fix.
+  - Spec/docs describe this as a general CLI rule rather than a handoff-only rule.
+
+---
+
+## D-055: `diffship init --template-dir` can override generated guide templates
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship init` accepts `--template-dir <dir>`.
+  - When provided, diffship looks for `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` in that directory before falling back to repository templates or built-in defaults.
+- Rationale:
+  - Repositories may want project-specific onboarding guidance without editing the committed default templates.
+  - A directory-level override is simpler than separate override flags per generated guide.
+- Implications:
+  - `src/cli.rs` exposes the option and `src/ops/init.rs` resolves the template directory with the shared path rules.
+  - Init integration tests and user-facing docs must show the override behavior.
