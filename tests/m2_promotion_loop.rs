@@ -51,6 +51,12 @@ fn diffship_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("diffship"))
 }
 
+fn write_project_config(root: &std::path::Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("config.toml"), body).unwrap();
+}
+
 fn head(root: &std::path::Path) -> String {
     let out = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -239,6 +245,42 @@ fn m2_loop_happy_path_promotes_commit() {
             .join(&run_id)
             .exists()
     );
+}
+
+#[test]
+fn m2_loop_runs_post_apply_commands_before_promote() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[ops.post_apply]
+cmd1 = "printf post-apply\\n >> README.md"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "loop\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], None);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args([
+            "loop",
+            bundle_root.to_str().unwrap(),
+            "--profile",
+            "fast",
+            "--target-branch",
+            "develop",
+        ])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let readme = fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("loop\n"));
+    assert!(readme.contains("post-apply\n"));
 }
 
 #[test]

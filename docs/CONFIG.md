@@ -74,6 +74,25 @@ Notes:
 - CLI `--profile` still has top precedence and can override to `fast|standard|full` or another configured custom profile.
 - Commands are loaded only from local config sources (global/project), not from the patch bundle.
 
+#### 1.1.2 Post-apply commands (implemented)
+
+You can define commands that run automatically after a successful `diffship apply` patch step and before `diffship verify` in `diffship loop`.
+
+```toml
+[ops.post_apply]
+cmd1 = "just fmt-fix"
+cmd2 = "just docs-check"
+cmd3 = "just trace-check"
+cmd4 = "just ci"
+```
+
+Notes:
+
+- commands run in the sandbox worktree
+- command order follows `cmd1`, `cmd2`, `cmd3`, ...
+- failures are recorded under the run directory and make `apply` / `loop` fail
+- commands are loaded only from local config sources (global/project), not from the patch bundle
+
 ### 1.2 Promotion mode + target branch
 
 ```toml

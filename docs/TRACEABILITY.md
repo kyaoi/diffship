@@ -175,6 +175,7 @@ Conventions:
 - **S-APPLY-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
+- **S-APPLY-009** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/config.rs` — Status: Implemented
 
 ---
 

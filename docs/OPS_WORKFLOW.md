@@ -38,6 +38,8 @@ diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 diffship loop ./patch-bundle.zip
 ```
 
+If ops.post_apply commands are configured, diffship runs them automatically in the sandbox immediately after apply succeeds and before verify starts.
+
 5) If you need reproducibility checks across two handoff outputs:
 
 ```bash
@@ -78,9 +80,10 @@ diffship loop path/to/patch-bundle.zip
 What `loop` does:
 
 1) **apply** the patch bundle in a sandbox
-2) **verify** using a local profile (default: `standard`)
-3) if verify passed, **promote** the result back to your target branch
-4) record machine-readable logs under `.diffship/runs/<run-id>/`
+2) **post-apply** local commands, if configured
+3) **verify** using a local profile (default: `standard`)
+4) if verify passed, **promote** the result back to your target branch
+5) record machine-readable logs under `.diffship/runs/<run-id>/`
 
 ---
 

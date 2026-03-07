@@ -44,6 +44,12 @@ fn diffship_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("diffship"))
 }
 
+fn write_project_config(root: &std::path::Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("config.toml"), body).unwrap();
+}
+
 fn head(root: &std::path::Path) -> String {
     let out = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -237,4 +243,86 @@ fn m2_verify_fails_on_whitespace_errors() {
         .assert()
         .failure()
         .code(9);
+}
+
+#[test]
+fn m2_apply_runs_configured_post_apply_commands_in_sandbox() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[ops.post_apply]
+cmd1 = "printf hook >> README.md"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+    let run_dir = root.join(".diffship").join("runs").join(&run_id);
+    let sandbox_readme = root
+        .join(".diffship")
+        .join("worktrees")
+        .join("sandboxes")
+        .join(&run_id)
+        .join("README.md");
+    let readme = fs::read_to_string(sandbox_readme).unwrap();
+
+    assert!(readme.contains("world\n"));
+    assert!(readme.contains("hook"));
+    assert!(run_dir.join("post_apply.json").exists());
+    assert!(run_dir.join("post-apply").join("01_cmd1.stdout").exists());
+}
+
+#[test]
+fn m2_apply_fails_when_post_apply_command_fails() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[ops.post_apply]
+cmd1 = "exit 7"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(8)
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8_lossy(&out);
+    assert!(stderr.contains("post-apply commands failed"));
+
+    let runs_dir = root.join(".diffship").join("runs");
+    let latest = fs::read_dir(&runs_dir)
+        .unwrap()
+        .filter_map(|ent| ent.ok().map(|e| e.path()))
+        .filter(|path| path.is_dir())
+        .max()
+        .unwrap();
+    assert!(latest.join("post_apply.json").exists());
 }

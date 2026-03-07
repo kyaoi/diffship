@@ -334,9 +334,10 @@ What happens:
 2. create or reuse a session
 3. create a sandbox worktree for the run
 4. apply the patch bundle
-5. run verification
-6. promote if verification succeeds
-7. persist run logs under `.diffship/runs/<run-id>/`
+5. run configured ops.post_apply commands, if any
+6. run verification
+7. promote if verification succeeds
+8. persist run logs under `.diffship/runs/<run-id>/`
 
 ### 6.3 Use individual ops commands
 

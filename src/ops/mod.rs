@@ -5,6 +5,7 @@ pub(crate) mod lock;
 mod loop_cmd;
 mod pack_fix;
 mod patch_bundle;
+mod post_apply;
 mod promote;
 pub(crate) mod run;
 mod runs;

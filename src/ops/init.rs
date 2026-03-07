@@ -180,6 +180,14 @@ target_branch = "develop"
 [ops.commit]
 policy = "auto"            # auto|manual
 
+# Optional commands to run automatically in the sandbox after a successful apply.
+# These are local-only config values; patch bundles cannot define them.
+# [ops.post_apply]
+# cmd1 = "just fmt-fix"
+# cmd2 = "just docs-check"
+# cmd3 = "just trace-check"
+# cmd4 = "just ci"
+
 # ---
 # Planned / reserved keys (kept here for future versions):
 #

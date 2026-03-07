@@ -730,3 +730,18 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `docs/AI_PROJECT_TEMPLATE.md` を template source として持ち、`src/ops/init.rs` が `.diffship/AI_GUIDE.md` を出力する。
   - init integration test と関連 docs を更新する。
+
+## D-053: post-apply commands は local config only の sandbox hook として扱う
+
+- Date: 2026-03-07
+- Decision:
+  - `[ops.post_apply]` に列挙したコマンドを、patch apply 成功直後に sandbox 内で自動実行する。
+  - command source は local config のみとし、patch bundle manifest からは解決しない。
+  - いずれかの command が失敗したら `apply` / `loop` は失敗扱いにし、logs を run directory に残す。
+- Rationale:
+  - formatter や doc/spec consistency checks を apply 後に自動実行したい需要があるため。
+  - 一方で AI bundle から任意コマンドを注入させるのは safety policy に反するため、local config に限定する必要がある。
+- Implications:
+  - `src/ops/config.rs` が `[ops.post_apply]` を解決する。
+  - `src/ops/post_apply.rs` が sandbox 実行と `post_apply.json` / log 出力を担う。
+  - `apply` と `loop` は hook failure を成功扱いにしない。

@@ -5,6 +5,7 @@ use crate::exit::{
 use crate::git;
 use crate::ops::lock;
 use crate::ops::patch_bundle;
+use crate::ops::post_apply;
 use crate::ops::run;
 use crate::ops::session;
 use crate::ops::tasks;
@@ -25,6 +26,9 @@ struct ApplySummary {
     apply_mode: String,
     tasks_required: bool,
     user_tasks_path: Option<String>,
+    post_apply_commands: usize,
+    post_apply_ok: Option<bool>,
+    post_apply_logs_path: Option<String>,
     ok: bool,
     error: Option<String>,
 }
@@ -59,6 +63,9 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
             "  note    : promotion will be blocked until tasks are acknowledged (use --ack-tasks)"
         );
     }
+    if let Some(p) = &out.post_apply_logs_path {
+        println!("  hooks   : {}", p);
+    }
     if out.keep_sandbox {
         println!("  next    : diffship verify --run-id {}", out.run_id);
     } else {
@@ -75,6 +82,7 @@ pub struct ApplyOut {
     pub sandbox_path: String,
     pub run_bundle_dir: String,
     pub user_tasks_path: Option<String>,
+    pub post_apply_logs_path: Option<String>,
     pub keep_sandbox: bool,
 }
 
@@ -138,6 +146,9 @@ pub fn apply_locked(
             apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
             tasks_required,
             user_tasks_path: user_tasks.clone(),
+            post_apply_commands: 0,
+            post_apply_ok: None,
+            post_apply_logs_path: None,
             ok: false,
             error: Some(format!(
                 "base_commit mismatch: manifest={} session_head={}",
@@ -160,6 +171,31 @@ pub fn apply_locked(
     let sandbox_path = Path::new(&sandbox.path);
 
     let apply_res = apply_patches_in_sandbox(sandbox_path, &bundle)?;
+    let cfg = crate::ops::config::resolve_ops_config(git_root, None, Default::default())?;
+    let post_apply_commands = cfg.post_apply_commands().unwrap_or_default();
+    let post_apply_out = if apply_res.is_ok && !post_apply_commands.is_empty() {
+        Some(post_apply::run(
+            &run_dir,
+            sandbox_path,
+            &post_apply_commands,
+            &created_at,
+        )?)
+    } else {
+        None
+    };
+    let post_apply_ok = post_apply_out.as_ref().map(|out| out.ok);
+    let ok = apply_res.is_ok && post_apply_ok.unwrap_or(true);
+    let error = if !apply_res.is_ok {
+        apply_res.error.clone()
+    } else if let Some(out) = post_apply_out.as_ref() {
+        if !out.ok {
+            Some("post-apply commands failed".to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let summary = ApplySummary {
         run_id: run_meta.run_id.clone(),
         created_at: created_at.clone(),
@@ -171,22 +207,25 @@ pub fn apply_locked(
         apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
         tasks_required,
         user_tasks_path: user_tasks.clone(),
-        ok: apply_res.is_ok,
-        error: apply_res.error.clone(),
+        post_apply_commands: post_apply_commands.len(),
+        post_apply_ok,
+        post_apply_logs_path: post_apply_out.as_ref().map(|out| out.logs_path.clone()),
+        ok,
+        error: error.clone(),
     };
     write_apply_summary(&run_dir, &summary)?;
 
-    if !apply_res.is_ok {
+    if !ok {
         // Rollback inside sandbox, then optionally remove the worktree.
-        rollback_sandbox(sandbox_path, &sandbox.base_commit);
+        if !apply_res.is_ok {
+            rollback_sandbox(sandbox_path, &sandbox.base_commit);
+        }
         if !args.keep_sandbox {
             worktree::remove_worktree_best_effort(git_root, sandbox_path);
         }
         return Err(ExitError::new(
             EXIT_APPLY_FAILED,
-            apply_res
-                .error
-                .unwrap_or_else(|| "apply failed".to_string()),
+            error.unwrap_or_else(|| "apply failed".to_string()),
         ));
     }
 
@@ -196,6 +235,7 @@ pub fn apply_locked(
         sandbox_path: sandbox.path,
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
         user_tasks_path: user_tasks,
+        post_apply_logs_path: post_apply_out.map(|out| out.logs_path),
         keep_sandbox: args.keep_sandbox,
     })
 }

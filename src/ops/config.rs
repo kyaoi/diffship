@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub struct OpsConfigOverrides {
     pub verify_profile: Option<String>,
     pub verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
+    pub post_apply_commands: BTreeMap<String, String>,
     pub target_branch: Option<String>,
     pub promotion_mode: Option<String>,
     pub commit_policy: Option<String>,
@@ -22,6 +23,7 @@ pub struct OpsConfig {
     pub promotion_mode: String,
     pub commit_policy: String,
     verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
+    post_apply_commands: BTreeMap<String, String>,
 }
 
 impl OpsConfig {
@@ -32,6 +34,7 @@ impl OpsConfig {
             promotion_mode: "commit".to_string(),
             commit_policy: "auto".to_string(),
             verify_profiles: BTreeMap::new(),
+            post_apply_commands: BTreeMap::new(),
         }
     }
 
@@ -51,11 +54,29 @@ impl OpsConfig {
         for (profile, commands) in o.verify_profiles {
             self.verify_profiles.insert(profile, commands);
         }
+        for (key, cmd) in o.post_apply_commands {
+            self.post_apply_commands.insert(key, cmd);
+        }
     }
 
     pub fn verify_commands_for_selected_profile(&self) -> Option<Vec<String>> {
         let m = self.verify_profiles.get(&self.verify_profile)?;
         let mut items = m
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<_>>();
+        items.sort_by_key(|(k, _)| profile_command_sort_key(k));
+        let cmds = items
+            .into_iter()
+            .map(|(_, v)| v)
+            .filter(|v| !v.trim().is_empty())
+            .collect::<Vec<_>>();
+        if cmds.is_empty() { None } else { Some(cmds) }
+    }
+
+    pub fn post_apply_commands(&self) -> Option<Vec<String>> {
+        let mut items = self
+            .post_apply_commands
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<Vec<_>>();
@@ -228,6 +249,7 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
         // - [verify] default_profile = "standard"
         // - [ops] verify_profile = "standard" (legacy stub convenience)
         // - [ops.promote] target_branch / mode
+        // - [ops.post_apply] cmd1 = "just fmt-fix"
         // - [ops.commit] policy
         let section_str: Vec<&str> = section.iter().map(|s| s.as_str()).collect();
         match section_str.as_slice() {
@@ -264,6 +286,9 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
                 if key == "policy" {
                     out.commit_policy = Some(val);
                 }
+            }
+            ["ops", "post_apply"] => {
+                out.post_apply_commands.insert(key.to_string(), val);
             }
             _ => {}
         }

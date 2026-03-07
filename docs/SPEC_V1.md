@@ -175,6 +175,7 @@ Applies a patch bundle safely.
 - **S-APPLY-006**: Must run a preflight check before mutating (e.g., `git apply --check` or an equivalent dry-run).
 - **S-APPLY-007**: If apply fails after any mutation, must rollback automatically (safe defaults only).
 - **S-APPLY-008**: Must write run logs under `.diffship/runs/<run-id>/` including apply result and errors.
+- **S-APPLY-009**: If locally configured post-apply commands exist, apply MUST run them in the sandbox after the patch is applied, record logs under the run directory, and fail the apply/loop flow if any configured command fails. These commands are local config only and MUST NOT be loaded from the patch bundle.
 
 ### 4.6 Commit policy (manual / auto)
 
