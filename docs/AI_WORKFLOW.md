@@ -15,6 +15,9 @@ If the repository was initialized with `diffship init`, also provide the generat
 - `.diffship/PROJECT_KIT.md`
 - `.diffship/AI_GUIDE.md`
 
+If you maintain a custom init template directory, keep the repository-specific parts of `AI_PROJECT_TEMPLATE.md`
+inside the sections marked "Customize this section" so the generated `.diffship/AI_GUIDE.md` stays easy to update.
+
 * **The spec is the single source of truth**:
 
   * `docs/SPEC_V1.md`

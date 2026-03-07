@@ -336,6 +336,13 @@ The directory may contain either or both of:
 
 Missing files fall back to the repository templates and then to built-in defaults.
 
+`AI_PROJECT_TEMPLATE.md` is intentionally split into:
+
+- core contract sections that should stay aligned with diffship behavior
+- "Customize this section" blocks for repository-specific rules, commands, directory ownership, and ready-to-send prompts
+
+That makes it practical to keep one stable diffship contract while still generating a repo-specific `.diffship/AI_GUIDE.md`.
+
 ### 6.2 Full loop
 
 ```bash
