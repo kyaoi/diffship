@@ -186,6 +186,10 @@ pub struct BuildArgs {
     #[arg(long)]
     pub plan_out: Option<String>,
 
+    /// Parent directory for the auto-generated bundle name (used when --out is omitted)
+    #[arg(long)]
+    pub out_dir: Option<String>,
+
     /// Output directory path (default: ./diffship_<timestamp>/)
     #[arg(long)]
     pub out: Option<String>,

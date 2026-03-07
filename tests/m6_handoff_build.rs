@@ -123,6 +123,61 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 }
 
 #[test]
+fn build_out_dir_places_generated_bundle_under_requested_parent() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let out_dir = root.join("artifacts").join("handoff");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--out-dir"])
+        .arg(&out_dir);
+    cmd.assert().success();
+
+    let bundles = fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if !ent.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = ent.file_name().to_string_lossy().to_string();
+            if !name.starts_with("diffship_") {
+                return None;
+            }
+            Some(ent.path())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(bundles.len(), 1);
+    assert!(bundles[0].join("HANDOFF.md").exists());
+}
+
+#[test]
+fn build_rejects_out_and_out_dir_together() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--out-dir", "artifacts", "--out", "bundle"]);
+    cmd.assert().failure().stderr(predicates::str::contains(
+        "--out and --out-dir cannot be used together",
+    ));
+}
+
+#[test]
 fn build_can_export_and_replay_plan_toml() {
     let td = init_repo();
     let root = td.path();

@@ -273,9 +273,19 @@ Typical output:
 
 Default output naming:
 
+- `--out <path>` sets the exact output directory path
+- `--out-dir <dir>` places the auto-generated bundle name under a custom parent directory
 - if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name
 - the timestamp is rendered in the local system timezone
 - if the base path already exists, diffship creates a suffixed name such as `diffship_YYYY-MM-DD_HHMM_2`, then `_3`, and so on
+
+Example:
+
+```bash
+diffship build --out-dir ./artifacts/handoffs
+```
+
+This produces a bundle under `./artifacts/handoffs/` while keeping the generated bundle name.
 
 See `docs/BUNDLE_FORMAT.md` for the bundle contract.
 

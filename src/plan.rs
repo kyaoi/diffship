@@ -22,6 +22,7 @@ pub struct HandoffPlan {
     pub binary_mode: String,
     pub max_parts: Option<usize>,
     pub max_bytes_per_part: Option<u64>,
+    pub out_dir: Option<String>,
     pub out: Option<String>,
     pub zip: bool,
     pub yes: bool,
@@ -49,6 +50,7 @@ impl Default for HandoffPlan {
             binary_mode: "raw".to_string(),
             max_parts: None,
             max_bytes_per_part: None,
+            out_dir: None,
             out: None,
             zip: false,
             yes: false,
@@ -78,6 +80,7 @@ impl HandoffPlan {
             binary_mode: args.binary_mode.clone(),
             max_parts: args.max_parts,
             max_bytes_per_part: args.max_bytes_per_part,
+            out_dir: args.out_dir.clone(),
             out: args.out.clone(),
             zip: args.zip,
             yes: args.yes,
@@ -107,6 +110,7 @@ impl HandoffPlan {
             max_bytes_per_part: self.max_bytes_per_part,
             plan,
             plan_out,
+            out_dir: self.out_dir,
             out: self.out,
             zip: self.zip,
             yes: self.yes,
@@ -172,6 +176,7 @@ impl HandoffPlan {
             out.push("--max-bytes-per-part".to_string());
             out.push(max_bytes.to_string());
         }
+        push_opt_flag(&mut out, "--out-dir", self.out_dir.as_deref());
         push_opt_flag(&mut out, "--out", self.out.as_deref());
         if self.zip {
             out.push("--zip".to_string());
@@ -296,6 +301,7 @@ impl HandoffPlan {
             "--plan".to_string(),
         ];
         args.push(plan_path.to_string());
+        push_opt_flag(&mut args, "--out-dir", plan.out_dir.as_deref());
         push_opt_flag(&mut args, "--out", plan.out.as_deref());
         if plan.zip {
             args.push("--zip".to_string());
@@ -477,12 +483,14 @@ mod tests {
             exclude: vec!["src/generated.rs".to_string()],
             max_parts: Some(12),
             max_bytes_per_part: Some(1024),
+            out_dir: Some("handoffs".to_string()),
             out: Some("out dir".to_string()),
             zip: true,
             yes: true,
             ..HandoffPlan::default()
         };
         let parsed = HandoffPlan::from_toml_str(&plan.to_toml_string()).expect("parse");
+        assert_eq!(parsed.out_dir, None);
         assert_eq!(parsed.out, None);
         assert!(!parsed.zip);
         assert!(!parsed.yes);
@@ -494,7 +502,7 @@ mod tests {
         assert_eq!(parsed.exclude, plan.exclude);
         assert_eq!(
             HandoffPlan::replay_shell_command_with_overrides("tmp/plan.toml", &plan),
-            "diffship build --plan tmp/plan.toml --out 'out dir' --zip --yes"
+            "diffship build --plan tmp/plan.toml --out-dir handoffs --out 'out dir' --zip --yes"
         );
     }
 }

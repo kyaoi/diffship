@@ -164,6 +164,7 @@ diffship loop <patch-bundle.zip>
 
 - blocked理由、調査ログ、設計メモなど
 - 2026-03-07: default handoff output naming is now local-time based and auto-suffixes collisions for omitted `--out`.
+- 2026-03-07: `--out-dir` can redirect the generated handoff bundle under a custom parent directory without replacing the auto-generated bundle name.
 - Zip overlay を展開するとファイルの更新時刻が戻り、Cargo が再ビルドしないことがある。
   - サブコマンドが認識されない等の症状が出たら `cargo clean` → `just ci` を試す。
 - Traceability の `Partial` は Tests/Code のどちらかに `TBD` が残る場合だけ使う。

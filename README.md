@@ -155,6 +155,9 @@ diffship compare ./bundle_a ./bundle_b.zip --json
 diffship build --include-untracked --plan-out ./diffship_plan.toml
 diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 
+# place the auto-generated bundle under a custom parent directory
+diffship build --out-dir ./artifacts/handoffs
+
 # share named profiles via config, not via plan.toml
 # project: .diffship/config.toml or repo-root .diffship.toml
 # global:  ~/.config/diffship/config.toml
@@ -169,6 +172,8 @@ Output layout:
 - .diffshipignore is respected when present
 
 Default output naming:
+- `--out <path>` sets the exact output directory path
+- `--out-dir <dir>` changes the parent directory while preserving the auto-generated `diffship_<timestamp>` bundle name
 - when `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name in the user's local timezone
 - if that directory already exists, diffship appends `_2`, `_3`, ... instead of failing
 

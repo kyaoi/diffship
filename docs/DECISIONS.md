@@ -684,3 +684,19 @@ diffship OS の重要な意思決定ログです。
 - Implications:
   - `S-OUT-001` の文言を local timestamp + collision suffix を含む形に明確化する。
   - `tests/m6_handoff_build.rs` と `src/handoff.rs` unit tests で naming behavior を固定する。
+
+---
+
+## D-050: `--out-dir` は auto-generated handoff bundle 名の親ディレクトリだけを差し替える
+
+- Date: 2026-03-07
+- Decision:
+  - `diffship build --out-dir <dir>` を追加し、既定の `diffship_<timestamp>` bundle 名を維持したまま生成先の親ディレクトリを変えられるようにする。
+  - `--out <path>` は従来どおり exact output path として扱う。
+  - `--out` と `--out-dir` の同時指定は曖昧なので拒否する。
+- Rationale:
+  - ユーザーは「bundle 名は自動生成のまま」「保存先だけ変えたい」ことがあり、`--out` に完全な path を毎回書くのは冗長だから。
+  - `--out` の既存意味を変えずに要望を満たせるため。
+- Implications:
+  - `HandoffPlan` の runtime override と replay shell command でも `--out-dir` を扱う。
+  - README / Usage Guide / Spec は `--out` と `--out-dir` の役割分担を明記する。

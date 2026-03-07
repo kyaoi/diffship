@@ -205,7 +205,12 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             let p = PathBuf::from(o);
             if p.is_absolute() { p } else { cwd.join(p) }
         }
-        None => default_output_dir(&cwd)?,
+        None => default_output_dir(
+            &args
+                .out_dir
+                .as_deref()
+                .map_or_else(|| cwd.clone(), |raw| resolve_output_parent_dir(&cwd, raw)),
+        )?,
     };
 
     if out_dir.exists() {
@@ -517,6 +522,12 @@ fn resolve_build_args(
     cwd: &Path,
     args: BuildArgs,
 ) -> Result<BuildArgs, ExitError> {
+    if args.out.is_some() && args.out_dir.is_some() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "--out and --out-dir cannot be used together",
+        ));
+    }
     let Some(plan_path) = args.plan.clone() else {
         let cfg = HandoffConfig::load(git_root)?;
         let (resolved, _) = cfg.resolve_build_args(args)?;
@@ -531,6 +542,7 @@ fn resolve_build_args(
     let path = resolve_plan_path(cwd, &plan_path);
     let plan = HandoffPlan::from_file(&path).map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
     let mut effective = plan.into_build_args(args.plan, args.plan_out);
+    effective.out_dir = args.out_dir;
     effective.out = args.out;
     effective.zip = args.zip;
     effective.yes = args.yes;
@@ -992,6 +1004,15 @@ fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str) -> PathBuf {
     }
 
     unreachable!("numeric suffix search is unbounded");
+}
+
+fn resolve_output_parent_dir(cwd: &Path, raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    }
 }
 
 fn timestamp_yyyymmdd_hhmm() -> Result<String, ExitError> {

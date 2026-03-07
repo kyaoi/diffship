@@ -34,7 +34,7 @@ This is the current implementation inventory based on:
 
 | Area | Status | Evidence (code / tests / docs) |
 |---|---|---|
-| `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md`; default output naming uses local timestamps and collision suffixes when `--out` is omitted |
+| `build` command | Implemented | `src/handoff.rs`, `src/cli.rs`; `tests/m6_handoff_build.rs`; `README.md`; default output naming uses local timestamps and collision suffixes when `--out` is omitted, and `--out-dir` can redirect the generated bundle under a custom parent directory |
 | committed / staged / unstaged / untracked collection | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`; `docs/SPEC_V1.md`, `docs/BUNDLE_FORMAT.md` |
 | split-by / profiles / part split | Implemented | split-by, named handoff profiles (`20x512`, `10x100`, custom config), and part emission exist in `src/handoff.rs`, `src/handoff_config.rs`, `src/cli.rs`, `src/tui/mod.rs`; limits/profile behavior is covered by `tests/m6_handoff_build.rs`; docs and generated config stub now explain that profile catalogs live in config while `plan.toml` exports the selected profile + resolved limits |
 | `HANDOFF.md` generation | Implemented | `src/handoff.rs`; `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`; `docs/HANDOFF_TEMPLATE.md` |
