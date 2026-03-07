@@ -68,7 +68,7 @@ If promotion is blocked:
 - secrets were detected → rerun with `--ack-secrets`
 - required user tasks exist → complete them, then rerun with `--ack-tasks`
 
-If verification fails, diffship writes a default reprompt zip under `.diffship/runs/` in the run directory.
+If verification fails, diffship writes a default reprompt zip under the run directory inside `.diffship/`.
 You can also run `diffship pack-fix --run-id <run-id>` manually.
 If ops.post_apply commands are configured, diffship runs them in the sandbox right after apply succeeds.
 
