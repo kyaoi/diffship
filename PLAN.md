@@ -75,7 +75,7 @@ diffship loop <patch-bundle.zip>
 
 | ID | Status | Description | Done Criteria |
 |---|---|---|---|
-| M0-01 | done | `diffship init` (project kit generation) | Creates `.diffship/`, safely skips existing `.diffship/PROJECT_KIT.md` / `.diffship/AI_GUIDE.md` / `config.toml`, overwrites them with `--force`, and ships guardrails that distinguish `OPS_PATCH_BUNDLE` / `NONOPS_EDIT_PACKAGE` / `ANALYSIS_ONLY`, explain missing-`base_commit` behavior, and show the expected artifact trees explicitly |
+| M0-01 | done | `diffship init` (project kit generation) | Creates `.diffship/`, safely skips existing `.diffship/PROJECT_KIT.md` / `.diffship/AI_GUIDE.md` / `config.toml`, overwrites them with `--force`, and ships guardrails that distinguish `OPS_PATCH_BUNDLE` / `NONOPS_EDIT_PACKAGE` / `ANALYSIS_ONLY`, explain missing-`base_commit` behavior, show the expected artifact trees explicitly, and standardize the default AI `git-am` author identity as `Diffship <diffship@example.com>` |
 | M0-02 | done | Locking (prevent concurrent execution) | Creates `.diffship/lock` and refuses concurrent execution |
 | M0-03 | done | Run persistence (run-id / logs) | Creates `.diffship/runs/<run-id>/run.json` and stores at least the `init` result (`init.json`); apply/verify extend this in M2 |
 | M0-04 | done | M0 integration tests | `init` -> `status` -> `runs` succeeds on a temporary Git repo |
@@ -173,3 +173,4 @@ diffship loop <patch-bundle.zip>
 - 2026-03-07: `diffship init` templates now reserve `patchship_...` for valid ops bundles, use `DO_NOT_LOOP_nonops_...` for non-ops archives, and tell AIs to prefer `ANALYSIS_ONLY` over a misleading fallback zip when `base_commit` is missing.
 
 - 2026-03-07: `diffship init` guide templates now include explicit tree examples for loop-ready patch bundles, non-ops packages, and analysis-only responses so humans and AIs can classify artifacts by structure before calling `loop`.
+- 2026-03-08: `diffship init` templates now standardize AI-generated `git-am` author headers on `Diffship <diffship@example.com>` and tell repositories that prefer human commit authorship to use `git-apply` or an explicit author-reset step.

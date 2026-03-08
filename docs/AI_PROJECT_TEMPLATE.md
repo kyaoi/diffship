@@ -272,6 +272,8 @@ Required contract details:
 
 - `manifest.yaml` must include `protocol_version`, `task_id`, `base_commit`, `apply_mode`, and `touched_files`
 - `apply_mode` must be exactly `git-apply` or `git-am`; never use `patch`
+- if `apply_mode=git-am`, use `From: Diffship <diffship@example.com>` as the default mail-style patch author unless the repository guidance explicitly defines another tool identity
+- do not use provider- or model-specific identities such as `OpenAI <assistant@example.com>` as the default `From:` line
 - `base_commit` must be the real target repo SHA supplied by the user or otherwise known from the environment; never use placeholders such as `REPLACE_WITH_REPO_HEAD`
 - if the exact `base_commit` is not known, do **not** fabricate it and do **not** emit an ops-compatible patch bundle
 - patch files must be repo-relative and deterministic
@@ -297,6 +299,17 @@ apply_mode: git-apply
 touched_files:
   - path/to/file.ext
 ```
+
+Recommended `git-am` header when mail-style patches are required:
+
+```patch
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Diffship <diffship@example.com>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: [PATCH] replace-with-task-id
+```
+
+If the repository wants the final promoted commit author to be the local human operator by default, prefer `apply_mode: git-apply` rather than inventing a human `From:` identity.
 
 ### 8.4 Required output shape for non-ops edit packages
 
@@ -328,8 +341,9 @@ Before returning `MODE: OPS_PATCH_BUNDLE`, verify all of the following:
 4. `changes/` contains at least one ordered patch file such as `0001.patch`
 5. `manifest.yaml` uses a real `base_commit`
 6. `apply_mode` is `git-apply` or `git-am`
-7. no forbidden patch metadata is present
-8. the archive does not contain `README_NOT_OPS.md`
+7. if `apply_mode=git-am`, the patch mail header uses the repository-approved tool identity (default: `Diffship <diffship@example.com>`)
+8. no forbidden patch metadata is present
+9. the archive does not contain `README_NOT_OPS.md`
 
 If any item fails, do not return `MODE: OPS_PATCH_BUNDLE`.
 

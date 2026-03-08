@@ -120,6 +120,22 @@ touched_files:
   - path/to/file.ext
 ```
 
+### 3.4 `git-am` author identity
+
+When `apply_mode: git-am`, the patch payload is expected to use a stable tool identity in its mail-style headers.
+
+Recommended default header:
+
+```patch
+From: Diffship <diffship@example.com>
+```
+
+Rules:
+
+- use `Diffship <diffship@example.com>` as the default author identity for AI-generated `git-am` patches unless a repository-specific override says otherwise
+- do not default to provider-specific identities such as `OpenAI <assistant@example.com>`
+- if a repository wants the final promoted commit author to be the local human operator, prefer `apply_mode: git-apply` or a documented post-promotion author-reset flow instead of fabricating a human `From:` line
+
 ---
 
 ## 4. Patch restrictions

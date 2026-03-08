@@ -782,3 +782,17 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
 - Implications:
   - `docs/PROJECT_KIT_TEMPLATE.md` and `docs/AI_PROJECT_TEMPLATE.md` should include artifact-tree cheat sheets.
   - `docs/PATCH_BUNDLE_FORMAT.md` should document both the minimal accepted patch bundle tree and a common rejected non-ops lookalike.
+
+
+## D-058: Standardize AI-generated `git-am` author identity as Diffship
+
+- Date: 2026-03-08
+- Decision:
+  - For AI-generated mail-style patches that use `apply_mode=git-am`, standardize the default `From:` identity as `Diffship <diffship@example.com>`.
+  - Do not use provider-specific identities such as `OpenAI <assistant@example.com>` as the default contract.
+  - If a repository wants the final promoted commit author to be the local human operator by default, prefer `apply_mode=git-apply` or an explicit post-promotion author-reset flow.
+- Rationale:
+  - `git am` preserves the patch `From:` line as the commit author, so a stable tool identity is clearer than leaking a provider or model name into repository history.
+  - Human authorship and tool authorship are separate concerns and should not be conflated in the patch contract.
+- Implications:
+  - `diffship init` templates should document the default `git-am` author identity and the escape hatch for repositories that prefer local human authorship.
