@@ -198,6 +198,8 @@ Key rules:
 
 - `manifest.yaml` must include the exact current `base_commit` for the target repo; never leave placeholders such as `REPLACE_WITH_REPO_HEAD`
 - `apply_mode` must be exactly `git-apply` or `git-am`
+- if `apply_mode=git-am`, default the patch mail header author to `Diffship <diffship@example.com>` unless this repository defines a different explicit tool identity
+- do not use provider-specific `From:` identities such as `OpenAI <assistant@example.com>` as the default contract
 - if the exact `base_commit` is unavailable and you asked for loop-ready output, the AI should request the SHA or return `MODE: ANALYSIS_ONLY` instead of fabricating a fallback zip
 - paths must be repo-relative only
 - do not touch `.git/` or `.diffship/`
@@ -306,6 +308,8 @@ Patch transport and commit behavior are separate:
 - the AI may include `commit_message.txt`
 - diffship promotion behavior is decided by local config
 - promotion may create a commit, leave changes in the working tree, or do nothing depending on config
+- with `apply_mode=git-am`, the patch `From:` line becomes the commit author; default AI-generated mail patches to `Diffship <diffship@example.com>` unless this repository says otherwise
+- if you want the final commit author to be the local human operator by default, prefer `git-apply` or a documented post-promotion `git commit --amend --reset-author --no-edit` step
 
 If `commit_message.txt` is missing, diffship may use a deterministic fallback.
 
