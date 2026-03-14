@@ -3,6 +3,7 @@ use crate::exit::{EXIT_VERIFY_FAILED, ExitError};
 use crate::ops::apply;
 use crate::ops::config;
 use crate::ops::lock;
+use crate::ops::pack_fix;
 use crate::ops::patch_bundle;
 use crate::ops::promote;
 use crate::ops::run;
@@ -76,9 +77,11 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         created_at.clone(),
     )?;
     if !v.ok {
+        let pack_fix_path = pack_fix::default_pack_fix_zip_path(&run_dir, &applied.run_id);
         eprintln!(
-            "diffship loop: verify failed (run_id={}). pack-fix saved under .diffship/runs/{}/pack-fix.zip.",
-            applied.run_id, applied.run_id
+            "diffship loop: verify failed (run_id={}). pack-fix saved to {}.",
+            applied.run_id,
+            pack_fix_path.display()
         );
         return Err(ExitError::new(
             EXIT_VERIFY_FAILED,

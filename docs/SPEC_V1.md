@@ -206,7 +206,7 @@ Runs verification commands (profiles) and records logs.
 Creates a reprompt bundle from the latest run.
 
 - **S-PACKFIX-001**: Must bundle the latest run logs, the applied diff (if any), and the original patch bundle metadata.
-- **S-PACKFIX-002**: Output must be a single zip that is safe to upload to an AI.
+- **S-PACKFIX-002**: Output must be a single zip that is safe to upload to an AI, and the default filename SHOULD include enough run/base context to distinguish multiple bundles by basename alone.
 
 ### 4.8 `diffship loop <patch-bundle>`
 
