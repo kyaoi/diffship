@@ -34,10 +34,11 @@ If you only want to install **diffship** as a CLI, you can install it directly f
 cargo install --git https://github.com/kyaoi/diffship.git
 ```
 
-For reproducible installs, you can pin to a specific tag, branch, or commit:
+For reproducible installs from Git, pin to a specific tag, branch, or commit.
+Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.1.0
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.2.0
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or

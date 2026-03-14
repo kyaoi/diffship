@@ -1,8 +1,10 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs;
+use std::io::Read;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
+use zip::ZipArchive;
 
 fn init_repo() -> TempDir {
     let td = tempfile::tempdir().expect("tempdir");
@@ -66,21 +68,25 @@ fn m0_init_status_runs_happy_path() {
     assert!(root.join(".diffship").join("config.toml").exists());
     let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
     assert!(kit.contains("# DiffshipOS Project Kit"));
+    assert!(kit.contains("Attachment-ready summary for external AI tools"));
     assert!(kit.contains("Core workflow: what diffship is"));
     assert!(kit.contains("Customize this section: repository identity"));
     assert!(kit.contains("Core workflow: patch bundle contract the AI must follow"));
     assert!(kit.contains("Customize this section: local commands and gates"));
+    assert!(kit.contains("Generated metadata"));
     let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
     assert!(ai.contains("# DiffshipOS AI Guide"));
+    assert!(ai.contains("Attachment-ready project rules"));
     assert!(ai.contains("Core contract: what diffship is"));
     assert!(ai.contains("Customize this section: repository identity"));
     assert!(ai.contains("Core contract: what the AI is expected to produce"));
     assert!(ai.contains("Core contract: meaning of files the user may provide"));
     assert!(ai.contains("Core contract: additional deliverables beyond file edits"));
+    assert!(ai.contains("Generated metadata"));
     let gitignore = fs::read_to_string(root.join(".diffship").join(".gitignore")).unwrap();
     assert_eq!(
         gitignore,
-        "artifacts/handoffs/\nruns/\nworktrees/\nsessions/\nlock\n"
+        "artifacts/handoffs/\nartifacts/rules/\nruns/\nworktrees/\nsessions/\nlock\n"
     );
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
     assert!(cfg.contains("Use this file in two layers"));
@@ -89,6 +95,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains(
         "Customize this section: local-only commands to run automatically after a successful apply"
     ));
+    assert!(cfg.contains("Customize this section: forbid AI patch bundles"));
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
     assert!(cfg.contains("output_dir = \"./.diffship/artifacts/handoffs\""));
@@ -105,8 +112,16 @@ fn m0_init_status_runs_happy_path() {
 
     let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
     assert!(v.get("git_root").is_some());
+    assert!(v.get("repo_head").is_some());
     assert!(v.get("lock").is_some());
     assert!(v.get("recent_runs").is_some());
+
+    diffship_cmd()
+        .args(["status", "--heads-only"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("repo_head"));
 
     // runs --json
     let out = diffship_cmd()
@@ -121,6 +136,20 @@ fn m0_init_status_runs_happy_path() {
     let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
     let runs = v.get("runs").and_then(|x| x.as_array()).unwrap();
     assert!(!runs.is_empty(), "init should create a run record");
+    assert!(
+        runs[0]
+            .get("run_id")
+            .and_then(|x| x.as_str())
+            .unwrap()
+            .starts_with("run_20")
+    );
+
+    diffship_cmd()
+        .args(["runs", "--heads-only"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("base="));
 }
 
 #[test]
@@ -179,4 +208,56 @@ fn m0_init_can_use_custom_template_dir() {
     let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
     assert!(kit.contains("Custom project kit body"));
     assert!(ai.contains("Custom AI guide body"));
+}
+
+#[test]
+fn m0_init_can_export_rules_zip() {
+    let td = init_repo();
+    let root = td.path();
+
+    let output = diffship_cmd()
+        .args(["init", "--zip"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+    assert!(stdout.contains("zip      :"));
+
+    let rules_dir = root.join(".diffship").join("artifacts").join("rules");
+    let entries: Vec<_> = fs::read_dir(&rules_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].extension().and_then(|x| x.to_str()), Some("zip"));
+
+    let file = fs::File::open(&entries[0]).unwrap();
+    let mut zip = ZipArchive::new(file).unwrap();
+    let mut names = vec![];
+    for i in 0..zip.len() {
+        names.push(zip.by_index(i).unwrap().name().to_string());
+    }
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "AI_GUIDE.md".to_string(),
+            "PROJECT_KIT.md".to_string(),
+            "metadata.json".to_string()
+        ]
+    );
+
+    let mut metadata = String::new();
+    zip.by_name("metadata.json")
+        .unwrap()
+        .read_to_string(&mut metadata)
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+    assert!(value.get("generated_at").is_some());
+    assert!(value.get("run_id").is_some());
+    assert!(value.get("branch").is_some());
+    assert!(value.get("forbid_patterns").is_some());
 }

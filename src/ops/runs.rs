@@ -30,6 +30,21 @@ pub fn cmd(git_root: &Path, args: RunsArgs) -> Result<(), ExitError> {
         return Ok(());
     }
 
+    if args.heads_only {
+        println!("diffship runs --heads-only:");
+        for r in runs {
+            println!(
+                "- {}  {}  {}  base={}  promoted={}",
+                r.created_at,
+                r.run_id,
+                r.command,
+                r.effective_base_commit.as_deref().unwrap_or("(none)"),
+                r.promoted_head.as_deref().unwrap_or("(none)")
+            );
+        }
+        return Ok(());
+    }
+
     println!("diffship runs:");
     for r in runs {
         println!("- {}  {}  {}", r.created_at, r.run_id, r.command);

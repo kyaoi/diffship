@@ -134,6 +134,25 @@ diffship loop <patch-bundle.zip>
 | M6-05 | done | Ignore + secrets warning (handoff side) | Respects `.diffshipignore`, reports secret-like content without leaking values, and can fail when needed |
 | M6-06 | done | Determinism + tests | Produces deterministic ordering / splitting, ships golden tests, and passes `just ci` |
 
+### M7: Ops ergonomics / recovery
+
+| ID | Status | Description | Done Criteria |
+|---|---|---|---|
+| M7-01 | todo | Base commit override for apply/loop | `diffship apply/loop --base-commit <rev>` can correct a bad manifest base only when the resolved SHA matches the current session head, and the effective base is recorded in run artifacts |
+| M7-02 | todo | Head-focused status / runs views | `diffship status --heads-only` and `diffship runs --heads-only` show repo/session/sandbox heads concisely without regressing `--json` output |
+| M7-03 | todo | Session repair command | A dedicated diffship command can reseed a session from the current repo HEAD without requiring manual `git update-ref`, and it refuses unsafe repair when live sandboxes still depend on the session |
+| M7-04 | todo | Doctor diagnostics + safe fixes | `diffship doctor` reports stale or missing session/sandbox state, prints exact recovery commands, and `--fix` only applies safe, explainable repairs |
+| M7-05 | todo | Human-readable run ids | New ops runs use timestamp-based run ids that remain collision-safe and compatible with existing UUID-based run directories |
+| M7-06 | todo | External command logs | apply/promote/verify/post-apply preserve argv/stdout/stderr/duration for diffship-spawned external commands under each run directory so hook output is inspectable |
+
+### M8: Rules export / forbid policy
+
+| ID | Status | Description | Done Criteria |
+|---|---|---|---|
+| M8-01 | todo | Repo-configurable forbid patterns | Project/global config can declare extra forbidden patch targets (for example lockfiles), apply/loop enforce them, and generated guides mention the policy |
+| M8-02 | todo | Stronger project rules wording | `diffship init` generates `PROJECT_KIT.md` / `AI_GUIDE.md` text that is ready to hand to external AI project-rule UIs, with repo metadata appended deterministically |
+| M8-03 | todo | Rules kit zip export | `diffship init --zip` emits a minimal rules kit zip named from the current HEAD (or run-id fallback) containing the generated guides and metadata |
+
 ---
 
 ## Inventory Notes (2026-03-07)
@@ -151,9 +170,11 @@ diffship loop <patch-bundle.zip>
 
 ## Next (priority order)
 
-1. Treat additional compare/TUI polish as a v1.1 backlog item rather than a v1 core blocker.
-2. Revisit raw zip-container byte equality only if a concrete need appears in v1.1+.
-3. Revisit a dedicated profile import/export command only if the current config/plan UX proves insufficient in v1.1+.
+1. Complete M7 ops ergonomics / recovery so session drift, stale heads, and hidden hook output are diagnosable without ad-hoc Git commands.
+2. Complete M8 rules export / forbid policy so generated AI guidance and local safety rules stay aligned.
+3. Treat additional compare/TUI polish as a v1.1 backlog item rather than a current blocker.
+4. Revisit raw zip-container byte equality only if a concrete need appears in v1.1+.
+5. Revisit a dedicated profile import/export command only if the current config/plan UX proves insufficient in v1.1+.
 
 ## Notes
 

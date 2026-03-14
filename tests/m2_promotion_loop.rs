@@ -154,6 +154,18 @@ fn last_commit_message(root: &std::path::Path) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
+fn install_pre_commit_hook(root: &std::path::Path, body: &str) {
+    let hook = root.join(".git").join("hooks").join("pre-commit");
+    fs::write(&hook, body).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).unwrap();
+    }
+}
+
 #[test]
 fn m2_promote_commit_creates_commit_on_branch() {
     let td = init_repo();
@@ -190,6 +202,14 @@ fn m2_promote_commit_creates_commit_on_branch() {
 
     let msg = last_commit_message(root);
     assert!(msg.contains("TEST: hello from bundle"));
+    let commands = fs::read_to_string(
+        root.join(".diffship")
+            .join("runs")
+            .join(&run_id)
+            .join("commands.json"),
+    )
+    .unwrap();
+    assert!(commands.contains("\"phase\": \"promote\""));
 
     // Session head should advance to the promoted HEAD.
     let session_state =
@@ -205,6 +225,50 @@ fn m2_promote_commit_creates_commit_on_branch() {
             .join(&run_id)
             .exists()
     );
+}
+
+#[test]
+fn m2_promote_logs_pre_commit_output_under_run_commands() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+    install_pre_commit_hook(root, "#!/bin/sh\necho hook-line >&2\n");
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], None);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+
+    diffship_cmd()
+        .args(["verify", "--run-id", &run_id, "--profile", "fast"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    diffship_cmd()
+        .args(["promote", "--run-id", &run_id, "--target-branch", "develop"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let stderr = fs::read_to_string(
+        root.join(".diffship")
+            .join("runs")
+            .join(&run_id)
+            .join("promote")
+            .join("03_git_commit.stderr"),
+    )
+    .unwrap();
+    assert!(stderr.contains("hook-line"));
 }
 
 #[test]
@@ -245,6 +309,47 @@ fn m2_loop_happy_path_promotes_commit() {
             .join(&run_id)
             .exists()
     );
+}
+
+#[test]
+fn m2_loop_accepts_base_commit_override_when_manifest_is_stale() {
+    let td = init_repo();
+    let root = td.path();
+    let old_base = head(root);
+
+    fs::write(root.join("OTHER.txt"), "x\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(root)
+        .assert()
+        .success();
+    Command::new("git")
+        .args(["commit", "-m", "advance", "-q"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let current_head = head(root);
+    let patch = make_patch_by_editing_readme(root, "loop\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &old_base, &patch, &["README.md"], None);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args([
+            "loop",
+            bundle_root.to_str().unwrap(),
+            "--base-commit",
+            &current_head,
+            "--profile",
+            "fast",
+            "--target-branch",
+            "develop",
+        ])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    assert_ne!(head(root), current_head);
 }
 
 #[test]

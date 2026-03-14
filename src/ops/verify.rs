@@ -1,5 +1,6 @@
 use crate::cli::VerifyArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_VERIFY_FAILED, ExitError};
+use crate::ops::command_log;
 use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::pack_fix;
@@ -10,7 +11,6 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
 
 #[derive(Debug, Serialize)]
 struct VerifySummary {
@@ -138,67 +138,19 @@ pub fn verify_locked(
 
     for (idx, cmd) in plan.iter().enumerate() {
         let name = format!("{:02}_{}", idx + 1, sanitize_name(&cmd.name));
-        let stdout_path = out_dir.join(format!("{}.stdout", name));
-        let stderr_path = out_dir.join(format!("{}.stderr", name));
-
-        let start = Instant::now();
-        let output = Command::new(&cmd.argv[0])
-            .args(&cmd.argv[1..])
-            .current_dir(&sandbox_path)
-            .output();
-        let duration_ms = start.elapsed().as_millis();
-
-        match output {
-            Ok(out) => {
-                let status = out.status.code().unwrap_or(1);
-                if status != 0 {
-                    ok = false;
-                }
-                fs::write(&stdout_path, &out.stdout).map_err(|e| {
-                    ExitError::new(EXIT_GENERAL, format!("failed to write stdout: {e}"))
-                })?;
-                fs::write(&stderr_path, &out.stderr).map_err(|e| {
-                    ExitError::new(EXIT_GENERAL, format!("failed to write stderr: {e}"))
-                })?;
-
-                results.push(VerifyCommandResult {
-                    name: cmd.name.clone(),
-                    argv: cmd.argv.clone(),
-                    status,
-                    duration_ms,
-                    stdout_path: stdout_path
-                        .strip_prefix(&run_dir)
-                        .unwrap_or(&stdout_path)
-                        .display()
-                        .to_string(),
-                    stderr_path: stderr_path
-                        .strip_prefix(&run_dir)
-                        .unwrap_or(&stderr_path)
-                        .display()
-                        .to_string(),
-                });
-            }
-            Err(e) => {
-                ok = false;
-                fs::write(&stderr_path, format!("failed to spawn command: {e}\n")).ok();
-                results.push(VerifyCommandResult {
-                    name: cmd.name.clone(),
-                    argv: cmd.argv.clone(),
-                    status: 1,
-                    duration_ms,
-                    stdout_path: stdout_path
-                        .strip_prefix(&run_dir)
-                        .unwrap_or(&stdout_path)
-                        .display()
-                        .to_string(),
-                    stderr_path: stderr_path
-                        .strip_prefix(&run_dir)
-                        .unwrap_or(&stderr_path)
-                        .display()
-                        .to_string(),
-                });
-            }
+        let logged =
+            command_log::run_and_log(&run_dir, "verify", &name, &sandbox_path, &cmd.argv, None)?;
+        if logged.record.status != 0 {
+            ok = false;
         }
+        results.push(VerifyCommandResult {
+            name: cmd.name.clone(),
+            argv: cmd.argv.clone(),
+            status: logged.record.status,
+            duration_ms: logged.record.duration_ms,
+            stdout_path: logged.record.stdout_path.clone(),
+            stderr_path: logged.record.stderr_path.clone(),
+        });
     }
 
     // NOTE: `created_at` is used in both verify.json and pack-fix. Clone for summary.
@@ -344,15 +296,7 @@ fn shell_escape(s: &str) -> String {
 }
 
 fn sanitize_name(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    command_log::sanitize_name(s)
 }
 
 fn detect_latest_run_with_sandbox(git_root: &Path) -> Option<String> {

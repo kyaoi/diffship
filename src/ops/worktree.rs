@@ -55,6 +55,33 @@ pub fn read_sandbox_meta(git_root: &Path, run_id: &str) -> Option<SandboxMeta> {
     serde_json::from_slice(&bytes).ok()
 }
 
+pub fn list_sandbox_metas(git_root: &Path) -> Vec<SandboxMeta> {
+    let dir = sandboxes_dir(git_root);
+    if !dir.exists() {
+        return vec![];
+    }
+
+    let mut out = vec![];
+    let Ok(rd) = fs::read_dir(&dir) else {
+        return vec![];
+    };
+    for ent in rd.flatten() {
+        let Ok(ft) = ent.file_type() else {
+            continue;
+        };
+        if !ft.is_dir() {
+            continue;
+        }
+        let run_id = ent.file_name().to_string_lossy().to_string();
+        if let Some(meta) = read_sandbox_meta(git_root, &run_id) {
+            out.push(meta);
+        }
+    }
+
+    out.sort_by(|a, b| a.run_id.cmp(&b.run_id));
+    out
+}
+
 pub fn create_detached_worktree(
     git_root: &Path,
     path: &Path,

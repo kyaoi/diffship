@@ -27,6 +27,12 @@ pub enum Command {
     /// Generate a ChatGPT Project kit under .diffship/
     Init(InitArgs),
 
+    /// Repair or inspect diffship session state
+    Session(SessionArgs),
+
+    /// Diagnose stale session/worktree state and suggest safe recovery steps
+    Doctor(DoctorArgs),
+
     /// Show lock state and recent runs
     Status(StatusArgs),
 
@@ -216,6 +222,48 @@ pub struct InitArgs {
     /// Directory containing PROJECT_KIT_TEMPLATE.md and/or AI_PROJECT_TEMPLATE.md overrides
     #[arg(long)]
     pub template_dir: Option<String>,
+
+    /// Also export a minimal rules kit zip under .diffship/artifacts/rules/
+    #[arg(long, default_value_t = false)]
+    pub zip: bool,
+
+    /// Output path for the rules kit zip (requires --zip)
+    #[arg(long)]
+    pub out: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct SessionArgs {
+    #[command(subcommand)]
+    pub command: SessionCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionCommand {
+    /// Reseed a session from the current repository HEAD
+    Repair(SessionRepairArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SessionRepairArgs {
+    /// Session name (default: "default")
+    #[arg(long, default_value = "default")]
+    pub session: String,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Session name to inspect (default: "default")
+    #[arg(long, default_value = "default")]
+    pub session: String,
+
+    /// Apply safe fixes automatically when possible
+    #[arg(long, default_value_t = false)]
+    pub fix: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -223,6 +271,10 @@ pub struct StatusArgs {
     /// Emit machine-readable JSON
     #[arg(long)]
     pub json: bool,
+
+    /// Show only repo/session/sandbox/run head information in human-readable output
+    #[arg(long, default_value_t = false)]
+    pub heads_only: bool,
 
     /// Number of runs to show
     #[arg(long, default_value_t = 5)]
@@ -234,6 +286,10 @@ pub struct RunsArgs {
     /// Emit machine-readable JSON
     #[arg(long)]
     pub json: bool,
+
+    /// Show only head-oriented run information in human-readable output
+    #[arg(long, default_value_t = false)]
+    pub heads_only: bool,
 
     /// Number of runs to show
     #[arg(long, default_value_t = 20)]
@@ -248,6 +304,10 @@ pub struct ApplyArgs {
     /// Session name (default: "default")
     #[arg(long, default_value = "default")]
     pub session: String,
+
+    /// Override manifest base_commit for this run only (must still match the session HEAD)
+    #[arg(long)]
+    pub base_commit: Option<String>,
 
     /// Keep the sandbox worktree for later verification/promotion (default: true)
     #[arg(long, default_value_t = true)]
@@ -314,6 +374,10 @@ pub struct LoopArgs {
     /// Session name (default: "default")
     #[arg(long, default_value = "default")]
     pub session: String,
+
+    /// Override manifest base_commit for this run only (must still match the session HEAD)
+    #[arg(long)]
+    pub base_commit: Option<String>,
 
     /// Verification profile (fast|standard|full)
     #[arg(long)]

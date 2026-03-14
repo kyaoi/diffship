@@ -147,6 +147,20 @@ fn m1_session_and_sandbox_create_advance_cleanup() {
             .any(|sb| sb.get("run_id") == Some(&serde_json::Value::String(run_id.clone())))
     );
 
+    let out = diffship_cmd()
+        .args(["status", "--heads-only"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("repo_head"));
+    assert!(s.contains("sessions"));
+    assert!(s.contains("sandboxes"));
+    assert!(s.contains(&run_id));
+
     // Cleanup the sandbox worktree.
     diffship_cmd()
         .args(["__test_m1_cleanup_sandbox", "--run-id", &run_id])

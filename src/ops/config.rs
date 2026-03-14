@@ -11,6 +11,7 @@ pub struct OpsConfigOverrides {
     pub verify_profile: Option<String>,
     pub verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     pub post_apply_commands: BTreeMap<String, String>,
+    pub forbid_patterns: BTreeMap<String, String>,
     pub target_branch: Option<String>,
     pub promotion_mode: Option<String>,
     pub commit_policy: Option<String>,
@@ -24,6 +25,7 @@ pub struct OpsConfig {
     pub commit_policy: String,
     verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     post_apply_commands: BTreeMap<String, String>,
+    forbid_patterns: BTreeMap<String, String>,
 }
 
 impl OpsConfig {
@@ -35,6 +37,7 @@ impl OpsConfig {
             commit_policy: "auto".to_string(),
             verify_profiles: BTreeMap::new(),
             post_apply_commands: BTreeMap::new(),
+            forbid_patterns: BTreeMap::new(),
         }
     }
 
@@ -56,6 +59,9 @@ impl OpsConfig {
         }
         for (key, cmd) in o.post_apply_commands {
             self.post_apply_commands.insert(key, cmd);
+        }
+        for (key, pattern) in o.forbid_patterns {
+            self.forbid_patterns.insert(key, pattern);
         }
     }
 
@@ -87,6 +93,14 @@ impl OpsConfig {
             .filter(|v| !v.trim().is_empty())
             .collect::<Vec<_>>();
         if cmds.is_empty() { None } else { Some(cmds) }
+    }
+
+    pub fn forbid_patterns(&self) -> Vec<String> {
+        self.forbid_patterns
+            .values()
+            .filter(|v| !v.trim().is_empty())
+            .cloned()
+            .collect()
     }
 }
 
@@ -250,6 +264,7 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
         // - [ops] verify_profile = "standard" (legacy stub convenience)
         // - [ops.promote] target_branch / mode
         // - [ops.post_apply] cmd1 = "just fmt-fix"
+        // - [ops.forbid] path1 = "pnpm-lock.yaml"
         // - [ops.commit] policy
         let section_str: Vec<&str> = section.iter().map(|s| s.as_str()).collect();
         match section_str.as_slice() {
@@ -289,6 +304,9 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
             }
             ["ops", "post_apply"] => {
                 out.post_apply_commands.insert(key.to_string(), val);
+            }
+            ["ops", "forbid"] => {
+                out.forbid_patterns.insert(key.to_string(), val);
             }
             _ => {}
         }

@@ -108,6 +108,7 @@ If the user asked for something they can pass to `diffship loop`, missing `base_
 - `apply_mode` must be exactly `git-apply` or `git-am`.
 - Placeholder values such as `REPLACE_WITH_REPO_HEAD` are invalid.
 - If the exact `base_commit` is unknown, do not emit a patch bundle.
+- A local human operator MAY correct a stale manifest base with `diffship apply --base-commit <rev>` or `diffship loop --base-commit <rev>`, but that override still has to match the local session HEAD before apply proceeds.
 
 Minimal example:
 
