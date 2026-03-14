@@ -218,7 +218,8 @@ Key rules:
 - respect any repository-local `[ops.forbid]` patterns (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
 - keep file ordering and output deterministic
-- patches must not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
+- patches must not include binary patches, rename/copy metadata, file mode metadata for existing files (`old mode`, `new mode`), or submodule changes
+- new file additions may use `new file mode 100644|100755` only when represented as a normal `/dev/null -> b/<path>` add patch in standard `OPS_PATCH_BUNDLE`
 - do not use `tasks/USER_TASKS.md` to ask the user to repair an otherwise invalid patch bundle; tasks are for real user-owned follow-up work only
 - reserve the `patchship_...` name for bundles that are already valid ops inputs
 

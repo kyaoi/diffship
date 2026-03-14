@@ -1,5 +1,7 @@
 use assert_cmd::prelude::*;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -66,6 +68,25 @@ fn make_bundle_dir_with_patch(
     patch_text: &str,
     touched_files: &[&str],
 ) -> TempDir {
+    make_bundle_dir_with_patch_impl(repo_root, base_commit, patch_text, touched_files, true)
+}
+
+fn make_bundle_dir_with_patch_unchecked(
+    repo_root: &std::path::Path,
+    base_commit: &str,
+    patch_text: &str,
+    touched_files: &[&str],
+) -> TempDir {
+    make_bundle_dir_with_patch_impl(repo_root, base_commit, patch_text, touched_files, false)
+}
+
+fn make_bundle_dir_with_patch_impl(
+    repo_root: &std::path::Path,
+    base_commit: &str,
+    patch_text: &str,
+    touched_files: &[&str],
+    check_apply: bool,
+) -> TempDir {
     let td = tempfile::tempdir().expect("bundle tempdir");
     let root = td.path();
 
@@ -84,16 +105,18 @@ fn make_bundle_dir_with_patch(
     fs::write(bundle_root.join("manifest.yaml"), manifest).unwrap();
     fs::write(bundle_root.join("changes").join("0001.patch"), patch_text).unwrap();
 
-    // Sanity: patch should apply against repo_root (pre-check).
-    Command::new("git")
-        .args([
-            "apply",
-            "--check",
-            bundle_root.join("changes/0001.patch").to_str().unwrap(),
-        ])
-        .current_dir(repo_root)
-        .assert()
-        .success();
+    if check_apply {
+        // Sanity: patch should apply against repo_root (pre-check).
+        Command::new("git")
+            .args([
+                "apply",
+                "--check",
+                bundle_root.join("changes/0001.patch").to_str().unwrap(),
+            ])
+            .current_dir(repo_root)
+            .assert()
+            .success();
+    }
 
     td
 }
@@ -113,6 +136,92 @@ fn make_patch_by_editing_readme(repo_root: &std::path::Path, new_line: &str) -> 
     let patch = String::from_utf8_lossy(&out).to_string();
 
     // revert to base for apply test
+    Command::new("git")
+        .args(["checkout", "--", "README.md"])
+        .current_dir(repo_root)
+        .assert()
+        .success();
+
+    patch
+}
+
+fn make_patch_adding_file(repo_root: &std::path::Path, rel: &str, body: &str) -> String {
+    let path = repo_root.join(rel);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&path, body).unwrap();
+
+    let out = Command::new("git")
+        .args([
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+            "--",
+            "/dev/null",
+            rel,
+        ])
+        .current_dir(repo_root)
+        .output()
+        .expect("git diff --no-index")
+        .stdout;
+    let patch = String::from_utf8_lossy(&out).to_string();
+
+    fs::remove_file(&path).unwrap();
+    patch
+}
+
+#[cfg(unix)]
+fn make_patch_adding_executable_file(repo_root: &std::path::Path, rel: &str, body: &str) -> String {
+    let path = repo_root.join(rel);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&path, body).unwrap();
+    let mut perms = fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&path, perms).unwrap();
+
+    let out = Command::new("git")
+        .args([
+            "diff",
+            "--no-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--patch",
+            "--full-index",
+            "--",
+            "/dev/null",
+            rel,
+        ])
+        .current_dir(repo_root)
+        .output()
+        .expect("git diff --no-index")
+        .stdout;
+    let patch = String::from_utf8_lossy(&out).to_string();
+
+    fs::remove_file(&path).unwrap();
+    patch
+}
+
+#[cfg(unix)]
+fn make_patch_changing_readme_mode(repo_root: &std::path::Path) -> String {
+    let readme = repo_root.join("README.md");
+    let mut perms = fs::metadata(&readme).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&readme, perms).unwrap();
+
+    let out = Command::new("git")
+        .args(["diff"])
+        .current_dir(repo_root)
+        .output()
+        .expect("git diff")
+        .stdout;
+    let patch = String::from_utf8_lossy(&out).to_string();
+
     Command::new("git")
         .args(["checkout", "--", "README.md"])
         .current_dir(repo_root)
@@ -448,4 +557,109 @@ fn m2_apply_accepts_tilde_bundle_path() {
         .current_dir(root)
         .assert()
         .success();
+}
+
+#[test]
+fn m2_apply_accepts_new_text_file_in_patch_bundle() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_adding_file(root, "notes.txt", "hello\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["notes.txt"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+    let sandbox_file = root
+        .join(".diffship")
+        .join("worktrees")
+        .join("sandboxes")
+        .join(&run_id)
+        .join("notes.txt");
+
+    assert_eq!(fs::read_to_string(sandbox_file).unwrap(), "hello\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn m2_apply_accepts_new_executable_file_in_patch_bundle() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_adding_executable_file(root, "script.sh", "#!/bin/sh\necho hi\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["script.sh"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+    let sandbox_file = root
+        .join(".diffship")
+        .join("worktrees")
+        .join("sandboxes")
+        .join(&run_id)
+        .join("script.sh");
+    let mode = fs::metadata(&sandbox_file).unwrap().permissions().mode() & 0o777;
+
+    assert_eq!(
+        fs::read_to_string(&sandbox_file).unwrap(),
+        "#!/bin/sh\necho hi\n"
+    );
+    assert_eq!(mode, 0o755);
+}
+
+#[cfg(unix)]
+#[test]
+fn m2_apply_refuses_existing_file_mode_changes() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_changing_readme_mode(root);
+    let bundle_td = make_bundle_dir_with_patch_unchecked(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
+}
+
+#[test]
+fn m2_apply_refuses_unsupported_new_file_mode() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_adding_file(root, "link.txt", "hello\n").replacen(
+        "new file mode 100644",
+        "new file mode 120000",
+        1,
+    );
+    let bundle_td = make_bundle_dir_with_patch_unchecked(root, &base, &patch, &["link.txt"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
 }
