@@ -168,6 +168,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PBUNDLE-004**: `changes/*.patch` MUST be text patches (UTF-8, LF) and MUST be ordered deterministically.
 - **S-PBUNDLE-005**: Optional files (`summary.md`, `constraints.yaml`, `checks_request.yaml`, `commit_message.txt`) may be included and should be copied into run logs when present.
 - **S-PBUNDLE-006**: Patch bundles MAY include a `tasks/` directory describing required user actions (see `docs/PATCH_BUNDLE_FORMAT.md`).
+- **S-PBUNDLE-007**: Patch bundles MAY add new repo-relative files in standard `OPS_PATCH_BUNDLE` flow when the patch uses `/dev/null -> b/<path>` with `new file mode 100644|100755`; no separate mode is required.
 
 ### 4.5 `diffship apply <patch-bundle>`
 
@@ -260,7 +261,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-002**: Lock must include enough metadata to diagnose stale locks (PID, start time, command).
 - **S-OPS-003**: Forbidden prefixes must include `.git/` and `.diffship/` by default.
 - **S-OPS-004**: Path checks must not allow absolute paths or `..` traversal, and must not rely on following symlinks.
-- **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, file mode changes, and rename/copy metadata.
+- **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, existing-file mode changes, unsupported new-file modes, and rename/copy metadata.
 - **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
 - **S-OPS-007**: Project/global config MAY define additional forbidden repo-relative path/glob patterns, and apply/loop MUST enforce them against both manifest paths and patch headers.
 
@@ -328,3 +329,4 @@ Ops-specific codes:
 - **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.
 - **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.
 - **S-INIT-007**: `diffship init --zip` MUST export a minimal rules kit zip containing `PROJECT_KIT.md`, `AI_GUIDE.md`, and machine-readable metadata. The default output path MUST be under `.diffship/artifacts/rules/`, based on the current `HEAD` when available and falling back to the current `run_id` otherwise. `--out <path>` MAY override that destination.
+- **S-INIT-008**: Generated guides and config stub MUST include an immediately usable repository snapshot when discoverable, including repository identity, preferred promotion target, suggested read-first files, and starter commands.

@@ -147,10 +147,14 @@ Do not include:
 
 - binary patches
 - rename / copy metadata
-- file mode metadata (`old mode`, `new mode`, `new file mode`)
+- file mode metadata for existing files (`old mode`, `new mode`)
 - submodule changes
 - writes into `.git/` or `.diffship/`
 - secrets
+
+Allowed exception:
+
+- new file additions may use `new file mode 100644` or `new file mode 100755` only when the patch is a normal add diff from `/dev/null` to `b/<path>`
 
 If the requested change cannot be represented without violating these restrictions, do not return a malformed ops bundle.
 Use `MODE: ANALYSIS_ONLY` or an explicitly accepted non-ops fallback instead.

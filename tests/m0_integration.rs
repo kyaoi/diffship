@@ -48,6 +48,16 @@ fn diffship_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("diffship"))
 }
 
+fn current_branch(root: &std::path::Path) -> String {
+    let out = Command::new("git")
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .current_dir(root)
+        .output()
+        .expect("symbolic-ref")
+        .stdout;
+    String::from_utf8_lossy(&out).trim().to_string()
+}
+
 #[test]
 fn m0_init_status_runs_happy_path() {
     let td = init_repo();
@@ -68,14 +78,20 @@ fn m0_init_status_runs_happy_path() {
     assert!(root.join(".diffship").join("config.toml").exists());
     let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
     assert!(kit.contains("# DiffshipOS Project Kit"));
+    assert!(kit.contains("## Generated repo snapshot"));
+    assert!(kit.contains("## Suggested next steps"));
+    assert!(kit.contains("Starter commands"));
     assert!(kit.contains("Attachment-ready summary for external AI tools"));
     assert!(kit.contains("Core workflow: what diffship is"));
     assert!(kit.contains("Customize this section: repository identity"));
     assert!(kit.contains("Core workflow: patch bundle contract the AI must follow"));
     assert!(kit.contains("Customize this section: local commands and gates"));
+    assert!(kit.contains("Suggested read-first files"));
     assert!(kit.contains("Generated metadata"));
     let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
     assert!(ai.contains("# DiffshipOS AI Guide"));
+    assert!(ai.contains("## Generated repo snapshot"));
+    assert!(ai.contains("Starter commands"));
     assert!(ai.contains("Attachment-ready project rules"));
     assert!(ai.contains("Core contract: what diffship is"));
     assert!(ai.contains("Customize this section: repository identity"));
@@ -89,6 +105,11 @@ fn m0_init_status_runs_happy_path() {
         "artifacts/handoffs/\nartifacts/rules/\nruns/\nworktrees/\nsessions/\nlock\n"
     );
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
+    let branch = current_branch(root);
+    assert!(cfg.contains("# Repository snapshot:"));
+    assert!(cfg.contains("# - repo:"));
+    assert!(cfg.contains(&format!("# - current branch: {}", branch)));
+    assert!(cfg.contains("# - preferred promote target: main"));
     assert!(cfg.contains("Use this file in two layers"));
     assert!(cfg.contains("Customize this section: choose default verify behavior"));
     assert!(cfg.contains("Customize this section: choose default handoff packing behavior"));
@@ -99,6 +120,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
     assert!(cfg.contains("output_dir = \"./.diffship/artifacts/handoffs\""));
+    assert!(cfg.contains("target_branch = \"main\""));
 
     // status --json
     let out = diffship_cmd()

@@ -293,7 +293,8 @@ Required contract details:
 - do not touch `.git/` or `.diffship/`
 - respect any repository-local `[ops.forbid]` patterns the user provides (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
-- do not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
+- do not include binary patches, rename/copy metadata, file mode metadata for existing files (`old mode`, `new mode`), or submodule changes
+- new file additions may use `new file mode 100644|100755` only when represented as a normal `/dev/null -> b/<path>` add patch in standard `MODE: OPS_PATCH_BUNDLE`
 - if the requested change would require refused metadata in this environment, return `MODE: ANALYSIS_ONLY` or an explicitly accepted non-ops fallback instead of an invalid patch bundle
 - reserve the `patchship_...` name for bundles that are already valid ops inputs
 

@@ -168,6 +168,7 @@ Conventions:
 - **S-PBUNDLE-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-006** — Tests: `tests/m3_tasks.rs` — Code: `src/ops/patch_bundle.rs`, `src/ops/tasks.rs` — Status: Implemented
+- **S-PBUNDLE-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 
 ---
 
@@ -304,6 +305,7 @@ Conventions:
 - **S-INIT-005** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-006** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-007** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
+- **S-INIT-008** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 
 ---
 

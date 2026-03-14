@@ -62,6 +62,92 @@ impl ApplyMode {
     }
 }
 
+#[derive(Debug, Default)]
+struct PatchDiffBlock {
+    diff_old_path: Option<String>,
+    diff_new_path: Option<String>,
+    plus_new_path: Option<String>,
+    old_is_dev_null: bool,
+    new_file_mode: Option<String>,
+    old_mode: Option<String>,
+    new_mode: Option<String>,
+}
+
+impl PatchDiffBlock {
+    fn from_diff_header(rest: &str) -> Self {
+        let mut it = rest.split_whitespace();
+        let diff_old_path = it.next().map(|s| s.trim_start_matches("a/").to_string());
+        let diff_new_path = it.next().map(|s| s.trim_start_matches("b/").to_string());
+        Self {
+            diff_old_path,
+            diff_new_path,
+            ..Default::default()
+        }
+    }
+
+    fn validate(self, patch_path: &Path) -> Result<(), ExitError> {
+        if self.old_mode.is_some() || self.new_mode.is_some() {
+            return Err(ExitError::new(
+                EXIT_FORBIDDEN_PATH,
+                format!(
+                    "file mode changes are refused (found in {})",
+                    patch_path.display()
+                ),
+            ));
+        }
+
+        let Some(mode) = self.new_file_mode.as_deref() else {
+            return Ok(());
+        };
+
+        match mode {
+            "100644" | "100755" => {
+                if !self.old_is_dev_null {
+                    return Err(ExitError::new(
+                        EXIT_FORBIDDEN_PATH,
+                        format!(
+                            "new file mode is only allowed for /dev/null additions (found in {})",
+                            patch_path.display()
+                        ),
+                    ));
+                }
+                if self.diff_old_path.is_none()
+                    || self.diff_new_path.is_none()
+                    || self.plus_new_path.as_deref() != self.diff_new_path.as_deref()
+                {
+                    return Err(ExitError::new(
+                        EXIT_FORBIDDEN_PATH,
+                        format!(
+                            "new file patch is missing /dev/null or +++ headers (found in {})",
+                            patch_path.display()
+                        ),
+                    ));
+                }
+            }
+            "160000" => {
+                return Err(ExitError::new(
+                    EXIT_FORBIDDEN_PATH,
+                    format!(
+                        "submodule changes are refused (found in {})",
+                        patch_path.display()
+                    ),
+                ));
+            }
+            other => {
+                return Err(ExitError::new(
+                    EXIT_FORBIDDEN_PATH,
+                    format!(
+                        "unsupported new file mode {other} (found in {})",
+                        patch_path.display()
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct PatchBundle {
     /// Root directory that contains manifest.yaml and changes/.
@@ -516,12 +602,6 @@ fn validate_patches(
                 format!("rename/copy metadata is refused (found in {})", p.display()),
             ));
         }
-        if s.contains("old mode") || s.contains("new mode") {
-            return Err(ExitError::new(
-                EXIT_FORBIDDEN_PATH,
-                format!("file mode changes are refused (found in {})", p.display()),
-            ));
-        }
 
         // Submodule changes typically include mode 160000.
         if s.contains(" 160000") || s.contains("\t160000") || s.contains("new file mode 160000") {
@@ -531,9 +611,12 @@ fn validate_patches(
             ));
         }
 
-        // Path guard: scan diff headers for forbidden targets.
+        let mut block: Option<PatchDiffBlock> = None;
         for line in s.lines() {
             if let Some(rest) = line.strip_prefix("diff --git ") {
+                if let Some(prev) = block.take() {
+                    prev.validate(p)?;
+                }
                 let mut it = rest.split_whitespace();
                 let Some(a0) = it.next() else {
                     continue;
@@ -545,7 +628,27 @@ fn validate_patches(
                 let b = b0.trim_start_matches("b/");
                 validate_repo_relative_path(a, extra_forbidden_patterns)?;
                 validate_repo_relative_path(b, extra_forbidden_patterns)?;
+                block = Some(PatchDiffBlock::from_diff_header(rest));
+                continue;
             }
+
+            let Some(current) = block.as_mut() else {
+                continue;
+            };
+            if line == "--- /dev/null" {
+                current.old_is_dev_null = true;
+            } else if let Some(path) = line.strip_prefix("+++ b/") {
+                current.plus_new_path = Some(path.trim().to_string());
+            } else if let Some(mode) = line.strip_prefix("new file mode ") {
+                current.new_file_mode = Some(mode.trim().to_string());
+            } else if let Some(mode) = line.strip_prefix("old mode ") {
+                current.old_mode = Some(mode.trim().to_string());
+            } else if let Some(mode) = line.strip_prefix("new mode ") {
+                current.new_mode = Some(mode.trim().to_string());
+            }
+        }
+        if let Some(prev) = block.take() {
+            prev.validate(p)?;
         }
     }
     Ok(())
