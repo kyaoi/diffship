@@ -1,5 +1,7 @@
 mod apply;
+mod command_log;
 mod config;
+mod doctor;
 mod init;
 pub(crate) mod lock;
 mod loop_cmd;
@@ -16,7 +18,7 @@ pub(crate) mod tasks;
 mod verify;
 pub(crate) mod worktree;
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, SessionCommand};
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
 use clap::CommandFactory;
@@ -51,6 +53,10 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
         Command::Compare(args) => crate::bundle_compare::cmd(args),
         Command::Build(args) => crate::handoff::cmd(&git_root, args),
         Command::Init(args) => init::cmd(&git_root, args),
+        Command::Session(args) => match args.command {
+            SessionCommand::Repair(args) => session::cmd_repair(&git_root, args),
+        },
+        Command::Doctor(args) => doctor::cmd(&git_root, args),
         Command::Status(args) => status::cmd(&git_root, args),
         Command::Runs(args) => runs::cmd(&git_root, args),
         Command::Apply(args) => apply::cmd(&git_root, args),

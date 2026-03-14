@@ -3,6 +3,7 @@ use crate::exit::{
     EXIT_APPLY_FAILED, EXIT_BASE_COMMIT_MISMATCH, EXIT_DIRTY_WORKTREE, EXIT_GENERAL, ExitError,
 };
 use crate::git;
+use crate::ops::command_log;
 use crate::ops::lock;
 use crate::ops::patch_bundle;
 use crate::ops::post_apply;
@@ -21,6 +22,8 @@ struct ApplySummary {
     created_at: String,
     session: String,
     base_commit: String,
+    declared_base_commit: String,
+    effective_base_commit: String,
     bundle_path: String,
     bundle_root: String,
     run_bundle_dir: String,
@@ -46,6 +49,10 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
         "apply",
         &[
             format!("--session={}", args.session),
+            format!(
+                "--base-commit={}",
+                args.base_commit.as_deref().unwrap_or("")
+            ),
             format!("--keep-sandbox={}", args.keep_sandbox),
         ],
     );
@@ -117,7 +124,19 @@ pub fn apply_locked(
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
     let bundle_path = resolve_user_path(&cwd, &args.bundle)?;
-    let bundle = patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir)?;
+    let cfg = crate::ops::config::resolve_ops_config(git_root, None, Default::default())?;
+    let forbid_patterns = cfg.forbid_patterns();
+    let mut bundle =
+        patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir, &forbid_patterns)?;
+    let declared_base_commit = bundle.manifest.base_commit.clone();
+    let effective_base_commit = args
+        .base_commit
+        .clone()
+        .unwrap_or_else(|| declared_base_commit.clone());
+    if effective_base_commit != declared_base_commit {
+        patch_bundle::rewrite_run_manifest_base_commit(&run_dir, &effective_base_commit)?;
+        bundle.manifest.base_commit = effective_base_commit.clone();
+    }
 
     // Surface required user tasks (copied into run_dir by load_and_copy_into_run).
     let tasks_required = bundle.manifest.tasks_required.unwrap_or(false);
@@ -143,6 +162,8 @@ pub fn apply_locked(
             created_at: created_at.clone(),
             session: args.session.clone(),
             base_commit: session_state.head.clone(),
+            declared_base_commit,
+            effective_base_commit: declared.clone(),
             bundle_path: args.bundle.clone(),
             bundle_root: bundle.root.display().to_string(),
             run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
@@ -173,8 +194,7 @@ pub fn apply_locked(
 
     let sandbox_path = Path::new(&sandbox.path);
 
-    let apply_res = apply_patches_in_sandbox(sandbox_path, &bundle)?;
-    let cfg = crate::ops::config::resolve_ops_config(git_root, None, Default::default())?;
+    let apply_res = apply_patches_in_sandbox(&run_dir, sandbox_path, &bundle)?;
     let post_apply_commands = cfg.post_apply_commands().unwrap_or_default();
     let post_apply_out = if apply_res.is_ok && !post_apply_commands.is_empty() {
         Some(post_apply::run(
@@ -204,6 +224,8 @@ pub fn apply_locked(
         created_at: created_at.clone(),
         session: args.session.clone(),
         base_commit: session_state.head.clone(),
+        declared_base_commit,
+        effective_base_commit: declared,
         bundle_path: args.bundle.clone(),
         bundle_root: bundle.root.display().to_string(),
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
@@ -291,6 +313,7 @@ struct ApplyResult {
 }
 
 fn apply_patches_in_sandbox(
+    run_dir: &Path,
     sandbox_path: &Path,
     bundle: &patch_bundle::PatchBundle,
 ) -> Result<ApplyResult, ExitError> {
@@ -305,7 +328,7 @@ fn apply_patches_in_sandbox(
             // Preflight
             let mut check_args = vec!["apply".to_string(), "--check".to_string()];
             check_args.extend(patch_args.clone());
-            if let Err(e) = run_git_capture(sandbox_path, &check_args) {
+            if let Err(e) = run_git_capture(run_dir, sandbox_path, "01_preflight", &check_args) {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("preflight failed: {}", e)),
@@ -314,7 +337,7 @@ fn apply_patches_in_sandbox(
 
             let mut apply_args = vec!["apply".to_string()];
             apply_args.extend(patch_args);
-            if let Err(e) = run_git_capture(sandbox_path, &apply_args) {
+            if let Err(e) = run_git_capture(run_dir, sandbox_path, "02_apply", &apply_args) {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("apply failed: {}", e)),
@@ -330,7 +353,7 @@ fn apply_patches_in_sandbox(
             // Best-effort preflight using git apply --check (mail patches should still be handled).
             let mut check_args = vec!["apply".to_string(), "--check".to_string()];
             check_args.extend(patch_args.clone());
-            if let Err(e) = run_git_capture(sandbox_path, &check_args) {
+            if let Err(e) = run_git_capture(run_dir, sandbox_path, "01_preflight", &check_args) {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("preflight failed: {}", e)),
@@ -339,9 +362,14 @@ fn apply_patches_in_sandbox(
 
             let mut am_args = vec!["am".to_string()];
             am_args.extend(patch_args);
-            if let Err(e) = run_git_capture(sandbox_path, &am_args) {
+            if let Err(e) = run_git_capture(run_dir, sandbox_path, "02_git_am", &am_args) {
                 // Abort best-effort.
-                let _ = run_git_capture(sandbox_path, &["am".to_string(), "--abort".to_string()]);
+                let _ = run_git_capture(
+                    run_dir,
+                    sandbox_path,
+                    "03_git_am_abort",
+                    &["am".to_string(), "--abort".to_string()],
+                );
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("git am failed: {}", e)),
@@ -361,14 +389,13 @@ fn rollback_sandbox(sandbox_path: &Path, base_commit: &str) {
     let _ = git::run_git_in(sandbox_path, ["clean", "-fdx"]);
 }
 
-fn run_git_capture(dir: &Path, args: &[String]) -> Result<(), String> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| format!("failed to run git: {e}"))?;
+fn run_git_capture(run_dir: &Path, dir: &Path, name: &str, args: &[String]) -> Result<(), String> {
+    let mut argv = vec!["git".to_string()];
+    argv.extend(args.iter().cloned());
+    let output = command_log::run_and_log(run_dir, "apply", name, dir, &argv, None)
+        .map_err(|e| e.message)?;
 
-    if output.status.success() {
+    if output.record.status == 0 {
         return Ok(());
     }
 

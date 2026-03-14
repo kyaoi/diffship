@@ -12,6 +12,18 @@ Use this template in two layers:
 
 ---
 
+## 0. Attachment-ready summary for external AI tools
+
+If you need short project rules text for an external AI workspace or project UI, attach this file together with `AI_GUIDE.md` and keep these points intact:
+
+- read the listed spec and workflow files before changing code
+- keep edits minimal, reviewable, and deterministic
+- use `diffship loop` only with a valid `OPS_PATCH_BUNDLE`
+- ask for the exact repo HEAD SHA before producing a loop-ready patch bundle
+- respect local safety rules such as `[ops.forbid]` patterns in addition to the built-in forbidden paths
+
+---
+
 ## 1. Core workflow: what diffship is
 
 diffship is a local tool that:
@@ -203,6 +215,7 @@ Key rules:
 - if the exact `base_commit` is unavailable and you asked for loop-ready output, the AI should request the SHA or return `MODE: ANALYSIS_ONLY` instead of fabricating a fallback zip
 - paths must be repo-relative only
 - do not touch `.git/` or `.diffship/`
+- respect any repository-local `[ops.forbid]` patterns (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
 - keep file ordering and output deterministic
 - patches must not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes

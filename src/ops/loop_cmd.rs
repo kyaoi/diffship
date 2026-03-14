@@ -22,6 +22,10 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         "loop",
         &[
             format!("--session={}", args.session),
+            format!(
+                "--base-commit={}",
+                args.base_commit.as_deref().unwrap_or("")
+            ),
             format!("--profile={}", args.profile.as_deref().unwrap_or("")),
             format!(
                 "--target-branch={}",
@@ -42,6 +46,7 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
     let apply_args = ApplyArgs {
         bundle: args.bundle.clone(),
         session: args.session.clone(),
+        base_commit: args.base_commit.clone(),
         keep_sandbox: true,
     };
     let applied = apply::apply_locked(git_root, apply_args, created_at.clone())?;

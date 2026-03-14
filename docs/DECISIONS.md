@@ -58,6 +58,8 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
   - Store the run/sandbox linkage in `.diffship/runs/<run-id>/sandbox.json`.
 - Recovery:
   - `diffship status` must show sessions and sandboxes so users can see which run a leftover sandbox belongs to.
+  - `diffship session repair` is the supported way to reseed a session from the current repo HEAD when manual commits leave the session ref stale.
+  - `diffship doctor` should diagnose stale session/worktree state first and only auto-apply clearly safe fixes.
   - Recovery may use `git worktree remove --force <path>` when needed.
   - Sandbox cleanup is best-effort; leftovers are surfaced via `status`.
 

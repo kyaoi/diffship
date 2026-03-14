@@ -65,6 +65,7 @@ fn try_parse_m2_fallback(argv: &[String]) -> Option<cli::Cli> {
 fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
     // argv: [bin, "apply", <bundle>, ...flags]
     let mut session: Option<String> = None;
+    let mut base_commit: Option<String> = None;
     let mut keep_sandbox: Option<bool> = None;
     let mut bundle: Option<String> = None;
 
@@ -79,6 +80,14 @@ fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
             session = Some(argv[i].clone());
         } else if let Some(v) = a.strip_prefix("--session=") {
             session = Some(v.to_string());
+        } else if a == "--base-commit" {
+            i += 1;
+            if i >= argv.len() {
+                return None;
+            }
+            base_commit = Some(argv[i].clone());
+        } else if let Some(v) = a.strip_prefix("--base-commit=") {
+            base_commit = Some(v.to_string());
         } else if a == "--keep-sandbox" {
             keep_sandbox = Some(true);
         } else if a == "--no-keep-sandbox" {
@@ -101,6 +110,7 @@ fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
     let args = cli::ApplyArgs {
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
+        base_commit,
         keep_sandbox: keep_sandbox.unwrap_or(true),
     };
 
@@ -209,6 +219,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
     // argv: [bin, "loop", <bundle>, ...flags]
     let mut bundle: Option<String> = None;
     let mut session: Option<String> = None;
+    let mut base_commit: Option<String> = None;
     let mut profile: Option<String> = None;
     let mut target_branch: Option<String> = None;
     let mut ack_secrets = false;
@@ -225,6 +236,14 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
             session = Some(argv[i].clone());
         } else if let Some(v) = a.strip_prefix("--session=") {
             session = Some(v.to_string());
+        } else if a == "--base-commit" {
+            i += 1;
+            if i >= argv.len() {
+                return None;
+            }
+            base_commit = Some(argv[i].clone());
+        } else if let Some(v) = a.strip_prefix("--base-commit=") {
+            base_commit = Some(v.to_string());
         } else if a == "--profile" {
             i += 1;
             if i >= argv.len() {
@@ -261,6 +280,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
         commit_policy: None,
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
+        base_commit,
         profile,
         target_branch,
         ack_secrets,

@@ -114,12 +114,15 @@ Initialize a repository once:
 
 ```bash
 diffship init
+diffship init --zip
+diffship init --zip --out ./.diffship/artifacts/rules/review-kit.zip
 ```
 
 Run the full apply → verify → promote loop:
 
 ```bash
 diffship loop ./patch-bundle.zip
+diffship loop ./patch-bundle.zip --base-commit "$(git rev-parse HEAD)"
 ```
 
 ---
@@ -380,6 +383,7 @@ Apply only:
 
 ```bash
 diffship apply ./patch-bundle.zip
+diffship apply ./patch-bundle.zip --base-commit "$(git rev-parse HEAD)"
 ```
 
 Verify a specific run:
@@ -398,6 +402,7 @@ List runs:
 
 ```bash
 diffship runs
+diffship runs --heads-only
 diffship runs --json
 ```
 
@@ -405,7 +410,16 @@ Show overall status:
 
 ```bash
 diffship status
+diffship status --heads-only
 diffship status --json
+```
+
+Repair a stale session after manual commits:
+
+```bash
+diffship session repair --session default
+diffship doctor --session default
+diffship doctor --session default --fix
 ```
 
 ### 6.4 Promotion modes

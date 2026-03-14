@@ -1,4 +1,4 @@
-use crate::cli::TestM1AdvanceSessionArgs;
+use crate::cli::{SessionRepairArgs, TestM1AdvanceSessionArgs};
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
 use crate::ops::lock;
@@ -210,6 +210,92 @@ pub fn list_sessions(git_root: &Path) -> Vec<SessionState> {
 
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+#[derive(Debug, Serialize)]
+struct SessionRepairSummary {
+    session: String,
+    head: String,
+    worktree_path: String,
+}
+
+pub fn cmd_repair(git_root: &Path, args: SessionRepairArgs) -> Result<(), ExitError> {
+    let now = lock::now_rfc3339();
+    let lock_path = lock::default_lock_path(git_root);
+    let info = lock::make_lock_info(
+        git_root,
+        "session repair",
+        &[format!("--session={}", args.session)],
+    );
+    let _guard = lock::LockGuard::acquire(&lock_path, info)?;
+
+    let state = repair_session(git_root, &args.session, now)?;
+    let summary = SessionRepairSummary {
+        session: state.name.clone(),
+        head: state.head.clone(),
+        worktree_path: state.worktree_path.clone(),
+    };
+
+    println!("diffship session repair: ok");
+    println!("  session : {}", summary.session);
+    println!("  head    : {}", summary.head);
+    println!("  wt      : {}", summary.worktree_path);
+    Ok(())
+}
+
+pub fn repair_session(git_root: &Path, name: &str, now: String) -> Result<SessionState, ExitError> {
+    validate_session_name(name)?;
+
+    let active_sandboxes = worktree::list_sandbox_metas(git_root)
+        .into_iter()
+        .filter(|meta| meta.session == name && Path::new(&meta.path).exists())
+        .map(|meta| meta.run_id)
+        .collect::<Vec<_>>();
+    if !active_sandboxes.is_empty() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "refused: session {} still has active sandboxes: {}\nremove or finish them before repair",
+                name,
+                active_sandboxes.join(", ")
+            ),
+        ));
+    }
+
+    let head = git::rev_parse(git_root, "HEAD")?;
+    let worktree_path = session_worktree_dir(git_root, name);
+    if worktree_path.exists() {
+        match worktree::assert_is_git_worktree_dir(&worktree_path) {
+            Ok(()) => hard_reset_clean_best_effort(&worktree_path, &head),
+            Err(_) => {
+                let _ = fs::remove_dir_all(&worktree_path);
+            }
+        }
+    }
+    if !worktree_path.exists() {
+        worktree::create_detached_worktree(git_root, &worktree_path, &head)?;
+    }
+    hard_reset_clean_best_effort(&worktree_path, &head);
+
+    let r = session_ref(name);
+    git::run_git(git_root, ["update-ref", &r, &head]).map(|_| ())?;
+
+    let created_at = read_session_state(git_root, name)
+        .map(|s| s.created_at)
+        .unwrap_or_else(|| now.clone());
+    let state = SessionState {
+        name: name.to_string(),
+        r#ref: r,
+        created_at,
+        updated_at: now,
+        base_branch: detect_base_branch(git_root),
+        base_commit: head.clone(),
+        head,
+        worktree_path: worktree_path.display().to_string(),
+    };
+    write_session_state(git_root, &state)?;
+
+    Ok(state)
 }
 
 pub fn test_m1_advance_session(

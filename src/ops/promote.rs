@@ -5,6 +5,7 @@ use crate::exit::{
 };
 use crate::git;
 use crate::ops::apply;
+use crate::ops::command_log;
 use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::patch_bundle;
@@ -15,7 +16,6 @@ use crate::ops::tasks;
 use crate::ops::worktree;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -215,7 +215,7 @@ pub fn promote_locked(
             ));
         }
 
-        checkout_branch(git_root, &effective_target)?;
+        checkout_branch(&run_dir, git_root, &effective_target)?;
 
         let patch = export_result_patch_from_sandbox(&sandbox_path, &base_commit)?;
         if patch.trim().is_empty() {
@@ -224,7 +224,7 @@ pub fn promote_locked(
                 "promotion produced no patch content for working-tree mode",
             ));
         }
-        apply_patch_to_working_tree(git_root, &patch)?;
+        apply_patch_to_working_tree(&run_dir, git_root, &patch)?;
 
         if !keep_sandbox {
             worktree::remove_worktree_best_effort(git_root, Path::new(&sb.path));
@@ -342,11 +342,17 @@ pub fn promote_locked(
     }
 
     // Checkout the target branch in the user's working tree and cherry-pick the commits.
-    checkout_branch(git_root, &effective_target)?;
+    checkout_branch(&run_dir, git_root, &effective_target)?;
 
-    if let Err(e) = cherry_pick_commits(git_root, &commits) {
+    if let Err(e) = cherry_pick_commits(&run_dir, git_root, &commits) {
         // Abort best-effort to restore a clean state.
-        let _ = git::run_git(git_root, ["cherry-pick", "--abort"]);
+        let _ = run_git_logged(
+            &run_dir,
+            "06_cherry_pick_abort",
+            git_root,
+            ["cherry-pick", "--abort"],
+            None,
+        );
 
         let summary = PromoteSummary {
             run_id: run_id.to_string(),
@@ -522,18 +528,26 @@ fn ensure_commit_in_sandbox(
     commit_msg: &str,
 ) -> Result<(), ExitError> {
     // Stage everything and create a single commit.
-    let _ = git::run_git_in(sandbox_path, ["add", "-A"])?;
+    run_git_logged(run_dir, "01_git_add", sandbox_path, ["add", "-A"], None).map(|_| ())?;
 
     // If nothing is staged, refuse: we expect apply to have produced a diff.
-    let status = Command::new("git")
-        .args(["diff", "--cached", "--quiet"])
-        .current_dir(sandbox_path)
-        .status()
-        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to run git: {e}")))?;
-    if status.success() {
+    let status = run_git_logged(
+        run_dir,
+        "02_git_diff_cached",
+        sandbox_path,
+        ["diff", "--cached", "--quiet"],
+        None,
+    )?;
+    if status.record.status == 0 {
         return Err(ExitError::new(
             EXIT_PROMOTION_FAILED,
             "nothing to commit in sandbox",
+        ));
+    }
+    if status.record.status != 1 {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            command_output_message(&status.stdout, &status.stderr, "git diff --cached failed"),
         ));
     }
 
@@ -543,11 +557,19 @@ fn ensure_commit_in_sandbox(
     })?;
 
     let msg_path_s = msg_path.to_string_lossy().to_string();
-
-    git::run_git_in(
+    let commit = run_git_logged(
+        run_dir,
+        "03_git_commit",
         sandbox_path,
         ["commit", "--no-gpg-sign", "--file", msg_path_s.as_str()],
+        None,
     )?;
+    if commit.record.status != 0 {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            command_output_message(&commit.stdout, &commit.stderr, "git commit failed"),
+        ));
+    }
 
     Ok(())
 }
@@ -621,36 +643,49 @@ fn choose_target_branch(git_root: &Path, requested: &str) -> Result<String, Exit
     ))
 }
 
-fn checkout_branch(git_root: &Path, branch: &str) -> Result<(), ExitError> {
+fn checkout_branch(run_dir: &Path, git_root: &Path, branch: &str) -> Result<(), ExitError> {
     // If already on the branch, do nothing.
     if current_branch(git_root).as_deref() == Some(branch) {
         return Ok(());
     }
-    git::run_git(git_root, ["checkout", branch]).map(|_| ())
+    let out = run_git_logged(
+        run_dir,
+        "04_git_checkout",
+        git_root,
+        ["checkout", branch],
+        None,
+    )?;
+    if out.record.status == 0 {
+        Ok(())
+    } else {
+        Err(ExitError::new(
+            EXIT_GENERAL,
+            command_output_message(&out.stdout, &out.stderr, "git checkout failed"),
+        ))
+    }
 }
 
-fn cherry_pick_commits(git_root: &Path, commits: &[String]) -> Result<(), String> {
+fn cherry_pick_commits(run_dir: &Path, git_root: &Path, commits: &[String]) -> Result<(), String> {
     // Cherry-pick as one command for better UX.
     let mut argv = vec!["cherry-pick".to_string(), "--no-gpg-sign".to_string()];
     argv.extend(commits.iter().cloned());
 
-    let output = Command::new("git")
-        .args(&argv)
-        .current_dir(git_root)
-        .output()
-        .map_err(|e| format!("failed to run git cherry-pick: {e}"))?;
-
-    if output.status.success() {
+    let output = run_git_logged(
+        run_dir,
+        "05_git_cherry_pick",
+        git_root,
+        argv.iter().map(|s| s.as_str()),
+        None,
+    )
+    .map_err(|e| e.message)?;
+    if output.record.status == 0 {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let msg = if !stderr.trim().is_empty() {
-        stderr.trim().to_string()
-    } else {
-        stdout.trim().to_string()
-    };
-    Err(msg)
+    Err(command_output_message(
+        &output.stdout,
+        &output.stderr,
+        "git cherry-pick failed",
+    ))
 }
 
 fn export_result_patch_from_sandbox(
@@ -671,50 +706,54 @@ fn export_result_patch_from_sandbox(
     )
 }
 
-fn apply_patch_to_working_tree(git_root: &Path, patch: &str) -> Result<(), ExitError> {
-    let mut child = Command::new("git")
-        .arg("apply")
-        .arg("--whitespace=nowarn")
-        .current_dir(git_root)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            ExitError::new(
-                EXIT_PROMOTION_FAILED,
-                format!("failed to run git apply: {e}"),
-            )
-        })?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(patch.as_bytes()).map_err(|e| {
-            ExitError::new(
-                EXIT_PROMOTION_FAILED,
-                format!("failed to write patch to git apply stdin: {e}"),
-            )
-        })?;
-    }
-
-    let out = child.wait_with_output().map_err(|e| {
-        ExitError::new(
-            EXIT_PROMOTION_FAILED,
-            format!("failed to wait for git apply: {e}"),
-        )
-    })?;
-    if out.status.success() {
+fn apply_patch_to_working_tree(
+    run_dir: &Path,
+    git_root: &Path,
+    patch: &str,
+) -> Result<(), ExitError> {
+    let out = run_git_logged(
+        run_dir,
+        "01_git_apply",
+        git_root,
+        ["apply", "--whitespace=nowarn"],
+        Some(patch.as_bytes()),
+    )?;
+    if out.record.status == 0 {
         return Ok(());
     }
-
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let msg = if !stderr.trim().is_empty() {
-        stderr.trim().to_string()
-    } else {
-        stdout.trim().to_string()
-    };
     Err(ExitError::new(
         EXIT_PROMOTION_FAILED,
-        format!("promotion failed: working-tree apply failed: {}", msg),
+        format!(
+            "promotion failed: working-tree apply failed: {}",
+            command_output_message(&out.stdout, &out.stderr, "git apply failed")
+        ),
     ))
+}
+
+fn run_git_logged<I, S>(
+    run_dir: &Path,
+    name: &str,
+    cwd: &Path,
+    args: I,
+    stdin_bytes: Option<&[u8]>,
+) -> Result<command_log::CommandOutput, ExitError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut argv = vec!["git".to_string()];
+    argv.extend(args.into_iter().map(|arg| arg.as_ref().to_string()));
+    command_log::run_and_log(run_dir, "promote", name, cwd, &argv, stdin_bytes)
+}
+
+fn command_output_message(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    if !stderr.trim().is_empty() {
+        return stderr.trim().to_string();
+    }
+    let stdout = String::from_utf8_lossy(stdout);
+    if !stdout.trim().is_empty() {
+        return stdout.trim().to_string();
+    }
+    fallback.to_string()
 }

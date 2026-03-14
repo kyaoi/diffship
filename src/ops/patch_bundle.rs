@@ -1,4 +1,5 @@
 use crate::exit::{EXIT_FORBIDDEN_PATH, EXIT_GENERAL, ExitError};
+use crate::filter;
 use serde::Deserialize;
 use std::fs;
 use std::io::Read;
@@ -86,10 +87,53 @@ pub fn load_manifest_from_run_bundle(run_dir: &Path) -> Result<PatchBundleManife
     parse_manifest_yaml(&text)
 }
 
+pub fn rewrite_run_manifest_base_commit(
+    run_dir: &Path,
+    base_commit: &str,
+) -> Result<(), ExitError> {
+    let path = run_dir.join("bundle").join("manifest.yaml");
+    let text = fs::read_to_string(&path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "failed to read bundle manifest from {}: {e}",
+                path.display()
+            ),
+        )
+    })?;
+
+    let mut replaced = false;
+    let mut out = Vec::with_capacity(text.lines().count());
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("base_commit:") {
+            out.push(format!("base_commit: \"{}\"", base_commit));
+            replaced = true;
+        } else {
+            out.push(line.to_string());
+        }
+    }
+
+    if !replaced {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("manifest missing base_commit in {}", path.display()),
+        ));
+    }
+
+    fs::write(&path, format!("{}\n", out.join("\n"))).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to rewrite bundle manifest {}: {e}", path.display()),
+        )
+    })
+}
+
 pub fn load_and_copy_into_run(
     git_root: &Path,
     bundle_path: &Path,
     run_dir: &Path,
+    extra_forbidden_patterns: &[String],
 ) -> Result<PatchBundle, ExitError> {
     let materialized_root = materialize_bundle_root(bundle_path, run_dir)?;
     let root = detect_bundle_root(&materialized_root)?;
@@ -109,12 +153,12 @@ pub fn load_and_copy_into_run(
     let manifest = parse_manifest_yaml(&manifest_text)?;
 
     validate_manifest(&manifest)?;
-    validate_touched_files(&manifest.touched_files)?;
+    validate_touched_files(&manifest.touched_files, extra_forbidden_patterns)?;
 
     tasks::validate_tasks_contract(&manifest, &root)?;
 
     let patches = collect_patches(&root)?;
-    validate_patches(git_root, &patches)?;
+    validate_patches(git_root, &patches, extra_forbidden_patterns)?;
 
     let run_bundle_dir = run_dir.join("bundle");
     copy_bundle_subset(&root, &run_bundle_dir)?;
@@ -326,14 +370,20 @@ fn parse_bool(s: &str) -> Result<Option<bool>, ExitError> {
     }
 }
 
-fn validate_touched_files(paths: &[String]) -> Result<(), ExitError> {
+fn validate_touched_files(
+    paths: &[String],
+    extra_forbidden_patterns: &[String],
+) -> Result<(), ExitError> {
     for p in paths {
-        validate_repo_relative_path(p)?;
+        validate_repo_relative_path(p, extra_forbidden_patterns)?;
     }
     Ok(())
 }
 
-fn validate_repo_relative_path(path: &str) -> Result<(), ExitError> {
+fn validate_repo_relative_path(
+    path: &str,
+    extra_forbidden_patterns: &[String],
+) -> Result<(), ExitError> {
     let path = path.trim();
     if path.is_empty() {
         return Err(ExitError::new(
@@ -383,6 +433,14 @@ fn validate_repo_relative_path(path: &str) -> Result<(), ExitError> {
             format!("refusing to touch forbidden path: {path}"),
         ));
     }
+    for pattern in extra_forbidden_patterns {
+        if filter::pattern_matches_path(pattern, s) {
+            return Err(ExitError::new(
+                EXIT_FORBIDDEN_PATH,
+                format!("refusing to touch forbidden path by config: {path}"),
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -425,7 +483,11 @@ fn collect_patches(root: &Path) -> Result<Vec<PathBuf>, ExitError> {
     Ok(patches)
 }
 
-fn validate_patches(_git_root: &Path, patches: &[PathBuf]) -> Result<(), ExitError> {
+fn validate_patches(
+    _git_root: &Path,
+    patches: &[PathBuf],
+    extra_forbidden_patterns: &[String],
+) -> Result<(), ExitError> {
     for p in patches {
         let mut s = String::new();
         fs::File::open(p)
@@ -481,8 +543,8 @@ fn validate_patches(_git_root: &Path, patches: &[PathBuf]) -> Result<(), ExitErr
                 };
                 let a = a0.trim_start_matches("a/");
                 let b = b0.trim_start_matches("b/");
-                validate_repo_relative_path(a)?;
-                validate_repo_relative_path(b)?;
+                validate_repo_relative_path(a, extra_forbidden_patterns)?;
+                validate_repo_relative_path(b, extra_forbidden_patterns)?;
             }
         }
     }

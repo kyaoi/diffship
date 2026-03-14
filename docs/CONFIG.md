@@ -94,6 +94,23 @@ Notes:
 - failures are recorded under the run directory and make `apply` / `loop` fail
 - commands are loaded only from local config sources (global/project), not from the patch bundle
 
+#### 1.1.3 Extra forbidden patch targets (implemented)
+
+You can define additional repo-relative path or glob patterns that local ops runs must refuse.
+
+```toml
+[ops.forbid]
+path1 = "pnpm-lock.yaml"
+path2 = "package-lock.json"
+path3 = "apps/*/pnpm-lock.yaml"
+```
+
+Notes:
+
+- these rules are local-only config values; patch bundles cannot loosen them
+- apply/loop enforce them against both `manifest.touched_files` and patch diff headers
+- built-in forbidden prefixes such as `.git/` and `.diffship/` still apply regardless of config
+
 ### 1.2 Promotion mode + target branch
 
 ```toml

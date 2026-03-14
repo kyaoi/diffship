@@ -157,6 +157,9 @@ fn m2_apply_and_verify_happy_path_generic_repo() {
     assert!(run_dir.join("apply.json").exists());
     assert!(run_dir.join("bundle").join("manifest.yaml").exists());
     assert!(run_dir.join("sandbox.json").exists());
+    assert!(run_dir.join("commands.json").exists());
+    assert!(run_dir.join("apply").join("01_preflight.stdout").exists());
+    assert!(run_dir.join("apply").join("02_apply.stdout").exists());
 
     // verify should run on that run id, using the generic fallback (git diff --check).
     diffship_cmd()
@@ -165,6 +168,11 @@ fn m2_apply_and_verify_happy_path_generic_repo() {
         .assert()
         .success();
     assert!(run_dir.join("verify.json").exists());
+    assert!(run_dir.join("verify").join("01_git.stdout").exists());
+
+    let commands = fs::read_to_string(run_dir.join("commands.json")).unwrap();
+    assert!(commands.contains("\"phase\": \"apply\""));
+    assert!(commands.contains("\"phase\": \"verify\""));
 }
 
 #[test]
@@ -175,6 +183,32 @@ fn m2_apply_rejects_forbidden_paths_in_manifest() {
 
     let patch = make_patch_by_editing_readme(root, "world\n");
     let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["../pwned.txt"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
+}
+
+#[test]
+fn m2_apply_rejects_paths_forbidden_by_project_config() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[ops.forbid]
+path1 = "README.md"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
     let bundle_root = bundle_td.path().join("patchship_test");
 
     diffship_cmd()
@@ -214,6 +248,60 @@ fn m2_apply_refuses_base_commit_mismatch() {
         .assert()
         .failure()
         .code(6);
+}
+
+#[test]
+fn m2_apply_accepts_base_commit_override_when_it_matches_session_head() {
+    let td = init_repo();
+    let root = td.path();
+    let old_base = head(root);
+
+    fs::write(root.join("OTHER.txt"), "x\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(root)
+        .assert()
+        .success();
+    Command::new("git")
+        .args(["commit", "-m", "advance", "-q"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let current_head = head(root);
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &old_base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args([
+            "apply",
+            bundle_root.to_str().unwrap(),
+            "--base-commit",
+            &current_head,
+        ])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+    let run_dir = root.join(".diffship").join("runs").join(&run_id);
+
+    let apply_json = fs::read(run_dir.join("apply.json")).unwrap();
+    let apply: serde_json::Value = serde_json::from_slice(&apply_json).unwrap();
+    assert_eq!(
+        apply.get("declared_base_commit").and_then(|v| v.as_str()),
+        Some(old_base.as_str())
+    );
+    assert_eq!(
+        apply.get("effective_base_commit").and_then(|v| v.as_str()),
+        Some(current_head.as_str())
+    );
+
+    let manifest = fs::read_to_string(run_dir.join("bundle").join("manifest.yaml")).unwrap();
+    assert!(manifest.contains(&format!("base_commit: \"{}\"", current_head)));
 }
 
 #[test]
@@ -285,6 +373,8 @@ cmd1 = "printf hook >> README.md"
     assert!(readme.contains("hook"));
     assert!(run_dir.join("post_apply.json").exists());
     assert!(run_dir.join("post-apply").join("01_cmd1.stdout").exists());
+    let commands = fs::read_to_string(run_dir.join("commands.json")).unwrap();
+    assert!(commands.contains("\"phase\": \"post-apply\""));
 }
 
 #[test]

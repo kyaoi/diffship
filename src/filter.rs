@@ -92,6 +92,10 @@ impl PathFilter {
     }
 }
 
+pub fn pattern_matches_path(pattern: &str, rel: &str) -> bool {
+    explicit_rule_matches(pattern, rel)
+}
+
 fn normalize_patterns(patterns: &[String]) -> Vec<String> {
     patterns
         .iter()

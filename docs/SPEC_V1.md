@@ -177,6 +177,7 @@ Applies a patch bundle safely.
 - **S-APPLY-002**: Must refuse to run outside a Git repository.
 - **S-APPLY-003**: In OS mode, apply MUST run in an isolated sandbox worktree; the user’s main working tree MUST NOT be mutated during apply/verify.
 - **S-APPLY-004**: By default, apply MUST require `base_commit` to match the session HEAD (or the sandbox base) before applying.
+- **S-APPLY-010**: `diffship apply` and `diffship loop` MAY accept a CLI-only `--base-commit <rev>` override that corrects a bad manifest base for that invocation, but the resolved override MUST still match the session HEAD before apply proceeds, and the effective base MUST be recorded in run artifacts.
 - **S-APPLY-005**: Must enforce strict path guards (section 7) and refuse forbidden targets.
 - **S-APPLY-006**: Must run a preflight check before mutating (e.g., `git apply --check` or an equivalent dry-run).
 - **S-APPLY-007**: If apply fails after any mutation, must rollback automatically (safe defaults only).
@@ -218,6 +219,18 @@ Orchestrates apply → verify → (on failure) pack-fix.
 
 - **S-STATUS-001**: Must show lock state and recent runs (human-readable by default).
 - **S-STATUS-002**: Must support `--json` output.
+- **S-STATUS-003**: `diffship status --heads-only` MUST provide a concise human-readable view centered on repo/session/sandbox/run head information without changing the `--json` schema family.
+- **S-STATUS-004**: `diffship runs --heads-only` MUST provide a concise human-readable run view centered on effective base and promoted head information without changing the `--json` schema family.
+
+### 4.10 `diffship session repair`
+
+- **S-SESSION-005**: diffship MUST provide a session repair command that can reseed a named session from the current repo HEAD without requiring the user to call `git update-ref` directly.
+- **S-SESSION-006**: Session repair MUST refuse to proceed when live sandboxes still depend on that session.
+
+### 4.11 `diffship doctor`
+
+- **S-DOCTOR-001**: diffship MUST provide a doctor command that diagnoses stale or missing session/worktree state and prints concrete recovery commands.
+- **S-DOCTOR-002**: `diffship doctor --fix` MAY apply only safe, explainable repairs; if issues remain after safe fixes, doctor MUST still report them.
 
 ---
 
@@ -249,6 +262,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-004**: Path checks must not allow absolute paths or `..` traversal, and must not rely on following symlinks.
 - **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, file mode changes, and rename/copy metadata.
 - **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
+- **S-OPS-007**: Project/global config MAY define additional forbidden repo-relative path/glob patterns, and apply/loop MUST enforce them against both manifest paths and patch headers.
 
 ### 7.1 OS mode sessions & worktrees
 
@@ -276,6 +290,9 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-RUN-001**: Ops commands must create a new run directory under `.diffship/runs/<run-id>/`.
 - **S-RUN-002**: Run directory must contain machine-readable summaries for apply and verify.
 - **S-RUN-003**: pack-fix must be able to reconstruct a reprompt bundle using only the run directory.
+- **S-RUN-004**: `status --json` and `runs --json` SHOULD surface effective base and promoted head information for runs when that data exists.
+- **S-RUN-005**: New ops run directories MUST use a human-readable timestamp-based `run_id`, with a deterministic suffix when collisions occur, while older run directories remain readable.
+- **S-RUN-006**: Run directories MUST retain argv/stdout/stderr/duration metadata for diffship-spawned external commands in a machine-readable index plus per-command log files.
 
 ---
 
@@ -305,8 +322,9 @@ Ops-specific codes:
 `diffship init` generates files that you can attach to a ChatGPT Project so the AI reliably follows the diffship contracts.
 
 - **S-INIT-001**: `diffship init` MUST create `.diffship/` if missing.
-- **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into .diffship/ for user attachment).
+- **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into .diffship/ for user attachment) and keep it suitable for copy/paste into external AI project-rule UIs.
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
-- **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files.
+- **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files, and it MUST append current repo metadata such as branch, HEAD, and active local forbid patterns.
 - **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.
 - **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.
+- **S-INIT-007**: `diffship init --zip` MUST export a minimal rules kit zip containing `PROJECT_KIT.md`, `AI_GUIDE.md`, and machine-readable metadata. The default output path MUST be under `.diffship/artifacts/rules/`, based on the current `HEAD` when available and falling back to the current `run_id` otherwise. `--out <path>` MAY override that destination.

@@ -177,6 +177,7 @@ Conventions:
 - **S-APPLY-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-003** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-004** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-010** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/apply.rs`, `src/ops/loop_cmd.rs`, `src/ops/patch_bundle.rs`, `src/cli.rs`, `src/main.rs` — Status: Implemented
 - **S-APPLY-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-006** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
@@ -222,6 +223,17 @@ Conventions:
 
 - **S-STATUS-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/status.rs` — Status: Implemented
 - **S-STATUS-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/status.rs` — Status: Implemented
+- **S-STATUS-003** — Tests: `tests/m0_integration.rs`, `tests/m1_worktrees.rs` — Code: `src/ops/status.rs` — Status: Implemented
+- **S-STATUS-004** — Tests: `tests/m0_integration.rs` — Code: `src/ops/runs.rs`, `src/ops/run.rs` — Status: Implemented
+
+---
+
+## Session repair / doctor
+
+- **S-SESSION-005** — Tests: `tests/m7_ops_recovery.rs` — Code: `src/ops/session.rs`, `src/cli.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-SESSION-006** — Tests: `tests/m7_ops_recovery.rs` — Code: `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Implemented
+- **S-DOCTOR-001** — Tests: `tests/m7_ops_recovery.rs` — Code: `src/ops/doctor.rs`, `src/cli.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-DOCTOR-002** — Tests: `tests/m7_ops_recovery.rs` — Code: `src/ops/doctor.rs`, `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Implemented
 
 ---
 
@@ -234,6 +246,8 @@ Conventions:
 ---
 
 ## Ops safety policy
+
+- **S-OPS-007** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
 
 ## Sessions
 
@@ -275,6 +289,9 @@ Conventions:
 - **S-RUN-001** — Tests: `tests/m0_integration.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-002** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-003** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-RUN-004** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs` — Status: Implemented
+- **S-RUN-005** — Tests: `tests/m0_integration.rs`, `src/ops/run.rs` — Code: `src/ops/run.rs` — Status: Implemented
+- **S-RUN-006** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/command_log.rs`, `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs` — Status: Implemented
 
 ---
 
@@ -286,6 +303,7 @@ Conventions:
 - **S-INIT-004** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-005** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-006** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-007** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

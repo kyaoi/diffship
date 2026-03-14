@@ -10,6 +10,7 @@ use std::path::Path;
 #[derive(Debug, Serialize)]
 struct StatusJson {
     git_root: String,
+    repo_head: String,
     lock: LockState,
     sessions: Vec<session::SessionState>,
     sandboxes: Vec<SandboxState>,
@@ -37,6 +38,7 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
     let info = lock::read_lock_info(&lock_path);
 
     let recent_runs = run::list_runs(git_root, args.limit)?;
+    let repo_head = crate::git::rev_parse(git_root, "HEAD")?;
 
     let sessions = session::list_sessions(git_root);
 
@@ -46,6 +48,7 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
     if args.json {
         let payload = StatusJson {
             git_root: git_root.display().to_string(),
+            repo_head: repo_head.clone(),
             lock: LockState {
                 path: lock_path.display().to_string(),
                 held,
@@ -59,6 +62,51 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
         let s = serde_json::to_string_pretty(&payload)
             .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to encode json: {e}")))?;
         println!("{}", s);
+        return Ok(());
+    }
+
+    if args.heads_only {
+        println!("diffship status --heads-only");
+        println!("  repo_head : {}", repo_head);
+
+        if sessions.is_empty() {
+            println!("  sessions  : (none)");
+        } else {
+            println!("  sessions  :");
+            for s in &sessions {
+                println!("    - {}  head={}  base={}", s.name, s.head, s.base_commit);
+            }
+        }
+
+        if sandboxes.is_empty() {
+            println!("  sandboxes : (none)");
+        } else {
+            println!("  sandboxes :");
+            for sb in &sandboxes {
+                let base = sb
+                    .meta
+                    .as_ref()
+                    .map(|m| m.base_commit.as_str())
+                    .unwrap_or("(unknown)");
+                println!("    - {}  base={}  path={}", sb.run_id, base, sb.path);
+            }
+        }
+
+        if recent_runs.is_empty() {
+            println!("  recent_runs: (none)");
+        } else {
+            println!("  recent_runs:");
+            for r in &recent_runs {
+                println!(
+                    "    - {}  {}  base={}  promoted={}",
+                    r.created_at,
+                    r.run_id,
+                    r.effective_base_commit.as_deref().unwrap_or("(none)"),
+                    r.promoted_head.as_deref().unwrap_or("(none)")
+                );
+            }
+        }
+
         return Ok(());
     }
 

@@ -12,6 +12,19 @@ Use this template in two layers:
 
 ---
 
+## 0. Attachment-ready project rules
+
+Use this file as the default rules attachment when the user wants guidance for an external AI workspace or project UI.
+The minimum rules that should survive copy-paste are:
+
+- read the provided spec, workflow docs, and local diffship guides first
+- keep changes minimal, deterministic, and traceable back to tests/docs
+- emit exactly one response mode and reserve `OPS_PATCH_BUNDLE` for truly loop-ready output
+- if `base_commit` is missing or uncertain, ask for `git rev-parse HEAD` or return `MODE: ANALYSIS_ONLY`
+- respect local safety rules such as `[ops.forbid]` patterns in addition to the built-in forbidden paths
+
+---
+
 ## 1. Core contract: what diffship is
 
 diffship is a local development OS for Git repositories.
@@ -278,6 +291,7 @@ Required contract details:
 - if the exact `base_commit` is not known, do **not** fabricate it and do **not** emit an ops-compatible patch bundle
 - patch files must be repo-relative and deterministic
 - do not touch `.git/` or `.diffship/`
+- respect any repository-local `[ops.forbid]` patterns the user provides (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
 - do not include binary patches, rename/copy metadata, file mode metadata (`old mode`, `new mode`, `new file mode`), or submodule changes
 - if the requested change would require refused metadata in this environment, return `MODE: ANALYSIS_ONLY` or an explicitly accepted non-ops fallback instead of an invalid patch bundle
