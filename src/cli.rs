@@ -331,7 +331,7 @@ pub struct PackFixArgs {
     #[arg(long)]
     pub run_id: Option<String>,
 
-    /// Output zip path (default: .diffship/runs/<run-id>/pack-fix.zip)
+    /// Output zip path (default: .diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip)
     #[arg(long)]
     pub out: Option<String>,
 }

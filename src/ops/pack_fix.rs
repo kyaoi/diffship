@@ -5,6 +5,7 @@ use crate::ops::run;
 use crate::ops::worktree;
 use crate::pathing::resolve_user_path;
 use serde::Deserialize;
+use serde_json::Value;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ struct VerifyJson {
 
 /// Create a "reprompt zip" that contains run metadata, bundle, verify logs, and sandbox diffs.
 ///
-/// Default output path: `.diffship/runs/<run-id>/pack-fix.zip`.
+/// Default output path: `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`.
 pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
     let created_at = lock::now_rfc3339();
     let cwd = std::env::current_dir()
@@ -57,7 +58,7 @@ pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
 
     let out_path = match &args.out {
         Some(p) => resolve_user_path(&cwd, p)?,
-        None => run_dir.join("pack-fix.zip"),
+        None => default_pack_fix_zip_path(&run_dir, &run_id),
     };
 
     let sb = worktree::read_sandbox_meta(git_root, &run_id);
@@ -84,7 +85,7 @@ pub fn try_write_default_pack_fix_zip(
     sandbox_path: &Path,
     created_at: &str,
 ) -> Result<PathBuf, ExitError> {
-    let out_path = run_dir.join("pack-fix.zip");
+    let out_path = default_pack_fix_zip_path(run_dir, run_id);
     write_pack_fix_zip(
         git_root,
         run_id,
@@ -94,6 +95,10 @@ pub fn try_write_default_pack_fix_zip(
         created_at,
     )?;
     Ok(out_path)
+}
+
+pub(crate) fn default_pack_fix_zip_path(run_dir: &Path, run_id: &str) -> PathBuf {
+    run_dir.join(default_pack_fix_zip_name(run_dir, run_id))
 }
 
 fn write_pack_fix_zip(
@@ -213,6 +218,63 @@ fn read_verify_json_brief(path: &Path) -> (Option<String>, Option<bool>) {
         return (None, None);
     };
     (v.profile, v.ok)
+}
+
+fn default_pack_fix_zip_name(run_dir: &Path, run_id: &str) -> String {
+    let base_label = detect_base_label(run_dir).unwrap_or_else(|| "HEAD".to_string());
+    format!("pack-fix_{}_{}.zip", run_id, base_label)
+}
+
+fn detect_base_label(run_dir: &Path) -> Option<String> {
+    let apply_path = run_dir.join("apply.json");
+    let bytes = fs::read(apply_path).ok()?;
+    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+    for key in ["effective_base_commit", "base_commit"] {
+        let Some(raw) = value.get(key).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(
+                trimmed
+                    .chars()
+                    .take(7)
+                    .collect::<String>()
+                    .to_ascii_lowercase(),
+            );
+        }
+        let sanitized = sanitize_label(trimmed);
+        if !sanitized.is_empty() {
+            return Some(sanitized);
+        }
+    }
+    None
+}
+
+fn sanitize_label(raw: &str) -> String {
+    let mut out = String::new();
+    let mut last_was_sep = false;
+    for ch in raw.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+            Some(ch)
+        } else {
+            Some('-')
+        };
+        if let Some(ch) = mapped {
+            if ch == '-' && last_was_sep {
+                continue;
+            }
+            last_was_sep = ch == '-';
+            out.push(ch);
+        }
+        if out.len() >= 24 {
+            break;
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 fn add_bytes<W: Write + io::Seek>(

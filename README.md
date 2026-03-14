@@ -38,7 +38,7 @@ For reproducible installs from Git, pin to a specific tag, branch, or commit.
 Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.2.0
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.3.0
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or

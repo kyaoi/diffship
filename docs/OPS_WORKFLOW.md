@@ -93,7 +93,7 @@ What `loop` does:
 
 When verify fails, diffship writes a default reprompt zip at:
 
-- `.diffship/runs/<run-id>/pack-fix.zip`
+- `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`
 
 You can also create or re-create it explicitly:
 

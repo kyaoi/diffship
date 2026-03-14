@@ -131,6 +131,26 @@ fn zip_entries(path: &Path) -> Vec<String> {
     names
 }
 
+fn find_default_pack_fix_zip(run_dir: &Path) -> std::path::PathBuf {
+    let mut matches = fs::read_dir(run_dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with("pack-fix_") && name.ends_with(".zip"))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    matches.sort();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected exactly one default pack-fix zip"
+    );
+    matches.pop().unwrap()
+}
+
 #[test]
 fn pack_fix_command_creates_expected_zip_contents() {
     let td = init_repo();
@@ -155,12 +175,12 @@ fn pack_fix_command_creates_expected_zip_contents() {
         .assert()
         .success();
 
-    let zip_path = root
-        .join(".diffship")
-        .join("runs")
-        .join(&run_id)
-        .join("pack-fix.zip");
+    let run_dir = root.join(".diffship").join("runs").join(&run_id);
+    let zip_path = find_default_pack_fix_zip(&run_dir);
     assert!(zip_path.exists());
+    let file_name = zip_path.file_name().unwrap().to_str().unwrap();
+    assert!(file_name.starts_with(&format!("pack-fix_{}_", run_id)));
+    assert!(file_name.ends_with(&format!("_{}.zip", &base[..7])));
     let entries = zip_entries(&zip_path);
     assert!(entries.contains(&"PROMPT.md".to_string()));
     assert!(entries.contains(&"SAFETY.md".to_string()));
@@ -197,12 +217,12 @@ fn verify_failure_auto_creates_pack_fix_zip() {
         .failure()
         .code(9);
 
-    let zip_path = root
-        .join(".diffship")
-        .join("runs")
-        .join(&run_id)
-        .join("pack-fix.zip");
+    let run_dir = root.join(".diffship").join("runs").join(&run_id);
+    let zip_path = find_default_pack_fix_zip(&run_dir);
     assert!(zip_path.exists());
+    let file_name = zip_path.file_name().unwrap().to_str().unwrap();
+    assert!(file_name.starts_with(&format!("pack-fix_{}_", run_id)));
+    assert!(file_name.ends_with(&format!("_{}.zip", &base[..7])));
     let entries = zip_entries(&zip_path);
     assert!(entries.contains(&"PROMPT.md".to_string()));
     assert!(entries.contains(&"run/verify.json".to_string()));

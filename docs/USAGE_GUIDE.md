@@ -452,7 +452,7 @@ You can also define custom local profiles in config and run them by name.
 
 diffship writes a reprompt bundle under the run directory:
 
-- `.diffship/runs/<run-id>/pack-fix.zip`
+- `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`
 
 You can recreate it manually:
 
