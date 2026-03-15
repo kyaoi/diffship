@@ -113,7 +113,7 @@ All commands below are implemented.
   - optional: `--template-dir <dir>` to override `docs/PROJECT_KIT_TEMPLATE.md` and `docs/AI_PROJECT_TEMPLATE.md`
 - `diffship status` — show lock state and recent runs (`--json` available)
 - `diffship runs` — list recent runs (`--json` available)
-- `diffship cleanup` — remove unused diffship-owned workspaces (`--dry-run`, `--json`)
+- `diffship cleanup` — remove unused diffship-owned workspaces, eligible runs, and build artifacts (`--dry-run`, `--include-runs`, `--include-builds`, `--all`, `--json`)
 - `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
@@ -192,6 +192,9 @@ diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 # place the auto-generated bundle under a custom parent directory
 diffship build --out-dir ./.diffship/artifacts/handoffs
 
+# create only a zip bundle
+diffship build --zip-only
+
 # or set the same default in config
 # [handoff]
 # output_dir = "./.diffship/artifacts/handoffs"
@@ -213,6 +216,8 @@ Output layout:
 Default output naming:
 - `--out <path>` sets the exact output directory path
 - `--out-dir <dir>` changes the parent directory while preserving the auto-generated `diffship_<timestamp>_<head7>` bundle name
+- `--zip` keeps the directory output and also writes a sibling zip bundle with the same generated base name
+- `--zip-only` writes only a zip bundle; with `--out`, the path must use a zip filename
 - the handoff config can set the default parent directory via `output_dir`
 - leading tilde-slash paths such as ~/handoffs are expanded against the current user's `HOME` for `--out`, `--out-dir`, `--plan`, `--plan-out`, and `output_dir`
 - when `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM_<head7>` directory name in the user's local timezone

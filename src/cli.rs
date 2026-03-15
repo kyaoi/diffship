@@ -33,7 +33,7 @@ pub enum Command {
     /// Diagnose stale session/worktree state and suggest safe recovery steps
     Doctor(DoctorArgs),
 
-    /// Remove unused diffship-owned workspaces to reclaim disk space
+    /// Remove unused diffship-owned workspaces, eligible runs, and build artifacts
     Cleanup(CleanupArgs),
 
     /// Show lock state and recent runs
@@ -207,6 +207,10 @@ pub struct BuildArgs {
     #[arg(long, default_value_t = false)]
     pub zip: bool,
 
+    /// Create only a zip bundle; when --out is set it must point to a .zip path
+    #[arg(long, default_value_t = false)]
+    pub zip_only: bool,
+
     /// Automatically continue when secrets-like content is detected
     #[arg(long, default_value_t = false)]
     pub yes: bool,
@@ -274,6 +278,18 @@ pub struct CleanupArgs {
     /// Show what would be removed without deleting anything
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
+
+    /// Also remove run logs that are already promoted or orphaned
+    #[arg(long, default_value_t = false)]
+    pub include_runs: bool,
+
+    /// Also remove diffship-owned build artifacts under .diffship/artifacts/
+    #[arg(long, default_value_t = false)]
+    pub include_builds: bool,
+
+    /// Remove all safe cleanup targets (workspaces + eligible runs + diffship-owned builds)
+    #[arg(long, default_value_t = false)]
+    pub all: bool,
 
     /// Emit machine-readable JSON
     #[arg(long, default_value_t = false)]

@@ -134,6 +134,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-OUT-002**: `--zip` optionally produces a zip bundle with the same layout.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.
+- **S-OUT-005**: `--zip-only` MUST produce only a `.zip` bundle. When `--out <path>` is used with `--zip-only`, the path MUST end in `.zip`; otherwise diffship MUST auto-name `diffship_<timestamp>_<head7>.zip` under the selected parent directory and avoid collisions with existing diffship bundle stems.
 
 #### 4.2.9 Packing algorithm and fallback
 
@@ -238,6 +239,8 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-CLEANUP-001**: diffship MUST provide a cleanup command that removes diffship-owned orphan workspaces under `.diffship/worktrees/`, including orphan sandboxes and orphan session worktrees.
 - **S-CLEANUP-002**: cleanup MAY remove sandbox worktrees for runs that have already been promoted, but it MUST also remove the corresponding run-local `sandbox.json` so later auto-selection does not treat that sandbox as still available.
 - **S-CLEANUP-003**: cleanup MUST support `--dry-run` preview mode and `--json` machine-readable output.
+- **S-CLEANUP-004**: cleanup MUST support an opt-in mode that removes eligible run logs under `.diffship/runs/` when those runs are already promoted or orphaned. Removing such runs MUST NOT update the repository `HEAD` or diffship session refs.
+- **S-CLEANUP-005**: cleanup MUST support an opt-in mode that removes diffship-owned build artifacts under `.diffship/artifacts/` while leaving user-selected outputs outside `.diffship/` untouched.
 
 ---
 

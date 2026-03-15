@@ -25,6 +25,7 @@ pub struct HandoffPlan {
     pub out_dir: Option<String>,
     pub out: Option<String>,
     pub zip: bool,
+    pub zip_only: bool,
     pub yes: bool,
     pub fail_on_secrets: bool,
 }
@@ -53,6 +54,7 @@ impl Default for HandoffPlan {
             out_dir: None,
             out: None,
             zip: false,
+            zip_only: false,
             yes: false,
             fail_on_secrets: false,
         }
@@ -83,6 +85,7 @@ impl HandoffPlan {
             out_dir: args.out_dir.clone(),
             out: args.out.clone(),
             zip: args.zip,
+            zip_only: args.zip_only,
             yes: args.yes,
             fail_on_secrets: args.fail_on_secrets,
         }
@@ -113,6 +116,7 @@ impl HandoffPlan {
             out_dir: self.out_dir,
             out: self.out,
             zip: self.zip,
+            zip_only: self.zip_only,
             yes: self.yes,
             fail_on_secrets: self.fail_on_secrets,
         }
@@ -180,6 +184,9 @@ impl HandoffPlan {
         push_opt_flag(&mut out, "--out", self.out.as_deref());
         if self.zip {
             out.push("--zip".to_string());
+        }
+        if self.zip_only {
+            out.push("--zip-only".to_string());
         }
         if self.yes {
             out.push("--yes".to_string());
@@ -286,6 +293,7 @@ impl HandoffPlan {
                 }
                 "out" => plan.out = Some(parse_toml_string(value)?),
                 "zip" => plan.zip = parse_toml_bool(value)?,
+                "zip_only" => plan.zip_only = parse_toml_bool(value)?,
                 "yes" => plan.yes = parse_toml_bool(value)?,
                 "fail_on_secrets" => plan.fail_on_secrets = parse_toml_bool(value)?,
                 other => return Err(format!("unknown plan key: {other}")),
@@ -305,6 +313,9 @@ impl HandoffPlan {
         push_opt_flag(&mut args, "--out", plan.out.as_deref());
         if plan.zip {
             args.push("--zip".to_string());
+        }
+        if plan.zip_only {
+            args.push("--zip-only".to_string());
         }
         if plan.yes {
             args.push("--yes".to_string());
@@ -440,6 +451,7 @@ mod tests {
             exclude: vec!["src/generated.rs".to_string()],
             split_by: "commit".to_string(),
             zip: true,
+            zip_only: true,
             ..HandoffPlan::default()
         };
         assert_eq!(
@@ -463,11 +475,12 @@ mod tests {
                 "--split-by",
                 "commit",
                 "--zip",
+                "--zip-only",
             ]
         );
         assert_eq!(
             plan.to_shell_command(),
-            "diffship build --profile 10x100 --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip"
+            "diffship build --profile 10x100 --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip --zip-only"
         );
     }
 
@@ -486,6 +499,7 @@ mod tests {
             out_dir: Some("handoffs".to_string()),
             out: Some("out dir".to_string()),
             zip: true,
+            zip_only: true,
             yes: true,
             ..HandoffPlan::default()
         };
@@ -493,6 +507,7 @@ mod tests {
         assert_eq!(parsed.out_dir, None);
         assert_eq!(parsed.out, None);
         assert!(!parsed.zip);
+        assert!(!parsed.zip_only);
         assert!(!parsed.yes);
         assert_eq!(parsed.profile, plan.profile);
         assert_eq!(parsed.range_mode, plan.range_mode);
@@ -502,7 +517,7 @@ mod tests {
         assert_eq!(parsed.exclude, plan.exclude);
         assert_eq!(
             HandoffPlan::replay_shell_command_with_overrides("tmp/plan.toml", &plan),
-            "diffship build --plan tmp/plan.toml --out-dir handoffs --out 'out dir' --zip --yes"
+            "diffship build --plan tmp/plan.toml --out-dir handoffs --out 'out dir' --zip --zip-only --yes"
         );
     }
 }

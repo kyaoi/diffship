@@ -149,6 +149,13 @@ Committed range with commit-oriented splitting:
 diffship build --range-mode direct --from HEAD~3 --to HEAD --split-by commit
 ```
 
+Create only a zip bundle:
+
+```bash
+diffship build --zip-only
+diffship build --zip-only --out ./handoff.zip
+```
+
 ### 5.2 Filter paths
 
 Apply the same filters across committed, staged, unstaged, and untracked segments:
@@ -279,6 +286,8 @@ Default output naming:
 
 - `--out <path>` sets the exact output directory path
 - `--out-dir <dir>` places the auto-generated bundle name under a custom parent directory
+- `--zip` keeps the directory output and also writes a sibling zip bundle with the same generated base name
+- `--zip-only` writes only a zip bundle; with `--out`, the path must use a zip filename
 - filesystem path arguments such as bundle paths, `--out`, `--out-dir`, `--plan`, and `pack-fix --out` accept leading tilde-slash
 - if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM_<head7>` directory name
 - the timestamp is rendered in the local system timezone
@@ -422,11 +431,14 @@ diffship doctor --session default
 diffship doctor --session default --fix
 ```
 
-Clean up unused diffship workspaces:
+Clean up unused diffship workspaces and artifacts:
 
 ```bash
 diffship cleanup --dry-run
 diffship cleanup
+diffship cleanup --include-runs
+diffship cleanup --include-builds
+diffship cleanup --all
 diffship cleanup --json
 ```
 
