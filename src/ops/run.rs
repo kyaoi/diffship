@@ -43,7 +43,7 @@ pub fn create_run(
     fs::create_dir_all(&runs_dir)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create runs dir: {e}")))?;
 
-    let run_id = next_run_id(&runs_dir)?;
+    let run_id = next_run_id(git_root, &runs_dir)?;
     let dir = run_dir(git_root, &run_id);
 
     fs::create_dir_all(&dir)
@@ -142,8 +142,13 @@ fn read_json_value(path: PathBuf) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn next_run_id(runs_dir: &Path) -> Result<String, ExitError> {
-    let base = format!("run_{}", current_run_timestamp()?);
+fn next_run_id(git_root: &Path, runs_dir: &Path) -> Result<String, ExitError> {
+    let head = crate::git::rev_parse(git_root, "HEAD")?;
+    let base = format!(
+        "run_{}_{}",
+        current_run_timestamp()?,
+        crate::git::short_sha_label(&head)
+    );
     let mut run_id = base.clone();
     let mut suffix = 2usize;
     while runs_dir.join(&run_id).exists() {
@@ -183,12 +188,21 @@ mod tests {
     fn next_run_id_uses_human_readable_timestamp_and_suffixes_collisions() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path();
+        let repo = tempfile::tempdir().unwrap();
+        crate::git::run_git(repo.path(), ["init", "-q"]).unwrap();
+        crate::git::run_git(repo.path(), ["config", "user.email", "test@example.com"]).unwrap();
+        crate::git::run_git(repo.path(), ["config", "user.name", "diffship-test"]).unwrap();
+        fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+        crate::git::run_git(repo.path(), ["add", "."]).unwrap();
+        crate::git::run_git(repo.path(), ["commit", "-m", "init", "-q"]).unwrap();
+        let head = crate::git::rev_parse(repo.path(), "HEAD").unwrap();
 
-        let first = next_run_id(dir).unwrap();
+        let first = next_run_id(repo.path(), dir).unwrap();
         assert!(first.starts_with("run_20"));
+        assert!(first.ends_with(&crate::git::short_sha_label(&head)));
         fs::create_dir_all(dir.join(&first)).unwrap();
 
-        let second = next_run_id(dir).unwrap();
+        let second = next_run_id(repo.path(), dir).unwrap();
         assert_eq!(second, format!("{}_2", first));
     }
 }

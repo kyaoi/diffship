@@ -58,6 +58,16 @@ fn current_branch(root: &std::path::Path) -> String {
     String::from_utf8_lossy(&out).trim().to_string()
 }
 
+fn current_head(root: &std::path::Path) -> String {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .expect("rev-parse")
+        .stdout;
+    String::from_utf8_lossy(&out).trim().to_string()
+}
+
 #[test]
 fn m0_init_status_runs_happy_path() {
     let td = init_repo();
@@ -157,14 +167,11 @@ fn m0_init_status_runs_happy_path() {
 
     let v: serde_json::Value = serde_json::from_slice(&out).expect("valid json");
     let runs = v.get("runs").and_then(|x| x.as_array()).unwrap();
+    let head = current_head(root);
     assert!(!runs.is_empty(), "init should create a run record");
-    assert!(
-        runs[0]
-            .get("run_id")
-            .and_then(|x| x.as_str())
-            .unwrap()
-            .starts_with("run_20")
-    );
+    let run_id = runs[0].get("run_id").and_then(|x| x.as_str()).unwrap();
+    assert!(run_id.starts_with("run_20"));
+    assert!(run_id.contains(&format!("_{}", &head[..7])));
 
     diffship_cmd()
         .args(["runs", "--heads-only"])

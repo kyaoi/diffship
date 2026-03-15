@@ -19,8 +19,8 @@ diffship build --include-staged --include-unstaged --include-untracked
 2) Inspect before sharing:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --list
-diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --part part_01.patch
 ```
 
 Optional: export a replayable handoff plan:
@@ -49,7 +49,7 @@ diffship compare ./bundle_a ./bundle_b.zip
 For CI / automation, use JSON output:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --list --json
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list --json
 diffship compare ./bundle_a ./bundle_b.zip --json
 ```
 
@@ -93,7 +93,7 @@ What `loop` does:
 
 When verify fails, diffship writes a default reprompt zip at:
 
-- `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`
+- `.diffship/runs/<run-id>/pack-fix_YYYY-MM-DD_HHMMSS_<head7>[_N].zip`
 
 You can also create or re-create it explicitly:
 

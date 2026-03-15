@@ -7,7 +7,7 @@ This document defines the **bundle contract** produced by `diffship build` and c
 ## 1. Directory layout
 
 ```
-diffship_YYYY-MM-DD_HHMM/
+diffship_YYYY-MM-DD_HHMM_<head7>/
   HANDOFF.md
   parts/
     part_01.patch

@@ -82,3 +82,11 @@ pub fn rev_parse(git_root: &Path, rev: &str) -> Result<String, ExitError> {
     }
     Ok(s.to_string())
 }
+
+pub fn short_sha_label(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .take(7)
+        .collect::<String>()
+        .to_ascii_lowercase()
+}

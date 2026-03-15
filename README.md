@@ -38,7 +38,7 @@ For reproducible installs from Git, pin to a specific tag, branch, or commit.
 Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.4.0
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.4.1
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or
@@ -175,13 +175,13 @@ diffship build --yes
 diffship build --fail-on-secrets
 
 # inspect a generated bundle
-diffship preview ./diffship_2026-03-06_1200 --list
+diffship preview ./diffship_2026-03-06_1200_abcdef1 --list
 
 # compare two bundles for reproducibility checks
 diffship compare ./bundle_a ./bundle_b.zip
 
 # CI-friendly machine-readable checks
-diffship preview ./diffship_2026-03-06_1200 --list --json
+diffship preview ./diffship_2026-03-06_1200_abcdef1 --list --json
 diffship compare ./bundle_a ./bundle_b.zip --json
 
 # export and replay a build plan
@@ -211,10 +211,10 @@ Output layout:
 
 Default output naming:
 - `--out <path>` sets the exact output directory path
-- `--out-dir <dir>` changes the parent directory while preserving the auto-generated `diffship_<timestamp>` bundle name
+- `--out-dir <dir>` changes the parent directory while preserving the auto-generated `diffship_<timestamp>_<head7>` bundle name
 - the handoff config can set the default parent directory via `output_dir`
 - leading tilde-slash paths such as ~/handoffs are expanded against the current user's `HOME` for `--out`, `--out-dir`, `--plan`, `--plan-out`, and `output_dir`
-- when `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name in the user's local timezone
+- when `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM_<head7>` directory name in the user's local timezone
 - if that directory already exists, diffship appends `_2`, `_3`, ... instead of failing
 
 ## Configuration

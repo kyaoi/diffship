@@ -130,7 +130,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 #### 4.2.8 Output
 
-- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>/`, where `<timestamp>` is formatted in the local system timezone as `YYYY-MM-DD_HHMM`; if that path already exists, diffship MUST choose the next available suffixed path (`_2`, `_3`, ...). `--out-dir <dir>` or `[handoff].output_dir` MAY change the parent directory of that generated bundle name, while `--out <path>` continues to set the exact output path. For these path-like options, a leading tilde-slash form such as `~/handoffs` MUST resolve against the user's `HOME`; tilde-user shorthand is rejected.
+- **S-OUT-001**: Default output is a directory `./diffship_<timestamp>_<head7>/`, where `<timestamp>` is formatted in the local system timezone as `YYYY-MM-DD_HHMM` and `<head7>` is the current repo `HEAD` short SHA; if that path already exists, diffship MUST choose the next available suffixed path (`_2`, `_3`, ...). `--out-dir <dir>` or `[handoff].output_dir` MAY change the parent directory of that generated bundle name, while `--out <path>` continues to set the exact output path. For these path-like options, a leading tilde-slash form such as `~/handoffs` MUST resolve against the user's `HOME`; tilde-user shorthand is rejected.
 - **S-OUT-002**: `--zip` optionally produces a zip bundle with the same layout.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.
@@ -207,7 +207,7 @@ Runs verification commands (profiles) and records logs.
 Creates a reprompt bundle from the latest run.
 
 - **S-PACKFIX-001**: Must bundle the latest run logs, the applied diff (if any), and the original patch bundle metadata.
-- **S-PACKFIX-002**: Output must be a single zip that is safe to upload to an AI, and the default filename SHOULD include enough run/base context to distinguish multiple bundles by basename alone.
+- **S-PACKFIX-002**: Output must be a single zip that is safe to upload to an AI, and the default filename SHOULD include the run timestamp plus a short `HEAD`/base label so multiple bundles are distinguishable by basename alone.
 
 ### 4.8 `diffship loop <patch-bundle>`
 
@@ -292,7 +292,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-RUN-002**: Run directory must contain machine-readable summaries for apply and verify.
 - **S-RUN-003**: pack-fix must be able to reconstruct a reprompt bundle using only the run directory.
 - **S-RUN-004**: `status --json` and `runs --json` SHOULD surface effective base and promoted head information for runs when that data exists.
-- **S-RUN-005**: New ops run directories MUST use a human-readable timestamp-based `run_id`, with a deterministic suffix when collisions occur, while older run directories remain readable.
+- **S-RUN-005**: New ops run directories MUST use a human-readable timestamp-plus-`HEAD` `run_id` (`run_YYYY-MM-DD_HHMMSS_<head7>`), with a deterministic suffix when collisions occur, while older run directories remain readable.
 - **S-RUN-006**: Run directories MUST retain argv/stdout/stderr/duration metadata for diffship-spawned external commands in a machine-readable index plus per-command log files.
 
 ---

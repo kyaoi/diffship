@@ -378,8 +378,8 @@ diffship build --include 'src/*.rs' --include 'docs/*.md' --exclude 'src/generat
 ### Step 2: inspect before sharing
 
 ```bash
-diffship preview ./diffship_2026-03-07_1118 --list
-diffship preview ./diffship_2026-03-07_1118 --part part_01.patch
+diffship preview ./diffship_2026-03-07_1118_abcdef1 --list
+diffship preview ./diffship_2026-03-07_1118_abcdef1 --part part_01.patch
 ```
 
 Optional reproducibility check:

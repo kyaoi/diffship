@@ -179,8 +179,8 @@ fn pack_fix_command_creates_expected_zip_contents() {
     let zip_path = find_default_pack_fix_zip(&run_dir);
     assert!(zip_path.exists());
     let file_name = zip_path.file_name().unwrap().to_str().unwrap();
-    assert!(file_name.starts_with(&format!("pack-fix_{}_", run_id)));
-    assert!(file_name.ends_with(&format!("_{}.zip", &base[..7])));
+    let run_stem = run_id.strip_prefix("run_").unwrap_or(&run_id);
+    assert_eq!(file_name, format!("pack-fix_{run_stem}.zip"));
     let entries = zip_entries(&zip_path);
     assert!(entries.contains(&"PROMPT.md".to_string()));
     assert!(entries.contains(&"SAFETY.md".to_string()));
@@ -221,8 +221,8 @@ fn verify_failure_auto_creates_pack_fix_zip() {
     let zip_path = find_default_pack_fix_zip(&run_dir);
     assert!(zip_path.exists());
     let file_name = zip_path.file_name().unwrap().to_str().unwrap();
-    assert!(file_name.starts_with(&format!("pack-fix_{}_", run_id)));
-    assert!(file_name.ends_with(&format!("_{}.zip", &base[..7])));
+    let run_stem = run_id.strip_prefix("run_").unwrap_or(&run_id);
+    assert_eq!(file_name, format!("pack-fix_{run_stem}.zip"));
     let entries = zip_entries(&zip_path);
     assert!(entries.contains(&"PROMPT.md".to_string()));
     assert!(entries.contains(&"run/verify.json".to_string()));
