@@ -101,6 +101,13 @@ You can also create or re-create it explicitly:
 diffship pack-fix --run-id <run-id>
 ```
 
+### Reclaim disk from finished/orphaned workspaces
+
+```bash
+diffship cleanup --dry-run
+diffship cleanup
+```
+
 ### Promotion blocked: secrets
 
 If secrets-like strings were detected, promotion is refused.

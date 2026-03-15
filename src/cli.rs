@@ -33,6 +33,9 @@ pub enum Command {
     /// Diagnose stale session/worktree state and suggest safe recovery steps
     Doctor(DoctorArgs),
 
+    /// Remove unused diffship-owned workspaces to reclaim disk space
+    Cleanup(CleanupArgs),
+
     /// Show lock state and recent runs
     Status(StatusArgs),
 
@@ -196,7 +199,7 @@ pub struct BuildArgs {
     #[arg(long)]
     pub out_dir: Option<String>,
 
-    /// Output directory path (default: ./diffship_<timestamp>/)
+    /// Output directory path (default: ./diffship_<timestamp>_<head7>/)
     #[arg(long)]
     pub out: Option<String>,
 
@@ -260,6 +263,17 @@ pub struct DoctorArgs {
     /// Apply safe fixes automatically when possible
     #[arg(long, default_value_t = false)]
     pub fix: bool,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct CleanupArgs {
+    /// Show what would be removed without deleting anything
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
 
     /// Emit machine-readable JSON
     #[arg(long, default_value_t = false)]

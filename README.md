@@ -113,6 +113,7 @@ All commands below are implemented.
   - optional: `--template-dir <dir>` to override `docs/PROJECT_KIT_TEMPLATE.md` and `docs/AI_PROJECT_TEMPLATE.md`
 - `diffship status` — show lock state and recent runs (`--json` available)
 - `diffship runs` — list recent runs (`--json` available)
+- `diffship cleanup` — remove unused diffship-owned workspaces (`--dry-run`, `--json`)
 - `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)

@@ -1,4 +1,5 @@
 mod apply;
+mod cleanup;
 mod command_log;
 mod config;
 mod doctor;
@@ -57,6 +58,7 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
             SessionCommand::Repair(args) => session::cmd_repair(&git_root, args),
         },
         Command::Doctor(args) => doctor::cmd(&git_root, args),
+        Command::Cleanup(args) => cleanup::cmd(&git_root, args),
         Command::Status(args) => status::cmd(&git_root, args),
         Command::Runs(args) => runs::cmd(&git_root, args),
         Command::Apply(args) => apply::cmd(&git_root, args),

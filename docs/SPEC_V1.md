@@ -233,6 +233,12 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-DOCTOR-001**: diffship MUST provide a doctor command that diagnoses stale or missing session/worktree state and prints concrete recovery commands.
 - **S-DOCTOR-002**: `diffship doctor --fix` MAY apply only safe, explainable repairs; if issues remain after safe fixes, doctor MUST still report them.
 
+### 4.12 `diffship cleanup`
+
+- **S-CLEANUP-001**: diffship MUST provide a cleanup command that removes diffship-owned orphan workspaces under `.diffship/worktrees/`, including orphan sandboxes and orphan session worktrees.
+- **S-CLEANUP-002**: cleanup MAY remove sandbox worktrees for runs that have already been promoted, but it MUST also remove the corresponding run-local `sandbox.json` so later auto-selection does not treat that sandbox as still available.
+- **S-CLEANUP-003**: cleanup MUST support `--dry-run` preview mode and `--json` machine-readable output.
+
 ---
 
 ## 5. Handoff document requirements
