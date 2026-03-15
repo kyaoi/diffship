@@ -101,11 +101,14 @@ You can also create or re-create it explicitly:
 diffship pack-fix --run-id <run-id>
 ```
 
-### Reclaim disk from finished/orphaned workspaces
+### Reclaim disk from finished/orphaned workspaces and artifacts
 
 ```bash
 diffship cleanup --dry-run
 diffship cleanup
+diffship cleanup --include-runs
+diffship cleanup --include-builds
+diffship cleanup --all
 ```
 
 ### Promotion blocked: secrets

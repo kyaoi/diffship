@@ -169,6 +169,65 @@ fn build_out_dir_places_generated_bundle_under_requested_parent() {
 }
 
 #[test]
+fn build_zip_only_creates_only_zip_by_default() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).args(["build", "--zip-only"]);
+    cmd.assert().success();
+
+    let mut zip_paths = vec![];
+    let mut dir_paths = vec![];
+    for ent in fs::read_dir(root).unwrap() {
+        let ent = ent.unwrap();
+        let name = ent.file_name().to_string_lossy().to_string();
+        if !name.starts_with("diffship_") {
+            continue;
+        }
+        if ent.file_type().unwrap().is_file() && name.ends_with(".zip") {
+            zip_paths.push(ent.path());
+        } else if ent.file_type().unwrap().is_dir() {
+            dir_paths.push(ent.path());
+        }
+    }
+
+    assert_eq!(zip_paths.len(), 1);
+    assert!(dir_paths.is_empty());
+
+    let file = fs::File::open(&zip_paths[0]).unwrap();
+    let mut zip = ZipArchive::new(file).unwrap();
+    assert!(zip.by_name("HANDOFF.md").is_ok());
+    assert!(zip.by_name("parts/part_01.patch").is_ok());
+}
+
+#[test]
+fn build_zip_only_accepts_explicit_zip_out_path() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    let out = root.join("bundle-output.zip");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--zip-only", "--out"])
+        .arg(&out);
+    cmd.assert().success();
+
+    assert!(out.exists());
+    assert!(!root.join("bundle-output").exists());
+}
+
+#[test]
 fn build_rejects_out_and_out_dir_together() {
     let td = init_repo();
     let root = td.path();

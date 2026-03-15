@@ -195,6 +195,14 @@ struct SecretHit {
     reason: String,
 }
 
+#[derive(Debug, Clone)]
+struct BuildOutputPaths {
+    staging_dir: PathBuf,
+    final_dir: Option<PathBuf>,
+    final_zip: Option<PathBuf>,
+    cleanup_staging: bool,
+}
+
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
@@ -202,318 +210,315 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let resolved_plan = HandoffPlan::from_build_args(&args);
     let head = git::rev_parse(git_root, "HEAD")?;
 
-    let out_dir = match &args.out {
-        Some(o) => resolve_user_path(&cwd, o)?,
-        None => default_output_dir(
-            &args
-                .out_dir
-                .as_deref()
-                .map_or_else(|| Ok(cwd.clone()), |raw| resolve_user_path(&cwd, raw))?,
-            &head,
-        )?,
-    };
-
-    if out_dir.exists() {
-        return Err(ExitError::new(
-            EXIT_GENERAL,
-            format!("output path already exists: {}", out_dir.display()),
-        ));
-    }
-
+    let output_paths = resolve_output_paths(&cwd, &args, &head)?;
+    let out_dir = output_paths.staging_dir.clone();
     let parts_dir = out_dir.join("parts");
     fs::create_dir_all(&parts_dir)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
+    let result = (|| {
+        let sources = SourceSelection::from_args(&args)?;
+        let packing_limits = PackingLimits::from_args(&args)?;
+        let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
+        let plan = if sources.include_committed {
+            Some(build_range_plan(git_root, &args)?)
+        } else {
+            None
+        };
+        let split_by = effective_split_by(args.split_by.as_deref(), plan.as_ref())?;
+        let untracked_mode = parse_untracked_mode(&args.untracked_mode)?;
+        let binary_policy = BinaryPolicy {
+            include_binary: args.include_binary,
+            binary_mode: parse_binary_mode(&args.binary_mode)?,
+        };
 
-    let sources = SourceSelection::from_args(&args)?;
-    let packing_limits = PackingLimits::from_args(&args)?;
-    let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
-    let plan = if sources.include_committed {
-        Some(build_range_plan(git_root, &args)?)
-    } else {
-        None
-    };
-    let split_by = effective_split_by(args.split_by.as_deref(), plan.as_ref())?;
-    let untracked_mode = parse_untracked_mode(&args.untracked_mode)?;
-    let binary_policy = BinaryPolicy {
-        include_binary: args.include_binary,
-        binary_mode: parse_binary_mode(&args.binary_mode)?,
-    };
+        let mut parts = Vec::<PartOutput>::new();
+        let mut rows = Vec::<FileRow>::new();
+        let mut attachments = Vec::<AttachmentEntry>::new();
+        let mut exclusions = Vec::<ExclusionEntry>::new();
+        let mut commit_views = Vec::<CommitView>::new();
 
-    let mut parts = Vec::<PartOutput>::new();
-    let mut rows = Vec::<FileRow>::new();
-    let mut attachments = Vec::<AttachmentEntry>::new();
-    let mut exclusions = Vec::<ExclusionEntry>::new();
-    let mut commit_views = Vec::<CommitView>::new();
-
-    if let Some(plan) = plan.as_ref() {
-        if split_by == SplitBy::Commit {
-            let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
-            for cp in committed_parts {
+        if let Some(plan) = plan.as_ref() {
+            if split_by == SplitBy::Commit {
+                let committed_parts = build_committed_parts_by_commit(git_root, plan)?;
+                for cp in committed_parts {
+                    let part_name = format!("part_{:02}.patch", parts.len() + 1);
+                    let segment = filter_segment_output(cp.segment, &filters);
+                    let mut segment = apply_tracked_binary_policy(
+                        git_root,
+                        segment,
+                        binary_policy,
+                        TrackedBinarySource::Commit(&cp.rev),
+                    )?;
+                    attachments.append(&mut segment.attachments);
+                    exclusions.append(&mut segment.exclusions);
+                    let mut segment = segment.segment;
+                    if segment.rows.is_empty() && segment.patch.trim().is_empty() {
+                        continue;
+                    }
+                    for row in &mut segment.rows {
+                        if row.part.is_empty() {
+                            row.part = part_name.clone();
+                        }
+                    }
+                    let mut commit_files = segment
+                        .rows
+                        .iter()
+                        .map(|r| {
+                            (
+                                r.path.clone(),
+                                if r.part.is_empty() {
+                                    part_name.clone()
+                                } else {
+                                    r.part.clone()
+                                },
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    commit_files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+                    commit_views.push(CommitView {
+                        hash7: cp.hash7,
+                        subject: cp.subject,
+                        date: cp.date,
+                        files: commit_files,
+                        ins: sum_opt(segment.rows.iter().map(|r| r.ins)),
+                        del: sum_opt(segment.rows.iter().map(|r| r.del)),
+                    });
+                    rows.extend(segment.rows.clone());
+                    if !segment.patch.trim().is_empty() {
+                        parts.push(PartOutput {
+                            name: part_name,
+                            patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                            segments: vec![segment.name],
+                        });
+                    }
+                }
+            } else {
                 let part_name = format!("part_{:02}.patch", parts.len() + 1);
-                let segment = filter_segment_output(cp.segment, &filters);
+                let segment = filter_segment_output(
+                    build_committed_segment(git_root, plan, &part_name)?,
+                    &filters,
+                );
                 let mut segment = apply_tracked_binary_policy(
                     git_root,
                     segment,
                     binary_policy,
-                    TrackedBinarySource::Commit(&cp.rev),
+                    TrackedBinarySource::Commit(&plan.target),
                 )?;
                 attachments.append(&mut segment.attachments);
                 exclusions.append(&mut segment.exclusions);
-                let mut segment = segment.segment;
-                if segment.rows.is_empty() && segment.patch.trim().is_empty() {
-                    continue;
+                let segment = segment.segment;
+                if !segment.rows.is_empty() || !segment.patch.trim().is_empty() {
+                    rows.extend(segment.rows.clone());
+                    if !segment.patch.trim().is_empty() {
+                        parts.push(PartOutput {
+                            name: part_name,
+                            patch: render_segmented_patch(std::slice::from_ref(&segment)),
+                            segments: vec![segment.name],
+                        });
+                    }
                 }
-                for row in &mut segment.rows {
+            }
+        }
+
+        let mut worktree_segments = Vec::<SegmentOutput>::new();
+        let mut extra_rows = Vec::<FileRow>::new();
+        if sources.include_staged {
+            let seg = filter_segment_output(build_staged_segment(git_root, "")?, &filters);
+            let mut seg = apply_tracked_binary_policy(
+                git_root,
+                seg,
+                binary_policy,
+                TrackedBinarySource::Index,
+            )?;
+            attachments.append(&mut seg.attachments);
+            exclusions.append(&mut seg.exclusions);
+            let seg = seg.segment;
+            if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
+                worktree_segments.push(seg);
+            }
+        }
+        if sources.include_unstaged {
+            let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &filters);
+            let mut seg = apply_tracked_binary_policy(
+                git_root,
+                seg,
+                binary_policy,
+                TrackedBinarySource::Worktree,
+            )?;
+            attachments.append(&mut seg.attachments);
+            exclusions.append(&mut seg.exclusions);
+            let seg = seg.segment;
+            if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
+                worktree_segments.push(seg);
+            }
+        }
+        if sources.include_untracked {
+            let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &filters)?;
+            if let Some(seg) = built.segment {
+                worktree_segments.push(seg);
+            }
+            for row in built.rows {
+                if row.part == "attachments.zip" || row.part == "-" {
+                    extra_rows.push(row);
+                }
+            }
+            attachments.extend(built.attachments);
+            exclusions.extend(built.exclusions);
+        }
+
+        let worktree_has_patch = worktree_segments.iter().any(|s| !s.patch.trim().is_empty());
+        if !worktree_segments.is_empty() && worktree_has_patch {
+            let part_name = format!("part_{:02}.patch", parts.len() + 1);
+            for seg in &mut worktree_segments {
+                for row in &mut seg.rows {
                     if row.part.is_empty() {
                         row.part = part_name.clone();
                     }
                 }
-                let mut commit_files = segment
-                    .rows
-                    .iter()
-                    .map(|r| {
-                        (
-                            r.path.clone(),
-                            if r.part.is_empty() {
-                                part_name.clone()
-                            } else {
-                                r.part.clone()
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                commit_files.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-                commit_views.push(CommitView {
-                    hash7: cp.hash7,
-                    subject: cp.subject,
-                    date: cp.date,
-                    files: commit_files,
-                    ins: sum_opt(segment.rows.iter().map(|r| r.ins)),
-                    del: sum_opt(segment.rows.iter().map(|r| r.del)),
-                });
-                rows.extend(segment.rows.clone());
-                if !segment.patch.trim().is_empty() {
-                    parts.push(PartOutput {
-                        name: part_name,
-                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                        segments: vec![segment.name],
-                    });
-                }
             }
-        } else {
-            let part_name = format!("part_{:02}.patch", parts.len() + 1);
-            let segment = filter_segment_output(
-                build_committed_segment(git_root, plan, &part_name)?,
-                &filters,
-            );
-            let mut segment = apply_tracked_binary_policy(
-                git_root,
-                segment,
-                binary_policy,
-                TrackedBinarySource::Commit(&plan.target),
-            )?;
-            attachments.append(&mut segment.attachments);
-            exclusions.append(&mut segment.exclusions);
-            let segment = segment.segment;
-            if !segment.rows.is_empty() || !segment.patch.trim().is_empty() {
-                rows.extend(segment.rows.clone());
-                if !segment.patch.trim().is_empty() {
-                    parts.push(PartOutput {
-                        name: part_name,
-                        patch: render_segmented_patch(std::slice::from_ref(&segment)),
-                        segments: vec![segment.name],
-                    });
-                }
+            for seg in &worktree_segments {
+                rows.extend(seg.rows.clone());
             }
-        }
-    }
-
-    let mut worktree_segments = Vec::<SegmentOutput>::new();
-    let mut extra_rows = Vec::<FileRow>::new();
-    if sources.include_staged {
-        let seg = filter_segment_output(build_staged_segment(git_root, "")?, &filters);
-        let mut seg =
-            apply_tracked_binary_policy(git_root, seg, binary_policy, TrackedBinarySource::Index)?;
-        attachments.append(&mut seg.attachments);
-        exclusions.append(&mut seg.exclusions);
-        let seg = seg.segment;
-        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
-            worktree_segments.push(seg);
-        }
-    }
-    if sources.include_unstaged {
-        let seg = filter_segment_output(build_unstaged_segment(git_root, "")?, &filters);
-        let mut seg = apply_tracked_binary_policy(
-            git_root,
-            seg,
-            binary_policy,
-            TrackedBinarySource::Worktree,
-        )?;
-        attachments.append(&mut seg.attachments);
-        exclusions.append(&mut seg.exclusions);
-        let seg = seg.segment;
-        if !seg.rows.is_empty() || !seg.patch.trim().is_empty() {
-            worktree_segments.push(seg);
-        }
-    }
-    if sources.include_untracked {
-        let built = build_untracked_segment(git_root, untracked_mode, binary_policy, &filters)?;
-        if let Some(seg) = built.segment {
-            worktree_segments.push(seg);
-        }
-        for row in built.rows {
-            if row.part == "attachments.zip" || row.part == "-" {
-                extra_rows.push(row);
-            }
-        }
-        attachments.extend(built.attachments);
-        exclusions.extend(built.exclusions);
-    }
-
-    let worktree_has_patch = worktree_segments.iter().any(|s| !s.patch.trim().is_empty());
-    if !worktree_segments.is_empty() && worktree_has_patch {
-        let part_name = format!("part_{:02}.patch", parts.len() + 1);
-        for seg in &mut worktree_segments {
-            for row in &mut seg.rows {
-                if row.part.is_empty() {
-                    row.part = part_name.clone();
-                }
-            }
+            let patch = render_segmented_patch(&worktree_segments);
+            let mut segments = worktree_segments
+                .iter()
+                .map(|s| s.name.clone())
+                .collect::<Vec<_>>();
+            sort_segments(&mut segments);
+            parts.push(PartOutput {
+                name: part_name,
+                patch,
+                segments,
+            });
         }
         for seg in &worktree_segments {
             rows.extend(seg.rows.clone());
         }
-        let patch = render_segmented_patch(&worktree_segments);
-        let mut segments = worktree_segments
-            .iter()
-            .map(|s| s.name.clone())
-            .collect::<Vec<_>>();
-        sort_segments(&mut segments);
-        parts.push(PartOutput {
-            name: part_name,
-            patch,
-            segments,
-        });
-    }
-    for seg in &worktree_segments {
-        rows.extend(seg.rows.clone());
-    }
 
-    rows.extend(extra_rows);
-    sort_file_rows(&mut rows);
+        rows.extend(extra_rows);
+        sort_file_rows(&mut rows);
 
-    if parts.is_empty() {
-        parts.push(PartOutput {
-            name: "part_01.patch".to_string(),
-            patch: "# (no changes)\n".to_string(),
-            segments: vec!["meta".to_string()],
-        });
-    }
+        if parts.is_empty() {
+            parts.push(PartOutput {
+                name: "part_01.patch".to_string(),
+                patch: "# (no changes)\n".to_string(),
+                segments: vec!["meta".to_string()],
+            });
+        }
 
-    apply_packing_fallback(
-        &mut parts,
-        &mut rows,
-        &mut commit_views,
-        &mut exclusions,
-        &packing_limits,
-    )?;
-
-    enforce_packing_limits(&parts, &packing_limits)?;
-
-    for part in &parts {
-        write_text_file(&parts_dir.join(&part.name), &part.patch)?;
-    }
-    if !attachments.is_empty() {
-        write_attachments_zip(&out_dir.join("attachments.zip"), &attachments)?;
-    }
-    if !exclusions.is_empty() {
-        write_text_file(
-            &out_dir.join("excluded.md"),
-            &render_excluded_md(&exclusions),
+        apply_packing_fallback(
+            &mut parts,
+            &mut rows,
+            &mut commit_views,
+            &mut exclusions,
+            &packing_limits,
         )?;
+
+        enforce_packing_limits(&parts, &packing_limits)?;
+
+        for part in &parts {
+            write_text_file(&parts_dir.join(&part.name), &part.patch)?;
+        }
+        if !attachments.is_empty() {
+            write_attachments_zip(&out_dir.join("attachments.zip"), &attachments)?;
+        }
+        if !exclusions.is_empty() {
+            write_text_file(
+                &out_dir.join("excluded.md"),
+                &render_excluded_md(&exclusions),
+            )?;
+        }
+
+        let secret_hits = scan_bundle_for_secrets(&parts, &attachments)?;
+        if !secret_hits.is_empty() {
+            write_text_file(
+                &out_dir.join("secrets.md"),
+                &render_secrets_md(&secret_hits),
+            )?;
+        }
+
+        let changed_paths: Vec<String> = rows.iter().map(|r| r.path.clone()).collect();
+        let changed_tree = render_changed_tree(&changed_paths);
+        let parts_index = render_parts_index(&parts, &rows);
+        let (cat_summary, reading_order) = render_category_summary_and_reading_order(&rows);
+        let first_part_rel = parts
+            .first()
+            .map(|p| format!("parts/{}", p.name))
+            .unwrap_or_else(|| "parts/part_01.patch".to_string());
+
+        let handoff = render_handoff_md(&HandoffDocInputs {
+            out_dir: &out_dir,
+            plan: plan.as_ref(),
+            head: &head,
+            split_by,
+            packing_limits,
+            binary_policy,
+            sources,
+            untracked_mode,
+            changed_tree: &changed_tree,
+            rows: &rows,
+            cat_summary: &cat_summary,
+            parts_index: &parts_index,
+            reading_order: &reading_order,
+            first_part_rel: &first_part_rel,
+            commit_views: &commit_views,
+            attachments: &attachments,
+            exclusions: &exclusions,
+            ignore_enabled: filters.has_ignore_rules(),
+            include_patterns: filters.includes(),
+            exclude_patterns: filters.excludes(),
+            secret_hits: &secret_hits,
+        });
+        write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
+
+        if let Some(plan_out) = args.plan_out.as_deref() {
+            let plan_path = resolve_plan_path(&cwd, plan_out)?;
+            resolved_plan
+                .write_to_path(&plan_path)
+                .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
+            println!(
+                "diffship build: wrote plan {} (profile={}, resolved limits)",
+                plan_path.display(),
+                resolved_plan.profile.as_deref().unwrap_or("none")
+            );
+        }
+
+        handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;
+
+        if let Some(zp) = output_paths.final_zip.as_ref() {
+            write_zip_from_dir(&out_dir, zp)?;
+        }
+
+        if let Some(final_dir) = output_paths.final_dir.as_ref() {
+            println!("diffship build: created {}", final_dir.display());
+            if !attachments.is_empty() {
+                println!(
+                    "diffship build: created {}/attachments.zip",
+                    final_dir.display()
+                );
+            }
+            if !exclusions.is_empty() {
+                println!(
+                    "diffship build: created {}/excluded.md",
+                    final_dir.display()
+                );
+            }
+            if !secret_hits.is_empty() {
+                println!("diffship build: created {}/secrets.md", final_dir.display());
+            }
+        }
+        if let Some(zp) = output_paths.final_zip.as_ref() {
+            println!("diffship build: created {}", zp.display());
+        }
+
+        Ok(())
+    })();
+
+    if output_paths.cleanup_staging {
+        let _ = fs::remove_dir_all(&output_paths.staging_dir);
     }
 
-    let secret_hits = scan_bundle_for_secrets(&parts, &attachments)?;
-    if !secret_hits.is_empty() {
-        write_text_file(
-            &out_dir.join("secrets.md"),
-            &render_secrets_md(&secret_hits),
-        )?;
-    }
-
-    let changed_paths: Vec<String> = rows.iter().map(|r| r.path.clone()).collect();
-    let changed_tree = render_changed_tree(&changed_paths);
-    let parts_index = render_parts_index(&parts, &rows);
-    let (cat_summary, reading_order) = render_category_summary_and_reading_order(&rows);
-    let first_part_rel = parts
-        .first()
-        .map(|p| format!("parts/{}", p.name))
-        .unwrap_or_else(|| "parts/part_01.patch".to_string());
-
-    let handoff = render_handoff_md(&HandoffDocInputs {
-        out_dir: &out_dir,
-        plan: plan.as_ref(),
-        head: &head,
-        split_by,
-        packing_limits,
-        binary_policy,
-        sources,
-        untracked_mode,
-        changed_tree: &changed_tree,
-        rows: &rows,
-        cat_summary: &cat_summary,
-        parts_index: &parts_index,
-        reading_order: &reading_order,
-        first_part_rel: &first_part_rel,
-        commit_views: &commit_views,
-        attachments: &attachments,
-        exclusions: &exclusions,
-        ignore_enabled: filters.has_ignore_rules(),
-        include_patterns: filters.includes(),
-        exclude_patterns: filters.excludes(),
-        secret_hits: &secret_hits,
-    });
-    write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
-
-    if let Some(plan_out) = args.plan_out.as_deref() {
-        let plan_path = resolve_plan_path(&cwd, plan_out)?;
-        resolved_plan
-            .write_to_path(&plan_path)
-            .map_err(|e| ExitError::new(EXIT_GENERAL, e))?;
-        println!(
-            "diffship build: wrote plan {} (profile={}, resolved limits)",
-            plan_path.display(),
-            resolved_plan.profile.as_deref().unwrap_or("none")
-        );
-    }
-
-    handle_secret_hits(&secret_hits, args.yes, args.fail_on_secrets)?;
-
-    let mut zip_path = None;
-    if args.zip {
-        let zp = out_dir.with_extension("zip");
-        write_zip_from_dir(&out_dir, &zp)?;
-        zip_path = Some(zp);
-    }
-
-    println!("diffship build: created {}", out_dir.display());
-    if !attachments.is_empty() {
-        println!(
-            "diffship build: created {}/attachments.zip",
-            out_dir.display()
-        );
-    }
-    if !exclusions.is_empty() {
-        println!("diffship build: created {}/excluded.md", out_dir.display());
-    }
-    if !secret_hits.is_empty() {
-        println!("diffship build: created {}/secrets.md", out_dir.display());
-    }
-    if let Some(zp) = zip_path {
-        println!("diffship build: created {}", zp.display());
-    }
-
-    Ok(())
+    result
 }
 
 fn resolve_build_args(
@@ -544,6 +549,7 @@ fn resolve_build_args(
     effective.out_dir = args.out_dir;
     effective.out = args.out;
     effective.zip = args.zip;
+    effective.zip_only = args.zip_only;
     effective.yes = args.yes;
     effective.fail_on_secrets = args.fail_on_secrets;
     let cfg = HandoffConfig::load(git_root)?;
@@ -1002,6 +1008,103 @@ fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str, head_label: &st
     }
 
     unreachable!("numeric suffix search is unbounded");
+}
+
+fn default_output_zip_path(cwd: &Path, head: &str) -> Result<PathBuf, ExitError> {
+    let timestamp = timestamp_yyyymmdd_hhmm()?;
+    let head_label = crate::git::short_sha_label(head);
+    for suffix in 1.. {
+        let stem = if suffix == 1 {
+            cwd.join(format!("diffship_{timestamp}_{head_label}"))
+        } else {
+            cwd.join(format!("diffship_{timestamp}_{head_label}_{suffix}"))
+        };
+        let zip = stem.with_extension("zip");
+        if !stem.exists() && !zip.exists() {
+            return Ok(zip);
+        }
+    }
+
+    unreachable!("numeric suffix search is unbounded");
+}
+
+fn resolve_output_paths(
+    cwd: &Path,
+    args: &BuildArgs,
+    head: &str,
+) -> Result<BuildOutputPaths, ExitError> {
+    let output_parent = args
+        .out_dir
+        .as_deref()
+        .map_or_else(|| Ok(cwd.to_path_buf()), |raw| resolve_user_path(cwd, raw))?;
+    if args.zip_only {
+        let final_zip = match args.out.as_deref() {
+            Some(raw) => {
+                let path = resolve_user_path(cwd, raw)?;
+                if path.extension().and_then(|ext| ext.to_str()) != Some("zip") {
+                    return Err(ExitError::new(
+                        EXIT_GENERAL,
+                        "--zip-only requires --out to point to a .zip path",
+                    ));
+                }
+                path
+            }
+            None => default_output_zip_path(&output_parent, head)?,
+        };
+        if final_zip.exists() {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!("output path already exists: {}", final_zip.display()),
+            ));
+        }
+        let staging_parent = final_zip.parent().unwrap_or(cwd);
+        let staging_dir =
+            staging_parent.join(format!(".diffship_build_{}", uuid::Uuid::new_v4().simple()));
+        if staging_dir.exists() {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!(
+                    "temporary output path already exists: {}",
+                    staging_dir.display()
+                ),
+            ));
+        }
+        return Ok(BuildOutputPaths {
+            staging_dir,
+            final_dir: None,
+            final_zip: Some(final_zip),
+            cleanup_staging: true,
+        });
+    }
+
+    let final_dir = match args.out.as_deref() {
+        Some(raw) => resolve_user_path(cwd, raw)?,
+        None => default_output_dir(&output_parent, head)?,
+    };
+    if final_dir.exists() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("output path already exists: {}", final_dir.display()),
+        ));
+    }
+    let final_zip = if args.zip {
+        let zip_path = final_dir.with_extension("zip");
+        if zip_path.exists() {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!("output path already exists: {}", zip_path.display()),
+            ));
+        }
+        Some(zip_path)
+    } else {
+        None
+    };
+    Ok(BuildOutputPaths {
+        staging_dir: final_dir.clone(),
+        final_dir: Some(final_dir),
+        final_zip,
+        cleanup_staging: false,
+    })
 }
 
 fn timestamp_yyyymmdd_hhmm() -> Result<String, ExitError> {

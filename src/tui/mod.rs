@@ -851,6 +851,15 @@ impl App {
             }
             KeyCode::Char('z') => {
                 self.handoff.plan.zip = !self.handoff.plan.zip;
+                if !self.handoff.plan.zip {
+                    self.handoff.plan.zip_only = false;
+                }
+            }
+            KeyCode::Char('Z') => {
+                self.handoff.plan.zip_only = !self.handoff.plan.zip_only;
+                if self.handoff.plan.zip_only {
+                    self.handoff.plan.zip = true;
+                }
             }
             KeyCode::Char('v') => {
                 self.run_handoff_preview(git_root, guard)?;
@@ -880,6 +889,8 @@ impl App {
         let preview_dir = preview_output_dir(git_root);
         let mut preview_plan = self.handoff.plan.clone();
         preview_plan.out = Some(preview_dir.display().to_string());
+        preview_plan.zip = false;
+        preview_plan.zip_only = false;
         preview_plan.yes = true;
         let args = preview_plan.to_build_args();
 
@@ -1469,7 +1480,7 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     };
     vec![
         "Handoff".to_string(),
-        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  h=profile  M=max-parts  B=max-bytes  o=out  O=plan-path  w=untracked  i=include-binary  y=binary-mode  z=zip  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
+        "Keys: m=range-mode  f/t=from/to  a/b=merge-base refs  c/s/u/n=sources  l/e=include/exclude  p=split  h=profile  M=max-parts  B=max-bytes  o=out  O=plan-path  w=untracked  i=include-binary  y=binary-mode  z=zip  Z=zip-only  v=preview  g=build  P=export-plan  ↑/↓=scroll preview".to_string(),
         String::new(),
         format!("mode        : {mode}"),
         format!("build cmd   : {}", handoff.plan.to_shell_command()),
@@ -1536,8 +1547,9 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
             handoff.plan.binary_mode
         ),
         format!(
-            "  - zip/out-dir/out: {} / {} / {}",
+            "  - zip/zip-only/out-dir/out: {} / {} / {} / {}",
             yes_no(handoff.plan.zip),
+            yes_no(handoff.plan.zip_only),
             display_opt(handoff.plan.out_dir.as_deref()),
             display_opt(handoff.plan.out.as_deref())
         ),
@@ -1547,7 +1559,9 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
 }
 
 fn current_plan_export_path(handoff: &HandoffState) -> String {
-    if let Some(out) = handoff.plan.out.as_deref() {
+    if handoff.plan.zip_only {
+        handoff.plan_path.clone()
+    } else if let Some(out) = handoff.plan.out.as_deref() {
         format!("{}/plan.toml", out.trim_end_matches('/'))
     } else {
         handoff.plan_path.clone()

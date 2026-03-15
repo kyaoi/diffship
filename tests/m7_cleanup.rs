@@ -90,6 +90,16 @@ fn head(root: &std::path::Path) -> String {
     String::from_utf8_lossy(&out).trim().to_string()
 }
 
+fn git_stdout(root: &std::path::Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .expect("git output");
+    assert!(out.status.success(), "git {:?} failed", args);
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
 #[test]
 fn cleanup_dry_run_reports_but_keeps_promoted_sandbox() {
     let td = init_repo();
@@ -193,4 +203,103 @@ fn cleanup_removes_orphan_sandbox_when_run_metadata_is_gone() {
         .stdout(predicate::str::contains("orphan_sandbox"));
 
     assert!(!root.join(&setup.sandbox_path).exists());
+}
+
+#[test]
+fn cleanup_include_runs_removes_promoted_run_but_keeps_session_head() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+    let session_ref_before = git_stdout(root, &["rev-parse", "refs/diffship/sessions/default"]);
+
+    fs::write(
+        run_dir.join("promotion.json"),
+        format!(
+            "{{\"run_id\":\"{}\",\"promoted_head\":\"{}\",\"ok\":true}}",
+            setup.run_id,
+            head(root)
+        ),
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--include-runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("promoted_run"));
+
+    assert!(!run_dir.exists());
+    assert!(!root.join(&setup.sandbox_path).exists());
+    assert_eq!(
+        git_stdout(root, &["rev-parse", "refs/diffship/sessions/default"]),
+        session_ref_before
+    );
+    assert!(
+        root.join(".diffship")
+            .join("sessions")
+            .join("default.json")
+            .exists()
+    );
+}
+
+#[test]
+fn cleanup_include_runs_keeps_active_unpromoted_run() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+
+    diffship_cmd()
+        .args(["cleanup", "--include-runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nothing to do"));
+
+    assert!(run_dir.exists());
+    assert!(root.join(&setup.sandbox_path).exists());
+}
+
+#[test]
+fn cleanup_include_builds_removes_diffship_artifacts_only() {
+    let td = init_repo();
+    let root = td.path();
+    let handoff_dir = root
+        .join(".diffship")
+        .join("artifacts")
+        .join("handoffs")
+        .join("bundle_a");
+    let handoff_zip = root
+        .join(".diffship")
+        .join("artifacts")
+        .join("handoffs")
+        .join("bundle_a.zip");
+    let rules_zip = root
+        .join(".diffship")
+        .join("artifacts")
+        .join("rules")
+        .join("kit.zip");
+    let external_zip = root.join("keep-me.zip");
+
+    fs::create_dir_all(&handoff_dir).unwrap();
+    fs::write(handoff_dir.join("HANDOFF.md"), "# handoff\n").unwrap();
+    fs::write(&handoff_zip, "zip").unwrap();
+    fs::create_dir_all(rules_zip.parent().unwrap()).unwrap();
+    fs::write(&rules_zip, "zip").unwrap();
+    fs::write(&external_zip, "zip").unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--include-builds"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("build_artifact"))
+        .stdout(predicate::str::contains("rules_artifact"));
+
+    assert!(!handoff_dir.exists());
+    assert!(!handoff_zip.exists());
+    assert!(!rules_zip.exists());
+    assert!(external_zip.exists());
 }

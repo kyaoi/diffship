@@ -35,6 +35,10 @@ enum CleanupKind {
     PromotedSandbox,
     OrphanSandbox,
     OrphanSessionWorktree,
+    PromotedRun,
+    OrphanRun,
+    BuildArtifact,
+    RulesArtifact,
 }
 
 impl CleanupKind {
@@ -43,8 +47,18 @@ impl CleanupKind {
             Self::PromotedSandbox => "promoted_sandbox",
             Self::OrphanSandbox => "orphan_sandbox",
             Self::OrphanSessionWorktree => "orphan_session_worktree",
+            Self::PromotedRun => "promoted_run",
+            Self::OrphanRun => "orphan_run",
+            Self::BuildArtifact => "build_artifact",
+            Self::RulesArtifact => "rules_artifact",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CleanupScopes {
+    include_runs: bool,
+    include_builds: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,22 +68,27 @@ struct CleanupCandidate {
     path: PathBuf,
     reason: String,
     size_bytes: u64,
-    run_dir: Option<PathBuf>,
+    extra_paths: Vec<PathBuf>,
+    extra_files: Vec<PathBuf>,
 }
 
 pub fn cmd(git_root: &Path, args: CleanupArgs) -> Result<(), ExitError> {
     let lock_path = lock::default_lock_path(git_root);
+    let scopes = CleanupScopes::from_args(&args);
     let info = lock::make_lock_info(
         git_root,
         "cleanup",
         &[
             format!("--dry-run={}", args.dry_run),
+            format!("--include-runs={}", scopes.include_runs),
+            format!("--include-builds={}", scopes.include_builds),
+            format!("--all={}", args.all),
             format!("--json={}", args.json),
         ],
     );
     let _guard = lock::LockGuard::acquire(&lock_path, info)?;
 
-    let candidates = collect_candidates(git_root)?;
+    let candidates = collect_candidates(git_root, scopes)?;
     let mut items = Vec::with_capacity(candidates.len());
     let mut removed = 0usize;
     let mut failed = 0usize;
@@ -145,11 +164,20 @@ pub fn cmd(git_root: &Path, args: CleanupArgs) -> Result<(), ExitError> {
     if report.failed > 0 {
         return Err(ExitError::new(
             EXIT_GENERAL,
-            format!("cleanup failed for {} workspace(s)", report.failed),
+            format!("cleanup failed for {} item(s)", report.failed),
         ));
     }
 
     Ok(())
+}
+
+impl CleanupScopes {
+    fn from_args(args: &CleanupArgs) -> Self {
+        Self {
+            include_runs: args.all || args.include_runs,
+            include_builds: args.all || args.include_builds,
+        }
+    }
 }
 
 fn print_report(report: &CleanupReport) {
@@ -187,9 +215,18 @@ fn print_report(report: &CleanupReport) {
     }
 }
 
-fn collect_candidates(git_root: &Path) -> Result<Vec<CleanupCandidate>, ExitError> {
+fn collect_candidates(
+    git_root: &Path,
+    scopes: CleanupScopes,
+) -> Result<Vec<CleanupCandidate>, ExitError> {
     let mut out = Vec::new();
-    collect_sandbox_candidates(git_root, &mut out)?;
+    collect_sandbox_candidates(git_root, scopes, &mut out)?;
+    if scopes.include_runs {
+        collect_run_candidates(git_root, &mut out)?;
+    }
+    if scopes.include_builds {
+        collect_build_artifacts(git_root, &mut out)?;
+    }
     collect_orphan_session_worktrees(git_root, &mut out)?;
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
@@ -197,6 +234,7 @@ fn collect_candidates(git_root: &Path) -> Result<Vec<CleanupCandidate>, ExitErro
 
 fn collect_sandbox_candidates(
     git_root: &Path,
+    scopes: CleanupScopes,
     out: &mut Vec<CleanupCandidate>,
 ) -> Result<(), ExitError> {
     let dir = worktree::sandboxes_dir(git_root);
@@ -220,29 +258,92 @@ fn collect_sandbox_candidates(
         let size_bytes = dir_size_bytes(&path);
 
         if !run_dir.exists() || worktree::read_sandbox_meta(git_root, &run_id).is_none() {
-            out.push(CleanupCandidate {
-                kind: CleanupKind::OrphanSandbox,
-                name: run_id,
-                path,
-                reason: "run metadata is missing or invalid".to_string(),
-                size_bytes,
-                run_dir: if run_dir.exists() {
-                    Some(run_dir)
-                } else {
-                    None
-                },
-            });
+            if !scopes.include_runs || !run_dir.exists() {
+                out.push(CleanupCandidate {
+                    kind: CleanupKind::OrphanSandbox,
+                    name: run_id,
+                    path,
+                    reason: "run metadata is missing or invalid".to_string(),
+                    size_bytes,
+                    extra_paths: Vec::new(),
+                    extra_files: if run_dir.exists() {
+                        vec![run_dir.join("sandbox.json")]
+                    } else {
+                        Vec::new()
+                    },
+                });
+            }
             continue;
         }
 
-        if run_is_promoted(&run_dir) {
+        if run_is_promoted(&run_dir) && !scopes.include_runs {
             out.push(CleanupCandidate {
                 kind: CleanupKind::PromotedSandbox,
                 name: run_id,
                 path,
                 reason: "run already has a promoted head".to_string(),
                 size_bytes,
-                run_dir: Some(run_dir),
+                extra_paths: Vec::new(),
+                extra_files: vec![run_dir.join("sandbox.json")],
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_run_candidates(
+    git_root: &Path,
+    out: &mut Vec<CleanupCandidate>,
+) -> Result<(), ExitError> {
+    let dir = run::runs_dir(git_root);
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for ent in fs::read_dir(&dir)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read runs dir: {e}")))?
+    {
+        let ent = ent
+            .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to read run entry: {e}")))?;
+        if !ent.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+
+        let run_id = ent.file_name().to_string_lossy().to_string();
+        let run_dir = ent.path();
+        let sandbox_path = worktree::sandbox_dir(git_root, &run_id);
+        let sandbox_meta = worktree::read_sandbox_meta(git_root, &run_id);
+        let sandbox_exists = sandbox_path.exists();
+        let sandbox_size = dir_size_bytes(&sandbox_path);
+        let mut extra_paths = Vec::new();
+        if sandbox_exists {
+            extra_paths.push(sandbox_path);
+        }
+
+        if run_is_promoted(&run_dir) {
+            out.push(CleanupCandidate {
+                kind: CleanupKind::PromotedRun,
+                name: run_id,
+                path: run_dir.clone(),
+                reason: "run already has a promoted head".to_string(),
+                size_bytes: dir_size_bytes(&run_dir) + sandbox_size,
+                extra_paths,
+                extra_files: Vec::new(),
+            });
+            continue;
+        }
+
+        if sandbox_meta.is_none() || !sandbox_exists {
+            out.push(CleanupCandidate {
+                kind: CleanupKind::OrphanRun,
+                name: run_id,
+                path: run_dir.clone(),
+                reason: "sandbox metadata is missing or the sandbox worktree no longer exists"
+                    .to_string(),
+                size_bytes: dir_size_bytes(&run_dir) + sandbox_size,
+                extra_paths,
+                extra_files: Vec::new(),
             });
         }
     }
@@ -283,7 +384,75 @@ fn collect_orphan_session_worktrees(
             path: path.clone(),
             reason: "session state and ref are both missing".to_string(),
             size_bytes: dir_size_bytes(&path),
-            run_dir: None,
+            extra_paths: Vec::new(),
+            extra_files: Vec::new(),
+        });
+    }
+
+    Ok(())
+}
+
+fn collect_build_artifacts(
+    git_root: &Path,
+    out: &mut Vec<CleanupCandidate>,
+) -> Result<(), ExitError> {
+    let artifacts_root = git_root.join(".diffship").join("artifacts");
+    collect_artifact_entries(
+        &artifacts_root.join("handoffs"),
+        CleanupKind::BuildArtifact,
+        "diffship-owned build artifact",
+        out,
+    )?;
+    collect_artifact_entries(
+        &artifacts_root.join("rules"),
+        CleanupKind::RulesArtifact,
+        "diffship-owned rules artifact",
+        out,
+    )?;
+    Ok(())
+}
+
+fn collect_artifact_entries(
+    dir: &Path,
+    kind: CleanupKind,
+    reason: &str,
+    out: &mut Vec<CleanupCandidate>,
+) -> Result<(), ExitError> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for ent in fs::read_dir(dir).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to read {}: {e}", dir.display()),
+        )
+    })? {
+        let ent = ent.map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to read artifact entry under {}: {e}", dir.display()),
+            )
+        })?;
+        let path = ent.path();
+        let file_type = ent.file_type().map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to inspect artifact entry {}: {e}", path.display()),
+            )
+        })?;
+        if !(file_type.is_dir() || file_type.is_file()) {
+            continue;
+        }
+
+        out.push(CleanupCandidate {
+            kind: kind.clone(),
+            name: ent.file_name().to_string_lossy().to_string(),
+            path: path.clone(),
+            reason: reason.to_string(),
+            size_bytes: dir_size_bytes(&path),
+            extra_paths: Vec::new(),
+            extra_files: Vec::new(),
         });
     }
 
@@ -306,37 +475,56 @@ fn run_is_promoted(run_dir: &Path) -> bool {
 }
 
 fn remove_candidate(git_root: &Path, candidate: &CleanupCandidate) -> Result<(), ExitError> {
-    remove_owned_worktree(git_root, &candidate.path)?;
-
-    if let Some(run_dir) = &candidate.run_dir {
-        let sandbox_meta = run_dir.join("sandbox.json");
-        if sandbox_meta.exists() {
-            fs::remove_file(&sandbox_meta).map_err(|e| {
+    for path in &candidate.extra_paths {
+        remove_owned_path(git_root, path)?;
+    }
+    for path in &candidate.extra_files {
+        if path.exists() {
+            fs::remove_file(path).map_err(|e| {
                 ExitError::new(
                     EXIT_GENERAL,
-                    format!("failed to remove {}: {e}", sandbox_meta.display()),
+                    format!("failed to remove {}: {e}", path.display()),
                 )
             })?;
         }
     }
+    remove_owned_path(git_root, &candidate.path)?;
 
     Ok(())
 }
 
-fn remove_owned_worktree(git_root: &Path, path: &Path) -> Result<(), ExitError> {
+fn remove_owned_path(git_root: &Path, path: &Path) -> Result<(), ExitError> {
     if !path.exists() {
         return Ok(());
     }
 
-    worktree::remove_worktree_best_effort(git_root, path);
-    if path.exists() {
-        fs::remove_dir_all(path).map_err(|e| {
+    if path.starts_with(worktree::worktrees_dir(git_root)) {
+        worktree::remove_worktree_best_effort(git_root, path);
+    }
+    if !path.exists() {
+        return Ok(());
+    }
+    let meta = fs::symlink_metadata(path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to inspect {}: {e}", path.display()),
+        )
+    })?;
+    if meta.is_file() {
+        fs::remove_file(path).map_err(|e| {
             ExitError::new(
                 EXIT_GENERAL,
                 format!("failed to remove {}: {e}", path.display()),
             )
         })?;
+        return Ok(());
     }
+    fs::remove_dir_all(path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to remove {}: {e}", path.display()),
+        )
+    })?;
     Ok(())
 }
 
