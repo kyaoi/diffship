@@ -422,6 +422,14 @@ diffship doctor --session default
 diffship doctor --session default --fix
 ```
 
+Clean up unused diffship workspaces:
+
+```bash
+diffship cleanup --dry-run
+diffship cleanup
+diffship cleanup --json
+```
+
 ### 6.4 Promotion modes
 
 Available promotion modes:

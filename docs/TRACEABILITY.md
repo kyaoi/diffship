@@ -238,6 +238,14 @@ Conventions:
 
 ---
 
+## cleanup
+
+- **S-CLEANUP-001** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/cli.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-CLEANUP-002** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/ops/worktree.rs`, `src/ops/run.rs` — Status: Implemented
+- **S-CLEANUP-003** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/cli.rs` — Status: Implemented
+
+---
+
 ## Secrets (handoff build)
 
 - **S-SECRETS-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
