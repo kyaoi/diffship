@@ -21,7 +21,7 @@ struct VerifyJson {
 
 /// Create a "reprompt zip" that contains run metadata, bundle, verify logs, and sandbox diffs.
 ///
-/// Default output path: `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`.
+/// Default output path: `.diffship/runs/<run-id>/pack-fix_<timestamp>_<head7>[_N].zip`.
 pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
     let created_at = lock::now_rfc3339();
     let cwd = std::env::current_dir()
@@ -221,6 +221,10 @@ fn read_verify_json_brief(path: &Path) -> (Option<String>, Option<bool>) {
 }
 
 fn default_pack_fix_zip_name(run_dir: &Path, run_id: &str) -> String {
+    if let Some(stem) = run_id.strip_prefix("run_") {
+        return format!("pack-fix_{stem}.zip");
+    }
+
     let base_label = detect_base_label(run_dir).unwrap_or_else(|| "HEAD".to_string());
     format!("pack-fix_{}_{}.zip", run_id, base_label)
 }
@@ -238,13 +242,7 @@ fn detect_base_label(run_dir: &Path) -> Option<String> {
             continue;
         }
         if trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Some(
-                trimmed
-                    .chars()
-                    .take(7)
-                    .collect::<String>()
-                    .to_ascii_lowercase(),
-            );
+            return Some(crate::git::short_sha_label(trimmed));
         }
         let sanitized = sanitize_label(trimmed);
         if !sanitized.is_empty() {

@@ -241,7 +241,7 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
   - The first `diffship build` implementation supports committed range only.
   - Establish the layout with fixed `parts/part_01.patch` plus `HANDOFF.md`.
   - Support `--range-mode direct|merge-base|last|root`, defaulting to `last`.
-  - Default output is `./diffship_YYYY-MM-DD_HHMM/` and originally failed on name collisions.
+  - Default output is `./diffship_YYYY-MM-DD_HHMM_<head7>/` and originally failed on name collisions.
   - `--zip` produces the same layout as a zip.
 - Rationale:
   - Fixing the entry document and patch location first makes later split/attachment/preview work safer.
@@ -653,7 +653,7 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
 
 - Date: 2026-03-07
 - Decision:
-  - When `--out` is omitted, use `diffship_YYYY-MM-DD_HHMM` based on the local system timezone.
+  - When `--out` is omitted, use `diffship_YYYY-MM-DD_HHMM_<head7>` based on the local system timezone.
   - If the path already exists, choose `_2`, `_3`, ... automatically.
   - Explicit `--out` keeps the previous “existing path is an error” behavior.
 - Rationale:

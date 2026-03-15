@@ -97,8 +97,8 @@ diffship build
 Inspect it:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --list
-diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --part part_01.patch
 ```
 
 Compare two bundles when checking reproducibility:
@@ -225,19 +225,19 @@ diffship build --fail-on-secrets
 List bundle contents:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --list
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list
 ```
 
 Show a patch part:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --part part_01.patch
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --part part_01.patch
 ```
 
 Machine-readable preview:
 
 ```bash
-diffship preview ./diffship_YYYY-MM-DD_HHMM --list --json
+diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list --json
 ```
 
 ### 5.7 Export and replay a plan
@@ -280,9 +280,9 @@ Default output naming:
 - `--out <path>` sets the exact output directory path
 - `--out-dir <dir>` places the auto-generated bundle name under a custom parent directory
 - filesystem path arguments such as bundle paths, `--out`, `--out-dir`, `--plan`, and `pack-fix --out` accept leading tilde-slash
-- if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM` directory name
+- if `--out` is omitted, diffship uses a `diffship_YYYY-MM-DD_HHMM_<head7>` directory name
 - the timestamp is rendered in the local system timezone
-- if the base path already exists, diffship creates a suffixed name such as `diffship_YYYY-MM-DD_HHMM_2`, then `_3`, and so on
+- if the base path already exists, diffship creates a suffixed name such as `diffship_YYYY-MM-DD_HHMM_<head7>_2`, then `_3`, and so on
 
 Example:
 
@@ -452,7 +452,7 @@ You can also define custom local profiles in config and run them by name.
 
 diffship writes a reprompt bundle under the run directory:
 
-- `.diffship/runs/<run-id>/pack-fix_<run-id>_<base-shortsha>.zip`
+- `.diffship/runs/<run-id>/pack-fix_YYYY-MM-DD_HHMMSS_<head7>[_N].zip`
 
 You can recreate it manually:
 

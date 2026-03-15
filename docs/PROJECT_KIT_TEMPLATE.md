@@ -389,7 +389,7 @@ Example:
 ```bash
 git rev-parse HEAD
 diffship build --include 'src/*.rs' --include 'docs/*.md'
-diffship preview ./.diffship/handoffs/diffship_2026-03-07_1118
+diffship preview ./.diffship/handoffs/diffship_2026-03-07_1118_abcdef1
 # ask the AI for MODE: OPS_PATCH_BUNDLE; if base_commit is missing, require ANALYSIS_ONLY instead of a fallback zip
 diffship loop ./incoming/patchship_fix.zip
 diffship runs --json

@@ -200,6 +200,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
     let args = resolve_build_args(git_root, &cwd, args)?;
     let resolved_plan = HandoffPlan::from_build_args(&args);
+    let head = git::rev_parse(git_root, "HEAD")?;
 
     let out_dir = match &args.out {
         Some(o) => resolve_user_path(&cwd, o)?,
@@ -208,6 +209,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                 .out_dir
                 .as_deref()
                 .map_or_else(|| Ok(cwd.clone()), |raw| resolve_user_path(&cwd, raw))?,
+            &head,
         )?,
     };
 
@@ -225,7 +227,6 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let sources = SourceSelection::from_args(&args)?;
     let packing_limits = PackingLimits::from_args(&args)?;
     let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
-    let head = git::rev_parse(git_root, "HEAD")?;
     let plan = if sources.include_committed {
         Some(build_range_plan(git_root, &args)?)
     } else {
@@ -978,19 +979,23 @@ fn render_segmented_patch(segments: &[SegmentOutput]) -> String {
     out
 }
 
-fn default_output_dir(cwd: &Path) -> Result<PathBuf, ExitError> {
+fn default_output_dir(cwd: &Path, head: &str) -> Result<PathBuf, ExitError> {
     let timestamp = timestamp_yyyymmdd_hhmm()?;
-    Ok(default_output_dir_for_timestamp(cwd, &timestamp))
+    Ok(default_output_dir_for_timestamp(
+        cwd,
+        &timestamp,
+        &crate::git::short_sha_label(head),
+    ))
 }
 
-fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str) -> PathBuf {
-    let base = cwd.join(format!("diffship_{timestamp}"));
+fn default_output_dir_for_timestamp(cwd: &Path, timestamp: &str, head_label: &str) -> PathBuf {
+    let base = cwd.join(format!("diffship_{timestamp}_{head_label}"));
     if !base.exists() {
         return base;
     }
 
     for suffix in 2.. {
-        let candidate = cwd.join(format!("diffship_{timestamp}_{suffix}"));
+        let candidate = cwd.join(format!("diffship_{timestamp}_{head_label}_{suffix}"));
         if !candidate.exists() {
             return candidate;
         }
@@ -3045,10 +3050,10 @@ mod tests {
     fn default_output_dir_adds_numeric_suffix_when_timestamp_exists() {
         let td = tempfile::tempdir().unwrap();
         let cwd = td.path();
-        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118")).unwrap();
-        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118_2")).unwrap();
-        let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118");
+        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118_abcdef1")).unwrap();
+        fs::create_dir_all(cwd.join("diffship_2026-03-07_1118_abcdef1_2")).unwrap();
+        let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118", "abcdef1");
 
-        assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_3"));
+        assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_abcdef1_3"));
     }
 }

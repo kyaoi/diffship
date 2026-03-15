@@ -98,6 +98,15 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     bundles.sort();
     assert_eq!(bundles.len(), 2);
     assert_ne!(bundles[0], bundles[1]);
+    let head7 = &head[..7];
+    let first_name = bundles[0].file_name().unwrap().to_string_lossy();
+    let second_name = bundles[1].file_name().unwrap().to_string_lossy();
+    assert!(first_name.starts_with("diffship_"));
+    assert!(first_name.contains(&format!("_{head7}")));
+    assert!(
+        second_name.starts_with(&format!("{first_name}_"))
+            || second_name.contains(&format!("_{head7}_2"))
+    );
 
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());
