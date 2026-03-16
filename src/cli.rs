@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(name = "diffship")]
@@ -226,9 +226,17 @@ pub struct InitArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Refresh only .diffship/forbid.toml from current repo detections
+    #[arg(long, default_value_t = false)]
+    pub refresh_forbid: bool,
+
     /// Directory containing PROJECT_KIT_TEMPLATE.md and/or AI_PROJECT_TEMPLATE.md overrides
     #[arg(long)]
     pub template_dir: Option<String>,
+
+    /// Language for the generated paste-ready project rules file
+    #[arg(long, value_enum, default_value_t = InitLanguage::En)]
+    pub lang: InitLanguage,
 
     /// Also export a minimal rules kit zip under .diffship/artifacts/rules/
     #[arg(long, default_value_t = false)]
@@ -237,6 +245,21 @@ pub struct InitArgs {
     /// Output path for the rules kit zip (requires --zip)
     #[arg(long)]
     pub out: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum InitLanguage {
+    En,
+    Ja,
+}
+
+impl InitLanguage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Ja => "ja",
+        }
+    }
 }
 
 #[derive(Debug, Args)]

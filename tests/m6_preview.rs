@@ -69,7 +69,17 @@ fn preview_can_show_list_and_part_from_directory_bundle() {
         .arg("--list")
         .assert()
         .success()
-        .stdout(contains("HANDOFF.md      : yes").and(contains("parts/part_01.patch")));
+        .stdout(
+            contains("HANDOFF.md      : yes")
+                .and(contains("parts/part_01.patch"))
+                .and(contains("handoff.manifest.json : yes"))
+                .and(contains("handoff.context.xml  : yes"))
+                .and(contains("summary              : files=1, parts=1"))
+                .and(contains("reading order:"))
+                .and(contains("Docs changes: `part_01.patch` (1 files)"))
+                .and(contains("segments             : committed=1"))
+                .and(contains("statuses             : M=1")),
+        );
 
     let mut part = assert_cmd::cargo::cargo_bin_cmd!("diffship");
     part.current_dir(root)
@@ -145,6 +155,48 @@ fn preview_json_outputs_summary_and_entry_text() {
     assert_eq!(
         v.get("parts").and_then(|x| x.as_array()).map(|x| x.len()),
         Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("manifest_json"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("context_xml"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("part_contexts"))
+            .and_then(|x| x.as_array())
+            .map(|x| x.len()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("summary"))
+            .and_then(|x| x.get("segments"))
+            .and_then(|x| x.get("committed"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("summary"))
+            .and_then(|x| x.get("statuses"))
+            .and_then(|x| x.get("M"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("reading_order"))
+            .and_then(|x| x.get(0))
+            .and_then(|x| x.as_str()),
+        Some("Docs changes: `part_01.patch` (1 files)")
     );
 
     let mut entry_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");

@@ -206,6 +206,8 @@ fn project_config_paths(git_root: &Path) -> Vec<PathBuf> {
         git_root.join(".diffship.toml"),
         // current: stored under the diffship directory (written by `diffship init`)
         git_root.join(".diffship").join("config.toml"),
+        // dedicated local forbid patterns file
+        git_root.join(".diffship").join("forbid.toml"),
     ]
 }
 

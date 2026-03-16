@@ -15,6 +15,9 @@ This document defines what “deterministic” means for v1.
 Determinism applies to:
 
 - `HANDOFF.md` (generated navigation document)
+- `handoff.manifest.json` (generated machine-readable summary)
+- `handoff.context.xml` (generated rendered XML view)
+- `parts/part_XX.context.json` (generated per-part machine-readable summary)
 - bundle layout and file naming *inside* the bundle
 - ordering of listed items (files/parts/segments)
 - text formatting (newlines, encoding)
@@ -66,6 +69,9 @@ or **extracted, normalized trees** rather than raw zip container bytes.
 - Start with snapshots / golden fixtures for:
   - `diffship --help` output
   - `HANDOFF.md`
+  - `handoff.manifest.json`
+  - `handoff.context.xml`
+  - `parts/part_XX.context.json`
   - normalized `parts/part_XX.patch`
 - For bundle structure, compare:
   - list of paths inside the bundle

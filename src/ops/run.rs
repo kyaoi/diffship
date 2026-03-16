@@ -1,7 +1,9 @@
 use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::ops::command_log;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Reverse;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use time::format_description;
@@ -21,8 +23,13 @@ pub struct RunSummary {
     pub run_id: String,
     pub created_at: String,
     pub command: String,
+    pub run_dir: String,
     pub effective_base_commit: Option<String>,
     pub promoted_head: Option<String>,
+    pub command_count: usize,
+    pub command_phases: Vec<String>,
+    pub commands_index_path: Option<String>,
+    pub command_phase_dirs: Vec<String>,
 }
 
 pub fn runs_dir(git_root: &Path) -> PathBuf {
@@ -93,12 +100,26 @@ pub fn list_runs(git_root: &Path, limit: usize) -> Result<Vec<RunSummary>, ExitE
         };
 
         let (effective_base_commit, promoted_head) = read_head_fields(&ent.path());
+        let (command_count, command_phases) = read_command_fields(&ent.path());
+        let run_dir_path = ent.path();
+        let commands_index_path = run_dir_path.join("commands.json");
+        let command_phase_dirs = command_phases
+            .iter()
+            .map(|phase| run_dir_path.join(phase).display().to_string())
+            .collect::<Vec<_>>();
         summaries.push(RunSummary {
             run_id: meta.run_id,
             created_at: meta.created_at,
             command: meta.command,
+            run_dir: run_dir_path.display().to_string(),
             effective_base_commit,
             promoted_head,
+            command_count,
+            command_phases,
+            commands_index_path: commands_index_path
+                .is_file()
+                .then(|| commands_index_path.display().to_string()),
+            command_phase_dirs,
         });
     }
 
@@ -110,6 +131,19 @@ pub fn list_runs(git_root: &Path, limit: usize) -> Result<Vec<RunSummary>, ExitE
     }
 
     Ok(summaries)
+}
+
+fn read_command_fields(run_dir: &Path) -> (usize, Vec<String>) {
+    let Ok(records) = command_log::read_records(run_dir) else {
+        return (0, vec![]);
+    };
+    let mut phases = BTreeSet::new();
+    for record in &records {
+        if !record.phase.trim().is_empty() {
+            phases.insert(record.phase.clone());
+        }
+    }
+    (records.len(), phases.into_iter().collect())
 }
 
 fn read_head_fields(run_dir: &Path) -> (Option<String>, Option<String>) {

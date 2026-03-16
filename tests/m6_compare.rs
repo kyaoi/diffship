@@ -204,6 +204,10 @@ fn compare_reports_real_content_difference() {
             contains("diffship compare: different")
                 .and(contains("bundle comparison failed"))
                 .and(contains("[handoff/content_differs] HANDOFF.md"))
+                .and(contains("[context/content_differs] handoff.context.xml"))
+                .and(contains(
+                    "[context/content_differs] parts/part_01.context.json",
+                ))
                 .and(contains("[patch/content_differs] parts/part_01.patch")),
         );
 }
@@ -254,6 +258,26 @@ fn compare_json_reports_equivalence_and_differences() {
             .map(|x| x.is_empty()),
         Some(true)
     );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("manifest_a"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("summary_diffs"))
+            .and_then(|x| x.as_array())
+            .map(|x| x.is_empty()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("reading_order_diffs"))
+            .and_then(|x| x.as_array())
+            .map(|x| x.is_empty()),
+        Some(true)
+    );
 
     fs::write(root.join("README.md"), "v2\n").unwrap();
     commit_all(root, "v2");
@@ -281,7 +305,13 @@ fn compare_json_reports_equivalence_and_differences() {
         v.get("areas")
             .and_then(|x| x.get("handoff"))
             .and_then(|x| x.as_u64()),
-        Some(1)
+        Some(2)
+    );
+    assert_eq!(
+        v.get("areas")
+            .and_then(|x| x.get("context"))
+            .and_then(|x| x.as_u64()),
+        Some(2)
     );
     assert_eq!(
         v.get("areas")
@@ -293,6 +323,110 @@ fn compare_json_reports_equivalence_and_differences() {
         v.get("diffs")
             .and_then(|x| x.as_array())
             .is_some_and(|x| !x.is_empty())
+    );
+}
+
+#[test]
+fn compare_surfaces_manifest_summary_differences() {
+    let td = init_repo();
+    let root = td.path();
+    let outputs = tempfile::tempdir().expect("tempdir");
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    fs::write(
+        root.join("src").join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    commit_all(root, "base");
+
+    fs::write(root.join("README.md"), "docs-only\n").unwrap();
+    commit_all(root, "docs");
+
+    let out_a = outputs.path().join("bundle_scope_a");
+    let mut build_a = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_a
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&out_a)
+        .assert()
+        .success();
+
+    fs::write(root.join("README.md"), "docs-and-src\n").unwrap();
+    fs::write(
+        root.join("src").join("lib.rs"),
+        "pub fn value() -> u32 { 2 }\n",
+    )
+    .unwrap();
+    commit_all(root, "docs+src");
+
+    let out_b = outputs.path().join("bundle_scope_b");
+    let mut build_b = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build_b
+        .current_dir(root)
+        .args(["build", "--out"])
+        .arg(&out_b)
+        .assert()
+        .success();
+
+    let mut cmp = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmp.current_dir(root)
+        .args(["compare"])
+        .arg(&out_a)
+        .arg(&out_b)
+        .assert()
+        .failure()
+        .stderr(
+            contains("manifest summary diffs:")
+                .and(contains("file_count: 1 -> 2"))
+                .and(contains("categories.source: 0 -> 1"))
+                .and(contains("manifest reading-order diffs:"))
+                .and(contains("reading_order[1]"))
+                .and(contains("Source changes: `part_01.patch` (1 files)"))
+                .and(contains("statuses.M: 1 -> 2")),
+        );
+
+    let mut diff_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    let diff = diff_cmd
+        .current_dir(root)
+        .args(["compare", "--json"])
+        .arg(&out_a)
+        .arg(&out_b)
+        .output()
+        .unwrap();
+    assert!(!diff.status.success());
+    let v: Value = serde_json::from_slice(&diff.stdout).expect("compare diff json");
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("manifest_a"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert!(
+        v.get("structured_context")
+            .and_then(|x| x.get("summary_diffs"))
+            .and_then(|x| x.as_array())
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item.get("key").and_then(|x| x.as_str()) == Some("file_count")
+                        && item.get("a").and_then(|x| x.as_u64()) == Some(1)
+                        && item.get("b").and_then(|x| x.as_u64()) == Some(2)
+                })
+            })
+    );
+    assert!(
+        v.get("structured_context")
+            .and_then(|x| x.get("reading_order_diffs"))
+            .and_then(|x| x.as_array())
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item.get("key").and_then(|x| x.as_str()) == Some("reading_order[1]")
+                        && item.get("a").and_then(|x| x.as_str()) == Some("(missing)")
+                        && item.get("b").and_then(|x| x.as_str())
+                            == Some("Source changes: `part_01.patch` (1 files)")
+                })
+            })
     );
 }
 

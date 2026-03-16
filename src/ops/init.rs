@@ -1,4 +1,4 @@
-use crate::cli::InitArgs;
+use crate::cli::{InitArgs, InitLanguage};
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
 use crate::ops::config;
@@ -26,6 +26,8 @@ const DEFAULT_AI_GUIDE_TEMPLATE: &str = include_str!(concat!(
 struct InitSummary {
     created_at: String,
     force: bool,
+    refresh_forbid: bool,
+    language: String,
     wrote: Vec<String>,
     skipped: Vec<String>,
     zip_bundle: Option<String>,
@@ -37,6 +39,7 @@ struct GeneratedMetadata {
     branch: String,
     head: Option<String>,
     forbid_patterns: Vec<String>,
+    forbid_suggestions: Vec<String>,
     preferred_target_branch: String,
     read_first_files: Vec<String>,
     detected_stack: Vec<String>,
@@ -47,6 +50,7 @@ struct GeneratedMetadata {
 struct RulesZipMetadata {
     generated_at: String,
     run_id: String,
+    language: String,
     branch: String,
     head: Option<String>,
     forbid_patterns: Vec<String>,
@@ -61,7 +65,9 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
     let lock_path = lock::default_lock_path(git_root);
     let cli_args = build_cli_args(
         args.force,
+        args.refresh_forbid,
         args.template_dir.as_deref(),
+        args.lang,
         args.zip,
         args.out.as_deref(),
     );
@@ -112,7 +118,18 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
 
     write_if_needed(&kit_out, &kit_body, args.force, &mut wrote, &mut skipped)?;
 
-    // 2) AI-targeted guide (derived from template)
+    // 2) Paste-ready project rules snippet.
+    let rules_out = diffship_dir.join("PROJECT_RULES.md");
+    let rules_body = project_rules_body(&metadata, args.lang);
+    write_if_needed(
+        &rules_out,
+        &rules_body,
+        args.force,
+        &mut wrote,
+        &mut skipped,
+    )?;
+
+    // 3) AI-targeted guide (derived from template)
     let ai_out = diffship_dir.join("AI_GUIDE.md");
     let ai_src = load_template_text(
         template_dir.as_deref(),
@@ -126,7 +143,18 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
     );
     write_if_needed(&ai_out, &ai_body, args.force, &mut wrote, &mut skipped)?;
 
-    // 3) Diffship-local gitignore for generated state
+    // 4) Dedicated forbid patterns stub
+    let forbid_out = diffship_dir.join("forbid.toml");
+    let forbid_body = default_forbid_stub(&metadata);
+    write_if_needed(
+        &forbid_out,
+        &forbid_body,
+        args.force || args.refresh_forbid,
+        &mut wrote,
+        &mut skipped,
+    )?;
+
+    // 5) Diffship-local gitignore for generated state
     let gitignore_out = diffship_dir.join(".gitignore");
     let gitignore_body = default_gitignore();
     write_if_needed(
@@ -137,7 +165,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         &mut skipped,
     )?;
 
-    // 4) Config stub
+    // 6) Config stub
     let cfg_out = diffship_dir.join("config.toml");
     let cfg_body = default_config_stub(&metadata);
     write_if_needed(&cfg_out, &cfg_body, args.force, &mut wrote, &mut skipped)?;
@@ -147,6 +175,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
             &diffship_dir,
             &run_meta.run_id,
             &created_at,
+            args.lang,
             &metadata,
             zip_out.as_deref(),
         )?)
@@ -158,6 +187,8 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
     let summary = InitSummary {
         created_at,
         force: args.force,
+        refresh_forbid: args.refresh_forbid,
+        language: args.lang.as_str().to_string(),
         wrote: wrote.clone(),
         skipped: skipped.clone(),
         zip_bundle: zip_bundle.as_ref().map(|path| path.display().to_string()),
@@ -215,7 +246,9 @@ fn load_template_text(
 
 fn build_cli_args(
     force: bool,
+    refresh_forbid: bool,
     template_dir: Option<&str>,
+    lang: InitLanguage,
     zip: bool,
     out: Option<&str>,
 ) -> Vec<String> {
@@ -223,8 +256,14 @@ fn build_cli_args(
     if force {
         v.push("--force".to_string());
     }
+    if refresh_forbid {
+        v.push("--refresh-forbid".to_string());
+    }
     if let Some(path) = template_dir {
         v.push(format!("--template-dir={path}"));
+    }
+    if lang != InitLanguage::En {
+        v.push(format!("--lang={}", lang.as_str()));
     }
     if zip {
         v.push("--zip".to_string());
@@ -253,11 +292,13 @@ fn collect_generated_metadata(git_root: &Path) -> Result<GeneratedMetadata, Exit
     let preferred_target_branch = detect_preferred_target_branch(git_root, &branch);
     let forbid_patterns =
         config::resolve_ops_config(git_root, None, Default::default())?.forbid_patterns();
+    let forbid_suggestions = detect_forbid_suggestions(git_root);
     Ok(GeneratedMetadata {
         repo_name,
         branch,
         head,
         forbid_patterns,
+        forbid_suggestions,
         preferred_target_branch,
         read_first_files: detect_read_first_files(git_root),
         detected_stack: detect_stack(git_root),
@@ -344,11 +385,9 @@ policy = "auto"            # auto|manual
 # cmd3 = "just trace-check"
 # cmd4 = "just ci"
 
-# Customize this section: forbid AI patch bundles from touching fragile files in this repository.
-# Values are repo-relative path or glob patterns matched during apply/loop validation.
-# [ops.forbid]
-# path1 = "pnpm-lock.yaml"
-# path2 = "package-lock.json"
+# Customize this section: prefer `.diffship/forbid.toml` for dedicated forbid patterns.
+# That file is also generated by `diffship init` and merged as project-local config.
+# You can still keep `[ops.forbid]` entries here if you prefer a single file.
 
 # ---
 # Planned / reserved keys (kept here for future versions):
@@ -374,6 +413,30 @@ sessions/
 lock
 "#
     .to_string()
+}
+
+fn default_forbid_stub(metadata: &GeneratedMetadata) -> String {
+    let mut out = String::new();
+    out.push_str("# diffship local forbid patterns (generated by `diffship init`)\n");
+    out.push_str("#\n");
+    out.push_str(
+        "# This file is project-local config. `diffship apply/loop` merges it together with `.diffship/config.toml`.\n",
+    );
+    out.push_str(
+        "# Put fragile repo-relative paths or globs here when AI-generated patches should never touch them.\n",
+    );
+    out.push_str("# Typical examples are lockfiles or generated manifests that should be updated by local commands.\n\n");
+    out.push_str("[ops.forbid]\n");
+    if metadata.forbid_suggestions.is_empty() {
+        out.push_str("# path1 = \"pnpm-lock.yaml\"\n");
+        out.push_str("# path2 = \"package-lock.json\"\n");
+        out.push_str("# path3 = \"apps/*/pnpm-lock.yaml\"\n");
+    } else {
+        for (idx, pattern) in metadata.forbid_suggestions.iter().enumerate() {
+            let _ = writeln!(out, "path{} = \"{}\"", idx + 1, pattern);
+        }
+    }
+    out
 }
 
 impl GeneratedMetadata {
@@ -420,6 +483,9 @@ impl GeneratedMetadata {
         out.push_str("## Suggested next steps\n\n");
         out.push_str(
             "- Replace the `Customize this section` blocks with repository-specific rules.\n",
+        );
+        out.push_str(
+            "- Use `.diffship/PROJECT_RULES.md` as the short copy/paste snippet for external AI project-rule UIs.\n",
         );
         out.push_str(
             "- Check that the suggested read-first files and commands match the real workflow.\n",
@@ -548,10 +614,28 @@ fn detect_starter_commands(git_root: &Path) -> Vec<(String, String)> {
     out
 }
 
+fn detect_forbid_suggestions(git_root: &Path) -> Vec<String> {
+    let candidates = [
+        "pnpm-lock.yaml",
+        "package-lock.json",
+        "yarn.lock",
+        "bun.lockb",
+        "bun.lock",
+        "composer.lock",
+        "Podfile.lock",
+    ];
+    candidates
+        .into_iter()
+        .filter(|path| git_root.join(path).is_file())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 fn write_rules_zip(
     diffship_dir: &Path,
     run_id: &str,
     created_at: &str,
+    language: InitLanguage,
     metadata: &GeneratedMetadata,
     out: Option<&Path>,
 ) -> Result<PathBuf, ExitError> {
@@ -584,6 +668,12 @@ fn write_rules_zip(
     add_file_to_zip(
         &mut zip,
         opts,
+        &diffship_dir.join("PROJECT_RULES.md"),
+        "PROJECT_RULES.md",
+    )?;
+    add_file_to_zip(
+        &mut zip,
+        opts,
         &diffship_dir.join("AI_GUIDE.md"),
         "AI_GUIDE.md",
     )?;
@@ -591,6 +681,7 @@ fn write_rules_zip(
     let metadata_json = serde_json::to_vec_pretty(&RulesZipMetadata {
         generated_at: created_at.to_string(),
         run_id: run_id.to_string(),
+        language: language.as_str().to_string(),
         branch: metadata.branch.clone(),
         head: metadata.head.clone(),
         forbid_patterns: metadata.forbid_patterns.clone(),
@@ -606,6 +697,143 @@ fn write_rules_zip(
     zip.finish()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to finalize zip: {e}")))?;
     Ok(out_path)
+}
+
+fn project_rules_body(metadata: &GeneratedMetadata, language: InitLanguage) -> String {
+    match language {
+        InitLanguage::En => project_rules_body_en(metadata),
+        InitLanguage::Ja => project_rules_body_ja(metadata),
+    }
+}
+
+fn project_rules_body_en(metadata: &GeneratedMetadata) -> String {
+    let read_first = if metadata.read_first_files.is_empty() {
+        "(not detected)".to_string()
+    } else {
+        metadata
+            .read_first_files
+            .iter()
+            .take(5)
+            .map(|path| format!("`{path}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let starter_commands = metadata
+        .starter_commands
+        .iter()
+        .take(4)
+        .map(|(label, cmd)| format!("- {label}: `{cmd}`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let forbid_patterns = if metadata.forbid_patterns.is_empty() {
+        "- Active `[ops.forbid]`: (none)".to_string()
+    } else {
+        format!(
+            "- Active `[ops.forbid]`: {}",
+            metadata
+                .forbid_patterns
+                .iter()
+                .map(|pattern| format!("`{pattern}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    format!(
+        "# Diffship Project Rules\n\n\
+> Generated by `diffship init`\n\n\
+Paste this into an external AI workspace or project-rules UI when you need the short version.\n\n\
+- Read these files first: {read_first}\n\
+- Keep edits minimal, deterministic, reviewable, and traceable.\n\
+- If behavior changes, update docs/tests/traceability in the same change.\n\
+- Use `diffship loop` only with a valid `OPS_PATCH_BUNDLE`.\n\
+- If `base_commit` is missing or uncertain, ask for `git rev-parse HEAD` or return `MODE: ANALYSIS_ONLY`.\n\
+- Respect built-in forbidden paths and any local `[ops.forbid]` patterns.\n\
+- Preferred promotion target: `{preferred_target}`\n\
+- Current branch: `{branch}`\n\
+- Current HEAD: `{head}`\n\
+{forbid_patterns}\n\n\
+Starter commands:\n\
+{starter_commands}\n",
+        read_first = read_first,
+        preferred_target = metadata.preferred_target_branch,
+        branch = metadata.branch,
+        head = metadata.head.as_deref().unwrap_or("(unavailable)"),
+        forbid_patterns = forbid_patterns,
+        starter_commands = starter_commands,
+    )
+}
+
+fn localized_command_label_ja(label: &str) -> &str {
+    match label {
+        "Current HEAD" => "現在の HEAD",
+        "Build handoff" => "handoff 生成",
+        "Apply loop-ready bundle" => "loop-ready bundle を適用",
+        "Format" => "Format",
+        "Lint" => "Lint",
+        "Tests" => "Tests",
+        "Full gate" => "Full gate",
+        "Install" => "Install",
+        _ => label,
+    }
+}
+
+fn project_rules_body_ja(metadata: &GeneratedMetadata) -> String {
+    let read_first = if metadata.read_first_files.is_empty() {
+        "（自動検出できませんでした）".to_string()
+    } else {
+        metadata
+            .read_first_files
+            .iter()
+            .take(5)
+            .map(|path| format!("`{path}`"))
+            .collect::<Vec<_>>()
+            .join("、")
+    };
+    let starter_commands = metadata
+        .starter_commands
+        .iter()
+        .take(4)
+        .map(|(label, cmd)| format!("- {}: `{cmd}`", localized_command_label_ja(label)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let forbid_patterns = if metadata.forbid_patterns.is_empty() {
+        "- 有効な `[ops.forbid]`: （なし）".to_string()
+    } else {
+        format!(
+            "- 有効な `[ops.forbid]`: {}",
+            metadata
+                .forbid_patterns
+                .iter()
+                .map(|pattern| format!("`{pattern}`"))
+                .collect::<Vec<_>>()
+                .join("、")
+        )
+    };
+
+    format!(
+        "# Diffship プロジェクトルール\n\n\
+> `diffship init` で生成\n\n\
+外部 AI の project rules / custom instructions に貼るための短縮版です。\n\n\
+- 変更前にまず読む: {read_first}\n\
+- 変更は最小・決定的・レビューしやすく・追跡可能に保つ。\n\
+- 挙動を変える場合は docs/tests/traceability を同じ変更で更新する。\n\
+- `diffship loop` に渡してよいのは有効な `OPS_PATCH_BUNDLE` だけ。\n\
+- `base_commit` が無い、または不確実なら `git rev-parse HEAD` を要求するか `MODE: ANALYSIS_ONLY` を返す。\n\
+- 組み込みの禁止パスとローカル `[ops.forbid]` を守る。\n\
+- 推奨 promotion 先: `{preferred_target}`\n\
+- 現在のブランチ: `{branch}`\n\
+- 現在の HEAD: `{head}`\n\
+{forbid_patterns}\n\n\
+入口コマンド:\n\
+{starter_commands}\n",
+        read_first = read_first,
+        preferred_target = metadata.preferred_target_branch,
+        branch = metadata.branch,
+        head = metadata.head.as_deref().unwrap_or("（取得不可）"),
+        forbid_patterns = forbid_patterns,
+        starter_commands = starter_commands,
+    )
 }
 
 fn default_rules_zip_path(diffship_dir: &Path, head: Option<&str>, run_id: &str) -> PathBuf {

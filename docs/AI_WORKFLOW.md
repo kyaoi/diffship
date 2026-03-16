@@ -13,6 +13,7 @@ For the practical handoff flow from `diffship build` to "what to send AI / what 
 If the repository was initialized with `diffship init`, also provide the generated local guides when they are relevant:
 
 - `.diffship/PROJECT_KIT.md`
+- `.diffship/PROJECT_RULES.md`
 - `.diffship/AI_GUIDE.md`
 
 If you maintain a custom init template directory, keep the repository-specific parts of `AI_PROJECT_TEMPLATE.md`

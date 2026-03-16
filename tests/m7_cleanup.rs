@@ -263,6 +263,53 @@ fn cleanup_include_runs_keeps_active_unpromoted_run() {
 }
 
 #[test]
+fn cleanup_include_runs_removes_run_when_run_json_is_missing() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+
+    fs::remove_file(run_dir.join("run.json")).unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--include-runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("orphan_run"))
+        .stdout(predicate::str::contains(
+            "run metadata is missing or invalid",
+        ));
+
+    assert!(!run_dir.exists());
+    assert!(!root.join(&setup.sandbox_path).exists());
+}
+
+#[test]
+fn cleanup_without_include_runs_removes_sandbox_when_run_json_is_missing() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+
+    fs::remove_file(run_dir.join("run.json")).unwrap();
+
+    diffship_cmd()
+        .args(["cleanup"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("orphan_sandbox"))
+        .stdout(predicate::str::contains(
+            "run metadata is missing or invalid",
+        ));
+
+    assert!(run_dir.exists());
+    assert!(!root.join(&setup.sandbox_path).exists());
+    assert!(!run_dir.join("sandbox.json").exists());
+}
+
+#[test]
 fn cleanup_include_builds_removes_diffship_artifacts_only() {
     let td = init_repo();
     let root = td.path();

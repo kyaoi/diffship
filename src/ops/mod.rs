@@ -1,6 +1,6 @@
 mod apply;
 mod cleanup;
-mod command_log;
+pub(crate) mod command_log;
 mod config;
 mod doctor;
 mod init;

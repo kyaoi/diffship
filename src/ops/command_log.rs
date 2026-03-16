@@ -128,6 +128,26 @@ pub fn run_and_log(
     })
 }
 
+pub fn read_records(run_dir: &Path) -> Result<Vec<CommandLogRecord>, ExitError> {
+    let index_path = run_dir.join("commands.json");
+    if !index_path.is_file() {
+        return Ok(vec![]);
+    }
+    let bytes = fs::read(&index_path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to read {}: {e}", index_path.display()),
+        )
+    })?;
+    let index = serde_json::from_slice::<CommandLogIndex>(&bytes).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to parse {}: {e}", index_path.display()),
+        )
+    })?;
+    Ok(index.commands)
+}
+
 fn append_record(run_dir: &Path, record: CommandLogRecord) -> Result<(), ExitError> {
     let index_path = run_dir.join("commands.json");
     let mut index = if index_path.is_file() {

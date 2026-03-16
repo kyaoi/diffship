@@ -83,7 +83,9 @@ fn m0_init_status_runs_happy_path() {
 
     // Generated files
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
+    assert!(root.join(".diffship").join("PROJECT_RULES.md").exists());
     assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
+    assert!(root.join(".diffship").join("forbid.toml").exists());
     assert!(root.join(".diffship").join(".gitignore").exists());
     assert!(root.join(".diffship").join("config.toml").exists());
     let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
@@ -109,6 +111,13 @@ fn m0_init_status_runs_happy_path() {
     assert!(ai.contains("Core contract: meaning of files the user may provide"));
     assert!(ai.contains("Core contract: additional deliverables beyond file edits"));
     assert!(ai.contains("Generated metadata"));
+    let rules = fs::read_to_string(root.join(".diffship").join("PROJECT_RULES.md")).unwrap();
+    assert!(rules.contains("# Diffship Project Rules"));
+    assert!(rules.contains("Paste this into an external AI workspace"));
+    assert!(rules.contains("Use `diffship loop` only with a valid `OPS_PATCH_BUNDLE`."));
+    let forbid = fs::read_to_string(root.join(".diffship").join("forbid.toml")).unwrap();
+    assert!(forbid.contains("[ops.forbid]"));
+    assert!(forbid.contains("pnpm-lock.yaml"));
     let gitignore = fs::read_to_string(root.join(".diffship").join(".gitignore")).unwrap();
     assert_eq!(
         gitignore,
@@ -126,7 +135,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains(
         "Customize this section: local-only commands to run automatically after a successful apply"
     ));
-    assert!(cfg.contains("Customize this section: forbid AI patch bundles"));
+    assert!(cfg.contains("prefer `.diffship/forbid.toml` for dedicated forbid patterns"));
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
     assert!(cfg.contains("output_dir = \"./.diffship/artifacts/handoffs\""));
@@ -172,6 +181,12 @@ fn m0_init_status_runs_happy_path() {
     let run_id = runs[0].get("run_id").and_then(|x| x.as_str()).unwrap();
     assert!(run_id.starts_with("run_20"));
     assert!(run_id.contains(&format!("_{}", &head[..7])));
+    assert!(
+        runs[0]
+            .get("run_dir")
+            .and_then(|x| x.as_str())
+            .is_some_and(|x| x.contains("/.diffship/runs/"))
+    );
 
     diffship_cmd()
         .args(["runs", "--heads-only"])
@@ -179,6 +194,13 @@ fn m0_init_status_runs_happy_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains("base="));
+
+    diffship_cmd()
+        .args(["runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("run_dir="));
 }
 
 #[test]
@@ -275,6 +297,7 @@ fn m0_init_can_export_rules_zip() {
         vec![
             "AI_GUIDE.md".to_string(),
             "PROJECT_KIT.md".to_string(),
+            "PROJECT_RULES.md".to_string(),
             "metadata.json".to_string()
         ]
     );
@@ -287,6 +310,78 @@ fn m0_init_can_export_rules_zip() {
     let value: serde_json::Value = serde_json::from_str(&metadata).unwrap();
     assert!(value.get("generated_at").is_some());
     assert!(value.get("run_id").is_some());
+    assert_eq!(value.get("language").and_then(|x| x.as_str()), Some("en"));
     assert!(value.get("branch").is_some());
     assert!(value.get("forbid_patterns").is_some());
+}
+
+#[test]
+fn m0_init_can_generate_japanese_project_rules() {
+    let td = init_repo();
+    let root = td.path();
+
+    diffship_cmd()
+        .args(["init", "--lang", "ja"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let rules = fs::read_to_string(root.join(".diffship").join("PROJECT_RULES.md")).unwrap();
+    assert!(rules.contains("# Diffship プロジェクトルール"));
+    assert!(
+        rules.contains("外部 AI の project rules / custom instructions に貼るための短縮版です。")
+    );
+    assert!(rules.contains("`base_commit` が無い、または不確実なら"));
+}
+
+#[test]
+fn m0_init_forbid_stub_enables_detected_lockfiles() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("package.json"), "{\n  \"name\": \"demo\"\n}\n").unwrap();
+    fs::write(root.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\n").unwrap();
+
+    diffship_cmd()
+        .args(["init", "--force"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let forbid = fs::read_to_string(root.join(".diffship").join("forbid.toml")).unwrap();
+    assert!(forbid.contains("path1 = \"pnpm-lock.yaml\""));
+    assert!(!forbid.contains("# path1 = \"pnpm-lock.yaml\""));
+}
+
+#[test]
+fn m0_init_refresh_forbid_rewrites_only_forbid_file() {
+    let td = init_repo();
+    let root = td.path();
+
+    diffship_cmd()
+        .args(["init"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    fs::write(root.join(".diffship").join("PROJECT_RULES.md"), "KEEP\n").unwrap();
+    fs::write(root.join("package.json"), "{\n  \"name\": \"demo\"\n}\n").unwrap();
+    fs::write(root.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\n").unwrap();
+
+    diffship_cmd()
+        .args(["init", "--refresh-forbid"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote"))
+        .stdout(predicate::str::contains(".diffship/forbid.toml"))
+        .stdout(predicate::str::contains("skipped"))
+        .stdout(predicate::str::contains(".diffship/PROJECT_RULES.md"));
+
+    let rules = fs::read_to_string(root.join(".diffship").join("PROJECT_RULES.md")).unwrap();
+    assert_eq!(rules, "KEEP\n");
+
+    let forbid = fs::read_to_string(root.join(".diffship").join("forbid.toml")).unwrap();
+    assert!(forbid.contains("path1 = \"pnpm-lock.yaml\""));
+    assert!(!forbid.contains("# path1 = \"pnpm-lock.yaml\""));
 }

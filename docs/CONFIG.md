@@ -111,6 +111,10 @@ Notes:
 - apply/loop enforce them against both `manifest.touched_files` and patch diff headers
 - built-in forbidden prefixes such as `.git/` and `.diffship/` still apply regardless of config
 
+You can keep these entries either in `.diffship/config.toml` or in a dedicated `.diffship/forbid.toml` file.
+`diffship init` now generates the dedicated file as a starter template, and diffship merges it as project-local config automatically.
+If the repo gains new lockfiles or similar fragile targets later, `diffship init --refresh-forbid` rewrites only `.diffship/forbid.toml` from current detections without forcing unrelated generated files.
+
 ### 1.2 Promotion mode + target branch
 
 ```toml

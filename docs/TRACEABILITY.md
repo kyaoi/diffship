@@ -43,6 +43,9 @@ Conventions:
 - **S-TUI-003** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
 - **S-TUI-004** — Tests: `src/plan.rs`, `src/tui/mod.rs`, `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/tui/mod.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-TUI-005** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
+- **S-TUI-006** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
+- **S-TUI-007** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
+- **S-TUI-008** — Tests: `src/tui/mod.rs` — Code: `src/tui/mod.rs` — Status: Implemented
 
 ---
 
@@ -116,6 +119,11 @@ Conventions:
 - **S-OUT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs`, `src/plan.rs`, `src/tui/mod.rs` — Status: Implemented
+- **S-OUT-006** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs`, `src/bundle_compare.rs` — Status: Implemented
+- **S-OUT-007** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`, `tests/m6_compare.rs` — Code: `src/handoff.rs`, `src/bundle_compare.rs` — Status: Implemented
+- **S-OUT-008** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`, `tests/m6_compare.rs` — Code: `src/handoff.rs`, `src/bundle_compare.rs` — Status: Implemented
+- **S-OUT-009** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-010** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -149,6 +157,8 @@ Conventions:
 
 - **S-PREVIEW-001** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
 - **S-PREVIEW-002** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
+- **S-PREVIEW-003** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-004** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
 
 ---
 
@@ -158,6 +168,8 @@ Conventions:
 - **S-COMPARE-002** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 - **S-COMPARE-003** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
 - **S-COMPARE-004** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs`, `src/cli.rs` — Status: Implemented
+- **S-COMPARE-005** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs` — Status: Implemented
+- **S-COMPARE-006** — Tests: `tests/m6_compare.rs` — Code: `src/bundle_compare.rs` — Status: Implemented
 
 ---
 
@@ -260,6 +272,7 @@ Conventions:
 ## Ops safety policy
 
 - **S-OPS-007** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
+- **S-OPS-008** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/config.rs`, `src/ops/init.rs` — Status: Implemented
 
 ## Sessions
 
@@ -304,6 +317,7 @@ Conventions:
 - **S-RUN-004** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs` — Status: Implemented
 - **S-RUN-005** — Tests: `tests/m0_integration.rs`, `src/ops/run.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-006** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/command_log.rs`, `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs` — Status: Implemented
+- **S-RUN-007** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs` — Status: Implemented
 
 ---
 
@@ -317,6 +331,8 @@ Conventions:
 - **S-INIT-006** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-007** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-008** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-009** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
+- **S-INIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

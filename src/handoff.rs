@@ -5,6 +5,7 @@ use crate::git;
 use crate::handoff_config::{DEFAULT_PROFILE_NAME, HandoffConfig};
 use crate::pathing::resolve_user_path;
 use crate::plan::HandoffPlan;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -201,6 +202,236 @@ struct BuildOutputPaths {
     final_dir: Option<PathBuf>,
     final_zip: Option<PathBuf>,
     cleanup_staging: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct HandoffManifest {
+    schema_version: u32,
+    patch_canonical: bool,
+    entrypoint: String,
+    current_head: String,
+    sources: ManifestSources,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    committed_range: Option<ManifestCommittedRange>,
+    filters: ManifestFilters,
+    packing: ManifestPacking,
+    warnings: ManifestWarnings,
+    summary: ManifestSummary,
+    reading_order: Vec<String>,
+    artifacts: ManifestArtifacts,
+    parts: Vec<ManifestPart>,
+    files: Vec<ManifestFile>,
+    commit_views: Vec<ManifestCommitView>,
+    attachments: Vec<ManifestAttachment>,
+    exclusions: Vec<ManifestExclusion>,
+    secret_hits: Vec<ManifestSecretHit>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestSources {
+    committed: bool,
+    staged: bool,
+    unstaged: bool,
+    untracked: bool,
+    split_by: String,
+    untracked_mode: String,
+    include_binary: bool,
+    binary_mode: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestCommittedRange {
+    mode: String,
+    base: String,
+    target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_rev: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_rev: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a_rev: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    b_rev: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    merge_base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit_count: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestFilters {
+    diffshipignore: bool,
+    include: Vec<String>,
+    exclude: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestPacking {
+    profile: String,
+    max_parts: usize,
+    max_bytes_per_part: u64,
+    reduced_context_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestWarnings {
+    reduced_context_count: usize,
+    exclusion_count: usize,
+    secret_hit_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestSummary {
+    file_count: usize,
+    part_count: usize,
+    commit_view_count: usize,
+    categories: PartContextCategoryCounts,
+    segments: BTreeMap<String, usize>,
+    statuses: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestArtifacts {
+    handoff_md: String,
+    manifest_json: String,
+    context_xml: String,
+    part_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attachments_zip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excluded_md: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secrets_md: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestPart {
+    part_id: String,
+    patch_path: String,
+    context_path: String,
+    segments: Vec<String>,
+    approx_bytes: u64,
+    file_count: usize,
+    first_files: Vec<String>,
+    reduced_context_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestFile {
+    category: String,
+    segment: String,
+    status: String,
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ins: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    del: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestCommitView {
+    hash7: String,
+    subject: String,
+    date: String,
+    files: Vec<ManifestCommitFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ins: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    del: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestCommitFile {
+    path: String,
+    part: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestAttachment {
+    path: String,
+    reason: String,
+    byte_len: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestExclusion {
+    path: String,
+    reason: String,
+    guidance: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestSecretHit {
+    path: String,
+    reason: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PartContext {
+    schema_version: u32,
+    patch_canonical: bool,
+    part_id: String,
+    patch_path: String,
+    context_path: String,
+    title: String,
+    summary: String,
+    intent: String,
+    segments: Vec<String>,
+    files: Vec<ManifestFile>,
+    diff_stats: PartContextDiffStats,
+    scope: PartContextScope,
+    constraints: PartContextConstraints,
+    warnings: PartContextWarnings,
+    acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PartContextDiffStats {
+    file_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    additions: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deletions: Option<u64>,
+    categories: PartContextCategoryCounts,
+    segments: BTreeMap<String, usize>,
+    statuses: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct PartContextCategoryCounts {
+    docs: usize,
+    config: usize,
+    source: usize,
+    tests: usize,
+    other: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct PartContextScope {
+    in_scope: Vec<String>,
+    out_of_scope: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PartContextConstraints {
+    handoff_entrypoint: String,
+    manifest_path: String,
+    patch_canonical: bool,
+    reduced_context: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct PartContextWarnings {
+    reduced_context_paths: Vec<String>,
+    bundle_has_attachments: bool,
+    bundle_has_exclusions: bool,
+    bundle_has_secret_warnings: bool,
 }
 
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
@@ -416,8 +647,15 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
 
         enforce_packing_limits(&parts, &packing_limits)?;
 
+        let secret_hits = scan_bundle_for_secrets(&parts, &attachments)?;
+
         for part in &parts {
             write_text_file(&parts_dir.join(&part.name), &part.patch)?;
+        }
+        let part_contexts =
+            render_part_contexts(&parts, &rows, &attachments, &exclusions, &secret_hits)?;
+        for (path, contents) in &part_contexts {
+            write_text_file(&out_dir.join(path), contents)?;
         }
         if !attachments.is_empty() {
             write_attachments_zip(&out_dir.join("attachments.zip"), &attachments)?;
@@ -428,8 +666,6 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
                 &render_excluded_md(&exclusions),
             )?;
         }
-
-        let secret_hits = scan_bundle_for_secrets(&parts, &attachments)?;
         if !secret_hits.is_empty() {
             write_text_file(
                 &out_dir.join("secrets.md"),
@@ -451,7 +687,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             plan: plan.as_ref(),
             head: &head,
             split_by,
-            packing_limits,
+            packing_limits: packing_limits.clone(),
             binary_policy,
             sources,
             untracked_mode,
@@ -470,6 +706,49 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             secret_hits: &secret_hits,
         });
         write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
+        let handoff_manifest = render_handoff_manifest(&HandoffManifestInputs {
+            plan: plan.as_ref(),
+            head: &head,
+            split_by,
+            packing_limits: &packing_limits,
+            binary_policy,
+            sources,
+            untracked_mode,
+            rows: &rows,
+            parts: &parts,
+            commit_views: &commit_views,
+            attachments: &attachments,
+            exclusions: &exclusions,
+            ignore_enabled: filters.has_ignore_rules(),
+            include_patterns: filters.includes(),
+            exclude_patterns: filters.excludes(),
+            secret_hits: &secret_hits,
+            reading_order: &reading_order,
+        })?;
+        write_text_file(&out_dir.join("handoff.manifest.json"), &handoff_manifest)?;
+        let handoff_context_xml = render_handoff_context_xml(&HandoffManifestInputs {
+            plan: plan.as_ref(),
+            head: &head,
+            split_by,
+            packing_limits: &packing_limits,
+            binary_policy,
+            sources,
+            untracked_mode,
+            rows: &rows,
+            parts: &parts,
+            commit_views: &commit_views,
+            attachments: &attachments,
+            exclusions: &exclusions,
+            ignore_enabled: filters.has_ignore_rules(),
+            include_patterns: filters.includes(),
+            exclude_patterns: filters.excludes(),
+            secret_hits: &secret_hits,
+            reading_order: &reading_order,
+        });
+        write_text_file(
+            &out_dir.join(handoff_context_xml_path()),
+            &handoff_context_xml,
+        )?;
 
         if let Some(plan_out) = args.plan_out.as_deref() {
             let plan_path = resolve_plan_path(&cwd, plan_out)?;
@@ -2112,8 +2391,18 @@ fn segment_rank(segment: &str) -> u8 {
 }
 
 fn path_category_rank(path: &str) -> u8 {
+    match path_category_label(path) {
+        "docs" => 0,
+        "config" => 1,
+        "source" => 2,
+        "tests" => 3,
+        _ => 4,
+    }
+}
+
+fn path_category_label(path: &str) -> &'static str {
     if path.starts_with("docs/") || path.ends_with(".md") {
-        0
+        "docs"
     } else if path.starts_with(".github/")
         || path.ends_with(".toml")
         || path.ends_with(".yml")
@@ -2121,13 +2410,13 @@ fn path_category_rank(path: &str) -> u8 {
         || path.ends_with(".json")
         || path.ends_with(".lock")
     {
-        1
+        "config"
     } else if path.starts_with("src/") {
-        2
+        "source"
     } else if path.starts_with("tests/") {
-        3
+        "tests"
     } else {
-        4
+        "other"
     }
 }
 
@@ -2689,6 +2978,7 @@ fn render_category_summary_and_reading_order(rows: &[FileRow]) -> (String, Vec<S
     push_order(&mut order, "Config/build changes", &cfg);
     push_order(&mut order, "Source changes", &src);
     push_order(&mut order, "Tests", &tests);
+    push_order(&mut order, "Other changes", &other);
     if order.is_empty() {
         order.push("No file changes detected".to_string());
     }
@@ -2736,6 +3026,26 @@ struct HandoffDocInputs<'a> {
     include_patterns: &'a [String],
     exclude_patterns: &'a [String],
     secret_hits: &'a [SecretHit],
+}
+
+struct HandoffManifestInputs<'a> {
+    plan: Option<&'a RangePlan>,
+    head: &'a str,
+    split_by: SplitBy,
+    packing_limits: &'a PackingLimits,
+    binary_policy: BinaryPolicy,
+    sources: SourceSelection,
+    untracked_mode: UntrackedMode,
+    rows: &'a [FileRow],
+    parts: &'a [PartOutput],
+    commit_views: &'a [CommitView],
+    attachments: &'a [AttachmentEntry],
+    exclusions: &'a [ExclusionEntry],
+    ignore_enabled: bool,
+    include_patterns: &'a [String],
+    exclude_patterns: &'a [String],
+    secret_hits: &'a [SecretHit],
+    reading_order: &'a [String],
 }
 
 fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
@@ -3017,6 +3327,350 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s
 }
 
+fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, ExitError> {
+    let reduced_context_paths = reduced_context_paths(inp.rows);
+    let all_rows = inp.rows.iter().collect::<Vec<_>>();
+    let manifest = HandoffManifest {
+        schema_version: 1,
+        patch_canonical: true,
+        entrypoint: "HANDOFF.md".to_string(),
+        current_head: inp.head.trim().to_string(),
+        sources: ManifestSources {
+            committed: inp.sources.include_committed,
+            staged: inp.sources.include_staged,
+            unstaged: inp.sources.include_unstaged,
+            untracked: inp.sources.include_untracked,
+            split_by: split_label(inp.split_by).to_string(),
+            untracked_mode: untracked_label(inp.untracked_mode).to_string(),
+            include_binary: inp.binary_policy.include_binary,
+            binary_mode: binary_mode_label(inp.binary_policy.binary_mode).to_string(),
+        },
+        committed_range: inp.plan.map(|plan| ManifestCommittedRange {
+            mode: range_mode_label(plan.mode).to_string(),
+            base: plan.base.clone(),
+            target: plan.target.clone(),
+            from_rev: plan.from_rev.clone(),
+            to_rev: plan.to_rev.clone(),
+            a_rev: plan.a_rev.clone(),
+            b_rev: plan.b_rev.clone(),
+            merge_base: plan.merge_base.clone(),
+            commit_count: plan.commit_count,
+        }),
+        filters: ManifestFilters {
+            diffshipignore: inp.ignore_enabled,
+            include: inp.include_patterns.to_vec(),
+            exclude: inp.exclude_patterns.to_vec(),
+        },
+        packing: ManifestPacking {
+            profile: inp.packing_limits.profile_label.clone(),
+            max_parts: inp.packing_limits.max_parts,
+            max_bytes_per_part: inp.packing_limits.max_bytes_per_part,
+            reduced_context_paths: reduced_context_paths.clone(),
+        },
+        warnings: ManifestWarnings {
+            reduced_context_count: reduced_context_paths.len(),
+            exclusion_count: inp.exclusions.len(),
+            secret_hit_count: inp.secret_hits.len(),
+        },
+        summary: ManifestSummary {
+            file_count: all_rows.len(),
+            part_count: inp.parts.len(),
+            commit_view_count: inp.commit_views.len(),
+            categories: count_part_categories(&all_rows),
+            segments: count_row_labels(all_rows.iter().copied(), |row| row.segment.clone()),
+            statuses: count_row_labels(all_rows.iter().copied(), |row| row.status.clone()),
+        },
+        reading_order: inp.reading_order.to_vec(),
+        artifacts: ManifestArtifacts {
+            handoff_md: "HANDOFF.md".to_string(),
+            manifest_json: "handoff.manifest.json".to_string(),
+            context_xml: handoff_context_xml_path().to_string(),
+            part_paths: inp
+                .parts
+                .iter()
+                .map(|part| format!("parts/{}", part.name))
+                .collect(),
+            attachments_zip: (!inp.attachments.is_empty()).then(|| "attachments.zip".to_string()),
+            excluded_md: (!inp.exclusions.is_empty()).then(|| "excluded.md".to_string()),
+            secrets_md: (!inp.secret_hits.is_empty()).then(|| "secrets.md".to_string()),
+        },
+        parts: inp
+            .parts
+            .iter()
+            .map(|part| {
+                let mut part_files = inp
+                    .rows
+                    .iter()
+                    .filter(|row| row.part == part.name)
+                    .map(|row| row.path.clone())
+                    .collect::<Vec<_>>();
+                part_files.sort();
+                part_files.dedup();
+                let mut part_reduced = inp
+                    .rows
+                    .iter()
+                    .filter(|row| row.part == part.name && row_has_reduced_context(row))
+                    .map(|row| row.path.clone())
+                    .collect::<Vec<_>>();
+                part_reduced.sort();
+                part_reduced.dedup();
+                ManifestPart {
+                    part_id: part.name.clone(),
+                    patch_path: format!("parts/{}", part.name),
+                    context_path: part_context_path(&part.name),
+                    segments: part.segments.clone(),
+                    approx_bytes: part.patch.len() as u64,
+                    file_count: part_files.len(),
+                    first_files: part_files.iter().take(5).cloned().collect(),
+                    reduced_context_paths: part_reduced,
+                }
+            })
+            .collect(),
+        files: inp
+            .rows
+            .iter()
+            .map(|row| ManifestFile {
+                category: path_category_label(&row.path).to_string(),
+                segment: row.segment.clone(),
+                status: row.status.clone(),
+                path: row.path.clone(),
+                ins: row.ins,
+                del: row.del,
+                bytes: row.bytes,
+                part: row_part_name(row),
+                note: nonempty(row.note.trim()),
+            })
+            .collect(),
+        commit_views: inp
+            .commit_views
+            .iter()
+            .map(|view| ManifestCommitView {
+                hash7: view.hash7.clone(),
+                subject: view.subject.clone(),
+                date: view.date.clone(),
+                files: view
+                    .files
+                    .iter()
+                    .map(|(path, part)| ManifestCommitFile {
+                        path: path.clone(),
+                        part: part.clone(),
+                    })
+                    .collect(),
+                ins: view.ins,
+                del: view.del,
+            })
+            .collect(),
+        attachments: sorted_manifest_attachments(inp.attachments),
+        exclusions: sorted_manifest_exclusions(inp.exclusions),
+        secret_hits: sorted_manifest_secret_hits(inp.secret_hits),
+    };
+
+    serde_json::to_string_pretty(&manifest)
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render manifest JSON: {e}")))
+}
+
+fn render_handoff_context_xml(inp: &HandoffManifestInputs<'_>) -> String {
+    let reduced_context_paths = reduced_context_paths(inp.rows);
+    let mut s = String::new();
+    s.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    s.push_str(
+        "<handoff-context schema-version=\"1\" rendered-from=\"handoff.manifest.json\" patch-canonical=\"true\">\n",
+    );
+    s.push_str(&format!(
+        "  <entrypoint path=\"{}\" />\n",
+        xml_escape("HANDOFF.md")
+    ));
+    s.push_str(&format!(
+        "  <rendered-view path=\"{}\" />\n",
+        xml_escape(handoff_context_xml_path())
+    ));
+    s.push_str(&format!(
+        "  <current-head>{}</current-head>\n",
+        xml_escape(inp.head.trim())
+    ));
+    s.push_str(&format!(
+        "  <sources committed=\"{}\" staged=\"{}\" unstaged=\"{}\" untracked=\"{}\" split-by=\"{}\" untracked-mode=\"{}\" include-binary=\"{}\" binary-mode=\"{}\" />\n",
+        inp.sources.include_committed,
+        inp.sources.include_staged,
+        inp.sources.include_unstaged,
+        inp.sources.include_untracked,
+        xml_escape(split_label(inp.split_by)),
+        xml_escape(untracked_label(inp.untracked_mode)),
+        inp.binary_policy.include_binary,
+        xml_escape(binary_mode_label(inp.binary_policy.binary_mode)),
+    ));
+    if let Some(plan) = inp.plan {
+        s.push_str(&format!(
+            "  <committed-range mode=\"{}\" base=\"{}\" target=\"{}\"",
+            xml_escape(range_mode_label(plan.mode)),
+            xml_escape(&plan.base),
+            xml_escape(&plan.target),
+        ));
+        if let Some(from_rev) = &plan.from_rev {
+            s.push_str(&format!(" from=\"{}\"", xml_escape(from_rev)));
+        }
+        if let Some(to_rev) = &plan.to_rev {
+            s.push_str(&format!(" to=\"{}\"", xml_escape(to_rev)));
+        }
+        if let Some(a_rev) = &plan.a_rev {
+            s.push_str(&format!(" a=\"{}\"", xml_escape(a_rev)));
+        }
+        if let Some(b_rev) = &plan.b_rev {
+            s.push_str(&format!(" b=\"{}\"", xml_escape(b_rev)));
+        }
+        if let Some(merge_base) = &plan.merge_base {
+            s.push_str(&format!(" merge-base=\"{}\"", xml_escape(merge_base)));
+        }
+        if let Some(commit_count) = plan.commit_count {
+            s.push_str(&format!(" commit-count=\"{}\"", commit_count));
+        }
+        s.push_str(" />\n");
+    }
+    s.push_str(&format!(
+        "  <filters diffshipignore=\"{}\">\n",
+        inp.ignore_enabled
+    ));
+    for pattern in inp.include_patterns {
+        s.push_str(&format!("    <include>{}</include>\n", xml_escape(pattern)));
+    }
+    for pattern in inp.exclude_patterns {
+        s.push_str(&format!("    <exclude>{}</exclude>\n", xml_escape(pattern)));
+    }
+    s.push_str("  </filters>\n");
+    s.push_str(&format!(
+        "  <packing profile=\"{}\" max-parts=\"{}\" max-bytes-per-part=\"{}\" reduced-context-count=\"{}\">\n",
+        xml_escape(&inp.packing_limits.profile_label),
+        inp.packing_limits.max_parts,
+        inp.packing_limits.max_bytes_per_part,
+        reduced_context_paths.len(),
+    ));
+    for path in &reduced_context_paths {
+        s.push_str(&format!(
+            "    <reduced-context-path>{}</reduced-context-path>\n",
+            xml_escape(path)
+        ));
+    }
+    s.push_str("  </packing>\n");
+    s.push_str("  <artifacts>\n");
+    s.push_str("    <artifact path=\"HANDOFF.md\" kind=\"handoff\" />\n");
+    s.push_str("    <artifact path=\"handoff.manifest.json\" kind=\"manifest-json\" />\n");
+    s.push_str(&format!(
+        "    <artifact path=\"{}\" kind=\"rendered-context-xml\" />\n",
+        xml_escape(handoff_context_xml_path())
+    ));
+    for part in inp.parts {
+        s.push_str(&format!(
+            "    <artifact path=\"parts/{}\" kind=\"patch\" />\n",
+            xml_escape(&part.name)
+        ));
+        s.push_str(&format!(
+            "    <artifact path=\"{}\" kind=\"part-context-json\" />\n",
+            xml_escape(&part_context_path(&part.name))
+        ));
+    }
+    if !inp.attachments.is_empty() {
+        s.push_str("    <artifact path=\"attachments.zip\" kind=\"attachments\" />\n");
+    }
+    if !inp.exclusions.is_empty() {
+        s.push_str("    <artifact path=\"excluded.md\" kind=\"excluded\" />\n");
+    }
+    if !inp.secret_hits.is_empty() {
+        s.push_str("    <artifact path=\"secrets.md\" kind=\"secrets\" />\n");
+    }
+    s.push_str("  </artifacts>\n");
+    s.push_str(&format!(
+        "  <warnings exclusion-count=\"{}\" secret-hit-count=\"{}\" attachment-count=\"{}\" />\n",
+        inp.exclusions.len(),
+        inp.secret_hits.len(),
+        inp.attachments.len(),
+    ));
+    s.push_str("  <parts>\n");
+    for part in inp.parts {
+        let part_rows = inp
+            .rows
+            .iter()
+            .filter(|row| row.part == part.name)
+            .collect::<Vec<_>>();
+        let category_counts = count_part_categories(&part_rows);
+        let file_paths = part_rows
+            .iter()
+            .map(|row| row.path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let reduced_part_paths = part_rows
+            .iter()
+            .filter(|row| row_has_reduced_context(row))
+            .map(|row| row.path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        s.push_str(&format!(
+            "    <part id=\"{}\" patch-path=\"{}\" context-path=\"{}\" approx-bytes=\"{}\" file-count=\"{}\">\n",
+            xml_escape(&part.name),
+            xml_escape(&format!("parts/{}", part.name)),
+            xml_escape(&part_context_path(&part.name)),
+            part.patch.len(),
+            file_paths.len(),
+        ));
+        s.push_str(&format!(
+            "      <title>{}</title>\n",
+            xml_escape(&part_context_title(part, &file_paths, &category_counts))
+        ));
+        s.push_str(&format!(
+            "      <summary>{}</summary>\n",
+            xml_escape(&part_context_summary(
+                &part.segments,
+                &category_counts,
+                file_paths.len()
+            ))
+        ));
+        s.push_str(&format!(
+            "      <intent>{}</intent>\n",
+            xml_escape(&part_context_intent(&category_counts))
+        ));
+        s.push_str("      <segments>\n");
+        for segment in &part.segments {
+            s.push_str(&format!(
+                "        <segment>{}</segment>\n",
+                xml_escape(segment)
+            ));
+        }
+        s.push_str("      </segments>\n");
+        s.push_str("      <files>\n");
+        for path in &file_paths {
+            s.push_str(&format!("        <file path=\"{}\" />\n", xml_escape(path)));
+        }
+        s.push_str("      </files>\n");
+        if !reduced_part_paths.is_empty() {
+            s.push_str("      <reduced-context-paths>\n");
+            for path in &reduced_part_paths {
+                s.push_str(&format!("        <path>{}</path>\n", xml_escape(path)));
+            }
+            s.push_str("      </reduced-context-paths>\n");
+        }
+        s.push_str("    </part>\n");
+    }
+    s.push_str("  </parts>\n");
+    s.push_str("</handoff-context>\n");
+    s
+}
+
+fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 fn split_label(v: SplitBy) -> &'static str {
     match v {
         SplitBy::File => "file",
@@ -3043,6 +3697,333 @@ fn binary_mode_label(v: BinaryMode) -> &'static str {
         BinaryMode::Patch => "patch",
         BinaryMode::Meta => "meta",
     }
+}
+
+fn range_mode_label(v: RangeMode) -> &'static str {
+    match v {
+        RangeMode::Direct => "direct",
+        RangeMode::MergeBase => "merge-base",
+        RangeMode::Last => "last",
+        RangeMode::Root => "root",
+    }
+}
+
+fn row_has_reduced_context(row: &FileRow) -> bool {
+    row.note
+        .contains("packing fallback reduced diff context to U")
+}
+
+fn reduced_context_paths(rows: &[FileRow]) -> Vec<String> {
+    rows.iter()
+        .filter(|row| row_has_reduced_context(row))
+        .map(|row| row.path.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn row_part_name(row: &FileRow) -> Option<String> {
+    match row.part.trim() {
+        "" | "-" => None,
+        other => Some(other.to_string()),
+    }
+}
+
+fn nonempty(s: &str) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+fn sorted_manifest_attachments(entries: &[AttachmentEntry]) -> Vec<ManifestAttachment> {
+    let mut items = entries
+        .iter()
+        .map(|entry| ManifestAttachment {
+            path: entry.zip_path.clone(),
+            reason: entry.reason.clone(),
+            byte_len: entry.bytes.len(),
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| a.path.cmp(&b.path).then(a.reason.cmp(&b.reason)));
+    items
+}
+
+fn sorted_manifest_exclusions(entries: &[ExclusionEntry]) -> Vec<ManifestExclusion> {
+    let mut items = entries
+        .iter()
+        .map(|entry| ManifestExclusion {
+            path: entry.path.clone(),
+            reason: entry.reason.clone(),
+            guidance: entry.guidance.clone(),
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| a.path.cmp(&b.path).then(a.reason.cmp(&b.reason)));
+    items
+}
+
+fn sorted_manifest_secret_hits(entries: &[SecretHit]) -> Vec<ManifestSecretHit> {
+    let mut items = entries
+        .iter()
+        .map(|entry| ManifestSecretHit {
+            path: entry.path.clone(),
+            reason: entry.reason.clone(),
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| a.path.cmp(&b.path).then(a.reason.cmp(&b.reason)));
+    items
+}
+
+fn render_part_contexts(
+    parts: &[PartOutput],
+    rows: &[FileRow],
+    attachments: &[AttachmentEntry],
+    exclusions: &[ExclusionEntry],
+    secret_hits: &[SecretHit],
+) -> Result<Vec<(String, String)>, ExitError> {
+    let mut rendered = Vec::with_capacity(parts.len());
+    for part in parts {
+        let part_rows = rows
+            .iter()
+            .filter(|row| row.part == part.name)
+            .collect::<Vec<_>>();
+        let category_counts = count_part_categories(&part_rows);
+        let reduced_context_paths = part_rows
+            .iter()
+            .filter(|row| row_has_reduced_context(row))
+            .map(|row| row.path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let file_paths = part_rows
+            .iter()
+            .map(|row| row.path.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let context = PartContext {
+            schema_version: 1,
+            patch_canonical: true,
+            part_id: part.name.clone(),
+            patch_path: format!("parts/{}", part.name),
+            context_path: part_context_path(&part.name),
+            title: part_context_title(part, &file_paths, &category_counts),
+            summary: part_context_summary(&part.segments, &category_counts, file_paths.len()),
+            intent: part_context_intent(&category_counts),
+            segments: part.segments.clone(),
+            files: part_rows
+                .iter()
+                .map(|row| ManifestFile {
+                    category: path_category_label(&row.path).to_string(),
+                    segment: row.segment.clone(),
+                    status: row.status.clone(),
+                    path: row.path.clone(),
+                    ins: row.ins,
+                    del: row.del,
+                    bytes: row.bytes,
+                    part: row_part_name(row),
+                    note: nonempty(row.note.trim()),
+                })
+                .collect(),
+            diff_stats: PartContextDiffStats {
+                file_count: file_paths.len(),
+                additions: sum_opt(part_rows.iter().map(|row| row.ins)),
+                deletions: sum_opt(part_rows.iter().map(|row| row.del)),
+                categories: category_counts,
+                segments: count_row_labels(part_rows.iter().copied(), |row| row.segment.clone()),
+                statuses: count_row_labels(part_rows.iter().copied(), |row| row.status.clone()),
+            },
+            scope: PartContextScope {
+                in_scope: file_paths.iter().take(8).cloned().collect(),
+                out_of_scope: vec![
+                    "Files not mapped to this patch part remain out of scope.".to_string(),
+                    "Use HANDOFF.md and handoff.manifest.json to understand neighboring parts before widening scope.".to_string(),
+                ],
+            },
+            constraints: PartContextConstraints {
+                handoff_entrypoint: "HANDOFF.md".to_string(),
+                manifest_path: "handoff.manifest.json".to_string(),
+                patch_canonical: true,
+                reduced_context: !reduced_context_paths.is_empty(),
+            },
+            warnings: PartContextWarnings {
+                reduced_context_paths: reduced_context_paths.clone(),
+                bundle_has_attachments: !attachments.is_empty(),
+                bundle_has_exclusions: !exclusions.is_empty(),
+                bundle_has_secret_warnings: !secret_hits.is_empty(),
+            },
+            acceptance_criteria: part_context_acceptance_criteria(
+                part,
+                &file_paths,
+                !reduced_context_paths.is_empty(),
+            ),
+        };
+        let contents = serde_json::to_string_pretty(&context).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to render part context JSON: {e}"),
+            )
+        })?;
+        rendered.push((part_context_path(&part.name), contents));
+    }
+    Ok(rendered)
+}
+
+fn part_context_path(part_name: &str) -> String {
+    let stem = part_name.strip_suffix(".patch").unwrap_or(part_name);
+    format!("parts/{stem}.context.json")
+}
+
+fn handoff_context_xml_path() -> &'static str {
+    "handoff.context.xml"
+}
+
+fn count_part_categories(rows: &[&FileRow]) -> PartContextCategoryCounts {
+    let mut counts = PartContextCategoryCounts::default();
+    let unique_paths = rows
+        .iter()
+        .map(|row| row.path.as_str())
+        .collect::<BTreeSet<_>>();
+    for path in unique_paths {
+        match path_category_label(path) {
+            "docs" => counts.docs += 1,
+            "config" => counts.config += 1,
+            "source" => counts.source += 1,
+            "tests" => counts.tests += 1,
+            _ => counts.other += 1,
+        }
+    }
+    counts
+}
+
+fn count_row_labels<'a, I, F>(rows: I, mut key_fn: F) -> BTreeMap<String, usize>
+where
+    I: IntoIterator<Item = &'a FileRow>,
+    F: FnMut(&'a FileRow) -> String,
+{
+    let mut counts = BTreeMap::new();
+    for row in rows {
+        *counts.entry(key_fn(row)).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn part_context_title(
+    part: &PartOutput,
+    file_paths: &[String],
+    category_counts: &PartContextCategoryCounts,
+) -> String {
+    if let Some(path) = file_paths.first()
+        && file_paths.len() == 1
+    {
+        return format!("{}: {}", part.name, path);
+    }
+    if file_paths.is_empty() {
+        format!("{}: no file changes", part.name)
+    } else {
+        format!(
+            "{}: {} files in {}",
+            part.name,
+            file_paths.len(),
+            primary_category_label(category_counts)
+        )
+    }
+}
+
+fn part_context_summary(
+    segments: &[String],
+    category_counts: &PartContextCategoryCounts,
+    file_count: usize,
+) -> String {
+    if file_count == 0 {
+        return "This part contains no file-level changes.".to_string();
+    }
+    format!(
+        "This part updates {} across {} segment(s): {}.",
+        summarize_category_counts(category_counts),
+        segments.len(),
+        segments.join(", ")
+    )
+}
+
+fn part_context_intent(category_counts: &PartContextCategoryCounts) -> String {
+    if category_total(category_counts) == 0 {
+        "Primary area: no file-level changes were recorded for this part.".to_string()
+    } else {
+        format!(
+            "Primary area: {} changes.",
+            primary_category_label(category_counts)
+        )
+    }
+}
+
+fn category_total(counts: &PartContextCategoryCounts) -> usize {
+    counts.docs + counts.config + counts.source + counts.tests + counts.other
+}
+
+fn primary_category_label(counts: &PartContextCategoryCounts) -> &'static str {
+    [
+        ("documentation", counts.docs),
+        ("config/tooling", counts.config),
+        ("source", counts.source),
+        ("tests", counts.tests),
+        ("other", counts.other),
+    ]
+    .into_iter()
+    .max_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(b.0)))
+    .map(|(label, _)| label)
+    .unwrap_or("other")
+}
+
+fn summarize_category_counts(counts: &PartContextCategoryCounts) -> String {
+    let mut items = Vec::new();
+    for (label, n) in [
+        ("documentation file", counts.docs),
+        ("config/tooling file", counts.config),
+        ("source file", counts.source),
+        ("test file", counts.tests),
+        ("other file", counts.other),
+    ] {
+        if n == 0 {
+            continue;
+        }
+        let suffix = if n == 1 { "" } else { "s" };
+        items.push(format!("{n} {label}{suffix}"));
+    }
+    if items.is_empty() {
+        "0 files".to_string()
+    } else {
+        items.join(", ")
+    }
+}
+
+fn part_context_acceptance_criteria(
+    part: &PartOutput,
+    file_paths: &[String],
+    reduced_context: bool,
+) -> Vec<String> {
+    let mut items = vec![
+        format!(
+            "Apply or review `parts/{}` as the canonical change payload for this part.",
+            part.name
+        ),
+        "Keep edits scoped to the listed files unless a new handoff bundle expands the scope."
+            .to_string(),
+    ];
+    if file_paths.is_empty() {
+        items.push(
+            "Confirm whether this no-op part can be ignored or removed in a future build."
+                .to_string(),
+        );
+    }
+    if reduced_context {
+        items.push(
+            "Reduced diff context is present; review affected paths carefully before editing further."
+                .to_string(),
+        );
+    }
+    items
 }
 
 fn sum_opt<I>(vals: I) -> Option<u64>

@@ -108,6 +108,10 @@ diffship compare ./bundle_a ./bundle_b.zip
 diffship compare ./bundle_a ./bundle_b.zip --json
 ```
 
+In the TUI handoff screen, preview now prepends the same canonical structured-context summary and manifest reading-order guidance that `diffship preview --list` shows when the temporary preview bundle includes `handoff.manifest.json`.
+
+The TUI also includes a compare screen that wraps `diffship compare --json`, so interactive users can inspect canonical manifest summary / reading-order deltas without leaving the TUI.
+
 ### 4.2 Ops quickstart
 
 Initialize a repository once:
@@ -235,6 +239,8 @@ List bundle contents:
 diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list
 ```
 
+If the bundle includes `handoff.manifest.json`, the list view also surfaces the canonical structured-context summary, including aggregate category / segment / status counts and the manifest's reading-order guidance.
+
 Show a patch part:
 
 ```bash
@@ -246,6 +252,10 @@ Machine-readable preview:
 ```bash
 diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list --json
 ```
+
+The JSON list output includes a `structured_context` object when canonical structured-context files are present, including the manifest `reading_order` when available.
+
+The TUI handoff preview uses the same temporary bundle and now prepends the canonical structured-context summary before the first patch part when the manifest JSON is present.
 
 ### 5.7 Export and replay a plan
 
@@ -276,11 +286,16 @@ Named profile definitions stay in config, not in the plan export.
 Typical output:
 
 - `HANDOFF.md`
+- `handoff.manifest.json`
+- `handoff.context.xml`
 - `parts/part_XX.patch`
+- `parts/part_XX.context.json`
 - `attachments.zip` when raw attachments are included
 - `excluded.md` when diff units are intentionally omitted
 - `secrets.md` when secrets-like content is detected
 - `plan.toml` when exported
+
+The manifest JSON also includes deterministic reading-order guidance derived from the selected rows, so automation can reuse the same navigation hints without scraping `HANDOFF.md`.
 
 Default output naming:
 
@@ -333,8 +348,18 @@ This writes:
 
 - `.diffship/.gitignore`
 - `.diffship/PROJECT_KIT.md`
+- `.diffship/PROJECT_RULES.md`
 - `.diffship/AI_GUIDE.md`
+- `.diffship/forbid.toml`
 - `.diffship/config.toml`
+
+To generate a Japanese paste-ready rules snippet for an external AI project UI:
+
+```bash
+diffship init --lang ja
+```
+
+`PROJECT_RULES.md` is the shortest generated file and is intended for direct copy/paste into project-rule or custom-instructions fields.
 
 To use project-specific init templates:
 
@@ -363,6 +388,11 @@ That makes it practical to keep one stable diffship contract while still generat
 
 That keeps `.diffship/PROJECT_KIT.md` useful as a local onboarding document instead of a copy of generic product docs.
 
+`PROJECT_RULES.md` is generated separately so the short external-AI rules text stays concise even when `PROJECT_KIT.md` and `AI_GUIDE.md` grow more detailed.
+
+`forbid.toml` is the dedicated local file for `[ops.forbid]` patterns. If lockfiles or similar fragile files already exist in the repo, `diffship init` can prefill matching entries there.
+If new fragile files appear later, run `diffship init --refresh-forbid` to rewrite only `.diffship/forbid.toml` from the latest detections.
+
 The generated `.diffship/config.toml` now follows the same idea:
 
 - core defaults stay close to the repository's actual diffship workflow
@@ -385,6 +415,8 @@ What happens:
 6. run verification
 7. promote if verification succeeds
 8. persist run logs under `.diffship/runs/<run-id>/`
+
+When a run executes external commands, `diffship runs` and `diffship status` show `commands=<n>` plus the recorded phases, and they also print direct `run_dir`, `commands.json`, and phase-directory paths so you can open the relevant logs immediately. The run directory still keeps the detailed `commands.json` index and per-phase log folders.
 
 ### 6.3 Use individual ops commands
 
@@ -583,6 +615,8 @@ Bundle comparison for CI:
 ```bash
 diffship compare ./bundle_a ./bundle_b --json
 ```
+
+When both bundles include the canonical manifest JSON, compare output also includes structured-context summary deltas such as file/category/segment/status count changes, plus manifest reading-order deltas when that guidance differs.
 
 Repository validation before finishing local work:
 

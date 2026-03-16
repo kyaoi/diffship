@@ -1,4 +1,5 @@
 use assert_cmd::prelude::*;
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -110,7 +111,10 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());
+    assert!(bundle.join("handoff.manifest.json").exists());
+    assert!(bundle.join("handoff.context.xml").exists());
     assert!(bundle.join("parts").join("part_01.patch").exists());
+    assert!(bundle.join("parts").join("part_01.context.json").exists());
 
     let handoff = fs::read_to_string(bundle.join("HANDOFF.md")).unwrap();
     assert!(handoff.contains("# HANDOFF"));
@@ -129,6 +133,176 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(part.contains("diffship segment: committed"));
     assert!(part.contains("a.txt"));
     assert!(part.contains("+two"));
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest.get("schema_version").and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest.get("patch_canonical").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        manifest.get("entrypoint").and_then(|v| v.as_str()),
+        Some("HANDOFF.md")
+    );
+    assert_eq!(
+        manifest.get("current_head").and_then(|v| v.as_str()),
+        Some(head.as_str())
+    );
+    assert_eq!(
+        manifest
+            .get("sources")
+            .and_then(|v| v.get("committed"))
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("manifest_json"))
+            .and_then(|v| v.as_str()),
+        Some("handoff.manifest.json")
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("context_xml"))
+            .and_then(|v| v.as_str()),
+        Some("handoff.context.xml")
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("part_paths"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("parts/part_01.patch")
+    );
+    assert_eq!(
+        manifest
+            .get("parts")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("patch_path"))
+            .and_then(|v| v.as_str()),
+        Some("parts/part_01.patch")
+    );
+    assert_eq!(
+        manifest
+            .get("parts")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("context_path"))
+            .and_then(|v| v.as_str()),
+        Some("parts/part_01.context.json")
+    );
+    assert_eq!(
+        manifest
+            .get("summary")
+            .and_then(|v| v.get("file_count"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest
+            .get("summary")
+            .and_then(|v| v.get("part_count"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest
+            .get("summary")
+            .and_then(|v| v.get("segments"))
+            .and_then(|v| v.get("committed"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest
+            .get("summary")
+            .and_then(|v| v.get("statuses"))
+            .and_then(|v| v.get("M"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest
+            .get("reading_order")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("Other changes: `part_01.patch` (1 files)")
+    );
+    assert_eq!(
+        manifest
+            .get("files")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("path"))
+            .and_then(|v| v.as_str()),
+        Some("a.txt")
+    );
+
+    let part_context: Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join("parts").join("part_01.context.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        part_context
+            .get("patch_canonical")
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        part_context.get("part_id").and_then(|v| v.as_str()),
+        Some("part_01.patch")
+    );
+    assert_eq!(
+        part_context.get("patch_path").and_then(|v| v.as_str()),
+        Some("parts/part_01.patch")
+    );
+    assert_eq!(
+        part_context.get("context_path").and_then(|v| v.as_str()),
+        Some("parts/part_01.context.json")
+    );
+    assert_eq!(
+        part_context
+            .get("files")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("path"))
+            .and_then(|v| v.as_str()),
+        Some("a.txt")
+    );
+    assert_eq!(
+        part_context
+            .get("constraints")
+            .and_then(|v| v.get("manifest_path"))
+            .and_then(|v| v.as_str()),
+        Some("handoff.manifest.json")
+    );
+    assert_eq!(
+        part_context
+            .get("diff_stats")
+            .and_then(|v| v.get("segments"))
+            .and_then(|v| v.get("committed"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        part_context
+            .get("diff_stats")
+            .and_then(|v| v.get("statuses"))
+            .and_then(|v| v.get("M"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+
+    let handoff_context = fs::read_to_string(bundle.join("handoff.context.xml")).unwrap();
+    assert!(handoff_context.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(handoff_context.contains("<handoff-context"));
+    assert!(handoff_context.contains("rendered-from=\"handoff.manifest.json\""));
+    assert!(handoff_context.contains("path=\"parts/part_01.context.json\""));
 }
 
 #[test]
@@ -203,7 +377,10 @@ fn build_zip_only_creates_only_zip_by_default() {
     let file = fs::File::open(&zip_paths[0]).unwrap();
     let mut zip = ZipArchive::new(file).unwrap();
     assert!(zip.by_name("HANDOFF.md").is_ok());
+    assert!(zip.by_name("handoff.manifest.json").is_ok());
+    assert!(zip.by_name("handoff.context.xml").is_ok());
     assert!(zip.by_name("parts/part_01.patch").is_ok());
+    assert!(zip.by_name("parts/part_01.context.json").is_ok());
 }
 
 #[test]

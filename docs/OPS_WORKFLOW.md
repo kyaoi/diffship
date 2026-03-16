@@ -67,6 +67,14 @@ Runtime artifacts are stored under:
 - `.diffship/runs/<run-id>/...`
 - `.diffship/worktrees/...` (worktrees for sessions/sandboxes)
 
+Inside each run directory, external command logs are grouped by phase:
+
+- `commands.json`: machine-readable index
+- `apply/`
+- `post-apply/`
+- `verify/`
+- `promote/`
+
 ---
 
 ## The main loop
@@ -184,6 +192,8 @@ diffship status
 ```bash
 diffship runs
 ```
+
+The human-readable `runs` and `status` outputs now show `commands=<n>` and phase names when a run recorded external command logs.
 
 ### Verify a specific run again
 

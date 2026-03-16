@@ -798,3 +798,273 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
   - Human authorship and tool authorship are separate concerns and should not be conflated in the patch contract.
 - Implications:
   - `diffship init` templates should document the default `git-am` author identity and the escape hatch for repositories that prefer local human authorship.
+
+---
+
+## D-059: `diffship init` should generate a dedicated paste-ready rules file with a small language surface
+
+- Date: 2026-03-16
+- Decision:
+  - Generate `.diffship/PROJECT_RULES.md` as a short, copy/paste-oriented rules snippet for external AI project-rule UIs.
+  - Keep the existing `.diffship/PROJECT_KIT.md` and `.diffship/AI_GUIDE.md` as the longer human/AI guides.
+  - Scope `diffship init --lang <en|ja>` to the generated `PROJECT_RULES.md` snippet and record the resolved language in the rules-kit metadata.
+- Rationale:
+  - Users need something shorter than the full guides when a UI only offers a compact project-rules field.
+  - Localizing the concise snippet first solves the immediate English/Japanese need without duplicating the larger guide templates.
+- Implications:
+  - `diffship init --zip` now includes `PROJECT_RULES.md` in the exported rules kit.
+  - Init integration tests, docs, and progress tracking must stay aligned with the new generated artifact.
+
+---
+
+## D-060: Dedicated `.diffship/forbid.toml` keeps fragile-path policy separate from the main config stub
+
+- Date: 2026-03-16
+- Decision:
+  - Let project-local forbid patterns live in a dedicated `.diffship/forbid.toml` file in addition to `.diffship/config.toml`.
+  - Have `diffship init` generate that file as a starter template and prefill detected lockfiles when applicable.
+- Rationale:
+  - Forbid policy is often edited by humans who do not want to touch the larger config stub.
+  - Lockfiles and generated manifests are common fragile targets, so a dedicated file reduces setup friction.
+- Implications:
+  - `src/ops/config.rs` loads `.diffship/forbid.toml` as another project-local config source.
+  - `src/ops/init.rs` writes the starter file and tests/docs must cover the new artifact.
+
+---
+
+## D-061: Surface run command-log coverage in human-facing status views
+
+- Date: 2026-03-16
+- Decision:
+  - Keep `commands.json` as the machine-readable command-log index under each run.
+  - Show command-count and phase summary in `diffship runs`, `diffship status`, and the TUI run detail when logs exist.
+- Rationale:
+  - The logs already existed on disk, but users still had to inspect the run directory manually to know whether `apply`, `post-apply`, `verify`, or `promote` emitted command logs.
+- Implications:
+  - `src/ops/run.rs` now derives command-count and phase summaries from `commands.json`.
+  - Human-facing docs and integration tests should mention the new summaries.
+
+---
+
+## D-062: Treat missing or invalid `run.json` as orphaned run metadata during cleanup
+
+- Date: 2026-03-16
+- Decision:
+  - `cleanup` should classify a run as orphaned when `run.json` is missing or invalid, even if the sandbox directory still exists.
+- Rationale:
+  - A leftover sandbox alone is not enough to preserve a broken run record; users expect `cleanup --include-runs` to remove run logs once the run metadata is no longer recoverable.
+- Implications:
+  - `src/ops/cleanup.rs` now checks `run.json` validity while collecting orphan sandbox/run candidates.
+  - `tests/m7_cleanup.rs` covers both `cleanup` and `cleanup --include-runs` for this metadata-loss edge case.
+
+---
+
+## D-063: Structured handoff context Phase 1 starts with deterministic `handoff.manifest.json`
+
+- Date: 2026-03-16
+- Decision:
+  - Keep patch parts canonical for executable changes.
+  - Keep `HANDOFF.md` as the primary human/LLM entrypoint.
+  - Add a root-level deterministic `handoff.manifest.json` as the canonical machine-readable structured-context layer for handoff bundles.
+  - Do not use AI/API calls during build; generate the manifest only from deterministic repository facts in Rust.
+- Rationale:
+  - We want structured navigation and warning metadata without weakening the existing patch/apply contract.
+  - JSON is easier to version, compare, and test deterministically than a rendered view.
+- Implications:
+  - `docs/BUNDLE_FORMAT.md`, `docs/SPEC_V1.md`, and `docs/DETERMINISM.md` must treat `handoff.manifest.json` as part of the bundle contract.
+  - Later XML/Markdown rendered views or per-part context files remain optional extensions on top of this JSON layer.
+
+---
+
+## D-064: Per-part JSON context stays supplemental to the patch payload
+
+- Date: 2026-03-16
+- Decision:
+  - Emit `parts/part_XX.context.json` next to each patch part as deterministic per-part context.
+  - Keep these files strictly supplemental; they summarize scope/stats/constraints but do not redefine the patch.
+  - Generate the summary text from repository facts and fixed templates only.
+- Rationale:
+  - The root manifest is useful for bundle navigation, but AI workflows also need a stable map at the patch-part level.
+  - Per-part JSON gives that map without introducing an AI/API dependency or weakening the canonical patch contract.
+- Implications:
+  - `handoff.manifest.json` should link each part to its context file.
+  - Compare / determinism tests must treat these files as first-class generated bundle artifacts.
+
+---
+
+## D-065: XML is a rendered view only, generated from the same deterministic facts as JSON
+
+- Date: 2026-03-16
+- Decision:
+  - Emit `handoff.context.xml` as a deterministic rendered view of the structured handoff context.
+  - Keep JSON canonical; XML is strictly a view layer and never replaces `handoff.manifest.json` or patch parts.
+  - Generate XML from the same local deterministic facts and fixed templates used for JSON generation.
+- Rationale:
+  - Some AI workflows navigate hierarchy more easily in XML, but JSON remains easier to version, compare, and treat as the canonical machine-readable contract.
+- Implications:
+  - `handoff.manifest.json` should reference the XML rendered view.
+  - Bundle docs, determinism docs, and compare tests must treat the XML file as a generated artifact without elevating it above JSON.
+
+---
+
+## D-066: Run summaries should expose direct artifact paths, not just log counts
+
+- Date: 2026-03-16
+- Decision:
+  - Keep command-count and phase summaries, but also expose `run_dir`, `commands.json`, and phase-directory paths in `diffship runs` / `diffship status` and their JSON summaries when available.
+- Rationale:
+  - Counts answer whether logs exist, but not where to open them.
+  - CLI users should get the same direct path affordance that the TUI run detail already provides.
+- Implications:
+  - `src/ops/run.rs` expands `RunSummary` with path fields.
+  - Human-facing docs and integration tests should mention the direct path output.
+
+---
+
+## D-067: Forbid setup UX should support refreshing only the dedicated forbid file
+
+- Date: 2026-03-16
+- Decision:
+  - Add `diffship init --refresh-forbid` so users can rewrite only `.diffship/forbid.toml` from current repo detections.
+  - Do not require `--force` for unrelated generated files when using this option.
+- Rationale:
+  - Repositories often gain new lockfiles or generated manifests after the initial `init`.
+  - Users should be able to refresh the dedicated forbid policy without rewriting the larger project-kit files.
+- Implications:
+  - `src/ops/init.rs` treats `forbid.toml` as independently refreshable.
+  - Init docs and integration tests should describe the targeted refresh behavior.
+
+---
+
+## D-068: Structured context should expose aggregate JSON counts before adding more rendered views
+
+- Date: 2026-03-16
+- Decision:
+  - Enrich the canonical JSON structured-context outputs with aggregate category / segment / status counts.
+  - Keep these counts derived only from the already selected file rows; do not introduce heuristic or AI-generated metadata.
+- Rationale:
+  - Downstream tooling often needs scope summaries without reparsing `HANDOFF.md` or walking every diff hunk.
+  - This follows the project rule that new structured-context investment should prefer richer machine-readable facts before more rendered layers.
+- Implications:
+  - `handoff.manifest.json` gains bundle-level aggregate counts.
+  - `parts/part_XX.context.json` gains per-part segment/status counts alongside existing category and diff totals.
+
+---
+
+## D-069: Preview list output should consume canonical structured-context JSON directly
+
+- Date: 2026-03-17
+- Decision:
+  - Teach `diffship preview --list` and `--list --json` to read `handoff.manifest.json` when present.
+  - Surface structured-context artifact presence and aggregate category / segment / status counts from that canonical JSON instead of reparsing `HANDOFF.md`.
+- Rationale:
+  - We already emit the canonical machine-readable facts; preview should expose them directly so CI and humans can inspect bundle scope cheaply.
+  - This creates a first consumer for the richer JSON facts without adding another rendered layer.
+- Implications:
+  - `src/preview.rs` parses the manifest summary opportunistically and keeps working for older bundles that lack the file.
+  - Preview docs and tests must describe the extra list/json fields while preserving existing entry-text behavior.
+
+---
+
+## D-070: Compare should report canonical manifest-summary deltas, not just file-level artifact diffs
+
+- Date: 2026-03-17
+- Decision:
+  - When both bundles provide `handoff.manifest.json`, `diffship compare` should parse the canonical manifest summary and report aggregate deltas.
+  - Keep the existing file-level diff list; summary deltas are supplemental and never replace artifact diffs.
+- Rationale:
+  - File-by-file differences show which artifacts changed, but not whether the bundle scope widened or narrowed.
+  - The canonical manifest already contains stable aggregate counts, so compare can surface scope changes cheaply and deterministically.
+- Implications:
+  - `src/bundle_compare.rs` opportunistically parses both manifests and adds structured-context summary deltas to human-readable and JSON output.
+  - Compare tests and docs must cover the new summary-delta reporting while preserving existing non-zero exit behavior.
+
+---
+
+## D-071: TUI handoff preview should reuse canonical manifest summary instead of inventing a separate preview summary
+
+- Date: 2026-03-17
+- Decision:
+  - When the temporary TUI preview bundle contains `handoff.manifest.json`, prepend the canonical structured-context summary to the preview pane before the first patch part.
+  - Keep the patch preview itself unchanged after that header block.
+- Rationale:
+  - The TUI should expose the same machine-readable scope summary that CLI preview/compare now use.
+  - Reusing the existing manifest avoids a second summary implementation just for the TUI.
+- Implications:
+  - `src/tui/mod.rs` reads the temporary preview bundle manifest opportunistically and stays compatible with older/malformed bundles by falling back to patch-only preview.
+  - TUI docs and unit tests should cover the prepended summary lines.
+
+---
+
+## D-072: Reading-order guidance should live in canonical manifest JSON, not only in HANDOFF.md
+
+- Date: 2026-03-17
+- Decision:
+  - Add a deterministic `reading_order` list to `handoff.manifest.json`.
+  - Reuse the same derived guidance that `HANDOFF.md` already renders instead of inventing a second ordering heuristic.
+- Rationale:
+  - Downstream tools should be able to consume the recommended reading order without scraping markdown.
+  - This keeps the manifest as the canonical machine-readable bundle summary while leaving `HANDOFF.md` as the primary human-facing entrypoint.
+- Implications:
+  - `src/handoff.rs` passes the existing reading-order computation into manifest rendering.
+  - Bundle-format/spec docs and build tests must treat the new manifest field as part of the output contract.
+
+---
+
+## D-073: Preview list output should surface canonical reading-order guidance once the manifest provides it
+
+- Date: 2026-03-17
+- Decision:
+  - Extend `diffship preview --list` and `--list --json` to show `reading_order` from `handoff.manifest.json` when available.
+  - Keep the guidance sourced strictly from the manifest rather than rebuilding it in preview.
+- Rationale:
+  - Once the manifest carries reading-order guidance, preview should expose it directly so humans and CI consumers see the same canonical navigation hints.
+  - This keeps preview as a thin consumer of the bundle contract rather than a second author of bundle guidance.
+- Implications:
+  - `src/preview.rs` parses and forwards `reading_order` opportunistically while remaining backward-compatible with older bundles.
+  - Preview docs and tests must cover both the human-readable list output and the JSON field.
+
+---
+
+## D-074: Compare should treat manifest reading-order guidance as a first-class canonical delta
+
+- Date: 2026-03-17
+- Decision:
+  - Extend `diffship compare` to report manifest `reading_order` deltas when both bundles provide that field.
+  - Keep these deltas supplemental to the file-level diff list and summary-count deltas.
+- Rationale:
+  - Reading-order guidance is now part of the canonical manifest contract, so compare should expose when that navigation guidance changes.
+  - This helps downstream tooling understand not just scope drift but also workflow/navigation drift between bundles.
+- Implications:
+  - `src/bundle_compare.rs` compares manifest `reading_order` lists by position and emits human-readable plus JSON deltas.
+  - Compare docs and integration tests must cover the new field while preserving existing exit semantics.
+
+---
+
+## D-075: TUI handoff preview should surface canonical reading-order guidance from the manifest
+
+- Date: 2026-03-17
+- Decision:
+  - Extend the prepended TUI handoff preview header to include `reading_order` when `handoff.manifest.json` provides it.
+  - Keep the TUI as a thin consumer of the existing manifest JSON rather than recomputing guidance from patch content.
+- Rationale:
+  - CLI preview already surfaces canonical reading-order guidance, so the TUI preview should expose the same navigation hints to preserve parity.
+  - Reusing manifest JSON avoids a separate TUI-only interpretation layer.
+- Implications:
+  - `src/tui/mod.rs` reads `reading_order` opportunistically and remains backward-compatible with older or malformed preview bundles.
+  - TUI docs and unit tests should cover the prepended reading-order lines alongside the existing summary counts.
+
+---
+
+## D-076: TUI compare should be a thin consumer of `diffship compare --json`
+
+- Date: 2026-03-17
+- Decision:
+  - Add a TUI compare screen that invokes `diffship compare --json` and renders a concise report from that JSON.
+  - Keep comparison semantics canonical in the CLI compare contract rather than reimplementing bundle comparison inside the TUI.
+- Rationale:
+  - This preserves CLI/TUI parity while still giving interactive users access to canonical structured-context deltas.
+  - Reusing JSON output avoids a second compare implementation and keeps future compare enhancements automatically consumable by the TUI.
+- Implications:
+  - `src/tui/mod.rs` owns only input/editing/report rendering and delegates comparison work to the existing CLI entrypoint.
+  - TUI tests should cover the rendered compare report lines for manifest summary and reading-order deltas.

@@ -141,7 +141,26 @@ pub fn cmd(git_root: &Path, args: StatusArgs) -> Result<(), ExitError> {
     } else {
         println!("  runs     :");
         for r in &recent_runs {
-            println!("    - {}  {}  {}", r.created_at, r.run_id, r.command);
+            let logs = if r.command_count == 0 {
+                String::new()
+            } else {
+                format!(
+                    "  commands={}  phases={}",
+                    r.command_count,
+                    r.command_phases.join(",")
+                )
+            };
+            println!(
+                "    - {}  {}  {}{}",
+                r.created_at, r.run_id, r.command, logs
+            );
+            println!("      run_dir={}", r.run_dir);
+            if let Some(path) = &r.commands_index_path {
+                println!("      commands_json={}", path);
+            }
+            if !r.command_phase_dirs.is_empty() {
+                println!("      phase_dirs={}", r.command_phase_dirs.join(", "));
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 use crate::cli::PreviewArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::pathing::resolve_user_path;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
@@ -22,6 +22,8 @@ struct PreviewSummary<'a> {
     attachments_zip: bool,
     excluded_md: bool,
     secrets_md: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    structured_context: Option<PreviewStructuredContext>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,6 +31,46 @@ struct PreviewText {
     bundle: String,
     entry: String,
     text: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PreviewStructuredContext {
+    manifest_json: bool,
+    context_xml: bool,
+    part_contexts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<PreviewManifestSummary>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    reading_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PreviewManifestSummary {
+    file_count: u64,
+    part_count: u64,
+    commit_view_count: u64,
+    categories: BTreeMap<String, u64>,
+    segments: BTreeMap<String, u64>,
+    statuses: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestPreviewSummaryRaw {
+    file_count: u64,
+    part_count: u64,
+    commit_view_count: u64,
+    categories: ManifestCategoryCountsRaw,
+    segments: BTreeMap<String, u64>,
+    statuses: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestCategoryCountsRaw {
+    docs: u64,
+    config: u64,
+    source: u64,
+    tests: u64,
+    other: u64,
 }
 
 pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
@@ -195,6 +237,7 @@ fn resolve_part_key(raw: &str, view: &BundleView) -> Result<String, ExitError> {
 
 fn print_list(path: &Path, view: &BundleView) {
     let parts = part_entries(view);
+    let structured = structured_context(view);
 
     println!("diffship preview");
     println!("  bundle          : {}", path.display());
@@ -218,6 +261,44 @@ fn print_list(path: &Path, view: &BundleView) {
         "  secrets.md      : {}",
         yes_no(view.entries.contains_key("secrets.md"))
     );
+    if let Some(structured) = structured {
+        println!(
+            "  handoff.manifest.json : {}",
+            yes_no(structured.manifest_json)
+        );
+        println!(
+            "  handoff.context.xml  : {}",
+            yes_no(structured.context_xml)
+        );
+        println!(
+            "  part contexts        : {}",
+            structured.part_contexts.len()
+        );
+        if let Some(summary) = structured.summary {
+            println!(
+                "  summary              : files={}, parts={}, commit-views={}",
+                summary.file_count, summary.part_count, summary.commit_view_count
+            );
+            println!(
+                "  categories           : {}",
+                render_count_map(&summary.categories)
+            );
+            println!(
+                "  segments             : {}",
+                render_count_map(&summary.segments)
+            );
+            println!(
+                "  statuses             : {}",
+                render_count_map(&summary.statuses)
+            );
+        }
+        if !structured.reading_order.is_empty() {
+            println!("  reading order:");
+            for item in &structured.reading_order {
+                println!("    - {}", item);
+            }
+        }
+    }
 }
 
 fn summary_json(path: &Path, view: &BundleView, mode: &'static str) -> PreviewSummary<'static> {
@@ -229,6 +310,7 @@ fn summary_json(path: &Path, view: &BundleView, mode: &'static str) -> PreviewSu
         attachments_zip: view.entries.contains_key("attachments.zip"),
         excluded_md: view.entries.contains_key("excluded.md"),
         secrets_md: view.entries.contains_key("secrets.md"),
+        structured_context: structured_context(view),
     }
 }
 
@@ -241,6 +323,79 @@ fn part_entries(view: &BundleView) -> Vec<String> {
         .collect::<Vec<_>>();
     parts.sort();
     parts
+}
+
+fn part_context_entries(view: &BundleView) -> Vec<String> {
+    let mut parts = view
+        .entries
+        .keys()
+        .filter(|k| k.starts_with("parts/") && k.ends_with(".context.json"))
+        .cloned()
+        .collect::<Vec<_>>();
+    parts.sort();
+    parts
+}
+
+fn structured_context(view: &BundleView) -> Option<PreviewStructuredContext> {
+    let manifest_json = view.entries.contains_key("handoff.manifest.json");
+    let context_xml = view.entries.contains_key("handoff.context.xml");
+    let part_contexts = part_context_entries(view);
+    if !manifest_json && !context_xml && part_contexts.is_empty() {
+        return None;
+    }
+    let manifest = manifest_preview(view);
+
+    Some(PreviewStructuredContext {
+        manifest_json,
+        context_xml,
+        part_contexts,
+        summary: manifest.as_ref().map(|value| value.summary.clone()),
+        reading_order: manifest
+            .map(|value| value.reading_order)
+            .unwrap_or_default(),
+    })
+}
+
+fn manifest_preview(view: &BundleView) -> Option<ManifestPreviewRendered> {
+    let bytes = view.entries.get("handoff.manifest.json")?;
+    let raw = serde_json::from_slice::<ManifestPreviewSummaryEnvelope>(bytes).ok()?;
+    Some(ManifestPreviewRendered {
+        summary: PreviewManifestSummary {
+            file_count: raw.summary.file_count,
+            part_count: raw.summary.part_count,
+            commit_view_count: raw.summary.commit_view_count,
+            categories: BTreeMap::from([
+                ("docs".to_string(), raw.summary.categories.docs),
+                ("config".to_string(), raw.summary.categories.config),
+                ("source".to_string(), raw.summary.categories.source),
+                ("tests".to_string(), raw.summary.categories.tests),
+                ("other".to_string(), raw.summary.categories.other),
+            ]),
+            segments: raw.summary.segments,
+            statuses: raw.summary.statuses,
+        },
+        reading_order: raw.reading_order,
+    })
+}
+
+struct ManifestPreviewRendered {
+    summary: PreviewManifestSummary,
+    reading_order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestPreviewSummaryEnvelope {
+    summary: ManifestPreviewSummaryRaw,
+    #[serde(default)]
+    reading_order: Vec<String>,
+}
+
+fn render_count_map(counts: &BTreeMap<String, u64>) -> String {
+    counts
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn yes_no(v: bool) -> &'static str {

@@ -10,10 +10,13 @@ It focuses on the *ops* side of an AI workflow:
 - record runs under the run directory (e.g. .diffship/runs/<run-id>/...) and generate a **reprompt bundle** when needed
 
 > Note: The *handoff* (diff → AI bundle) workflow is **implemented for the current v1 core**.
-> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
+> `diffship build` supports committed / staged / unstaged / untracked sources, `--split-by auto|file|commit`, fallback repacking/exclusion for packing limits, deterministic handoff manifest plus per-part context JSON and rendered XML view files, optional attachments.zip / excluded.md / secrets.md, .diffshipignore, secrets warnings (`--yes` / `--fail-on-secrets`), and a generated HANDOFF entry document with Start Here / TL;DR / Change Map / Parts Index.
 > Binary content is excluded by default and can be opted-in via `--include-binary --binary-mode raw|patch|meta`.
-> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks, and `compare` now classifies diffs by area/kind.
+> `diffship preview` / `diffship compare` are implemented for quick review and reproducibility checks; `preview --list` now surfaces canonical structured-context summary counts plus reading-order guidance when the bundle includes the manifest JSON, and `compare` now also surfaces manifest summary plus reading-order deltas alongside area/kind diff classification.
+> The canonical manifest JSON now also carries deterministic reading-order guidance so downstream tooling can reuse the same navigation hints as `HANDOFF.md`.
 > The TUI now includes a handoff screen for range/sources/filters/split selection, internal diff preview, build launch, and equivalent CLI command display.
+> The TUI handoff preview now prepends canonical structured-context summary counts plus manifest reading-order guidance when the temporary preview bundle includes the manifest JSON.
+> The TUI now also includes a compare screen that wraps `diffship compare --json` and surfaces manifest summary / reading-order deltas interactively.
 > The TUI handoff screen now shows a live edit buffer/help area and can edit plan path / packing limit overrides with `Tab` / `Shift+Tab` navigation.
 > `diffship build` now supports repeatable `--include <glob>` / `--exclude <glob>` filters in addition to `.diffshipignore`.
 > Packing fallback now attempts context reduction (`U3 -> U1 -> U0`) before excluding an oversized diff unit.
@@ -38,7 +41,7 @@ For reproducible installs from Git, pin to a specific tag, branch, or commit.
 Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.4.3
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.5.0
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or
@@ -111,16 +114,17 @@ All commands below are implemented.
 
 - `diffship init` — generate `.diffship/` project kit files, including an AI-facing guide
   - optional: `--template-dir <dir>` to override `docs/PROJECT_KIT_TEMPLATE.md` and `docs/AI_PROJECT_TEMPLATE.md`
-- `diffship status` — show lock state and recent runs (`--json` available)
-- `diffship runs` — list recent runs (`--json` available)
+  - optional: `--refresh-forbid` to rewrite only the dedicated forbid file from current repo detections
+- `diffship status` — show lock state and recent runs, including direct run/log artifact paths when present (`--json` available)
+- `diffship runs` — list recent runs, including direct run/log artifact paths when present (`--json` available)
 - `diffship cleanup` — remove unused diffship-owned workspaces, eligible runs, and build artifacts (`--dry-run`, `--include-runs`, `--include-builds`, `--all`, `--json`)
 - `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
-- `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
-- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`)
-- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` = extracted entry bytes without normalization, `--json`) and classify differences by area/kind
+- `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, handoff manifest JSON, rendered XML view, per-part context JSON, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
+- `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`); `--list` also surfaces structured-context summary counts when available
+- `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` = extracted entry bytes without normalization, `--json`), classify differences by area/kind, and surface manifest-summary deltas when available
 - `diffship loop <bundle>` — apply → verify → promote
 
 Filesystem path arguments accept leading tilde-slash and resolve it against the current user's `HOME`. Tilde-user shorthand is rejected.
@@ -207,7 +211,10 @@ diffship build --zip-only
 
 Output layout:
 - HANDOFF.md (entry document: Start Here / TL;DR / Change Map / Parts Index)
+- handoff.manifest.json (deterministic machine-readable bundle summary)
+- handoff.context.xml (deterministic rendered XML view)
 - parts/part_XX.patch
+- parts/part_XX.context.json (deterministic per-part machine-readable summary)
 - attachments.zip (when raw attachments exist)
 - excluded.md (when files are intentionally omitted)
 - secrets.md (when secrets-like content is detected; paths + reasons only)

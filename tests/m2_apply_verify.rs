@@ -52,6 +52,12 @@ fn write_project_config(root: &std::path::Path, body: &str) {
     fs::write(path.join("config.toml"), body).unwrap();
 }
 
+fn write_project_forbid(root: &std::path::Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("forbid.toml"), body).unwrap();
+}
+
 fn head(root: &std::path::Path) -> String {
     let out = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -282,6 +288,25 @@ fn m2_apply_and_verify_happy_path_generic_repo() {
     let commands = fs::read_to_string(run_dir.join("commands.json")).unwrap();
     assert!(commands.contains("\"phase\": \"apply\""));
     assert!(commands.contains("\"phase\": \"verify\""));
+
+    diffship_cmd()
+        .args(["runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("commands=3"))
+        .stdout(predicates::str::contains("phases=apply,verify"))
+        .stdout(predicates::str::contains("commands_json="))
+        .stdout(predicates::str::contains("phase_dirs="));
+
+    diffship_cmd()
+        .args(["status"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("run_dir="))
+        .stdout(predicates::str::contains("commands_json="))
+        .stdout(predicates::str::contains("phase_dirs="));
 }
 
 #[test]
@@ -309,6 +334,32 @@ fn m2_apply_rejects_paths_forbidden_by_project_config() {
     let base = head(root);
 
     write_project_config(
+        root,
+        r#"
+[ops.forbid]
+path1 = "README.md"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
+}
+
+#[test]
+fn m2_apply_rejects_paths_forbidden_by_dedicated_forbid_file() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_forbid(
         root,
         r#"
 [ops.forbid]

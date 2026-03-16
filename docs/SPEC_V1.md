@@ -72,6 +72,9 @@ It supports two workflows:
 - **S-TUI-003**: TUI must preview diffs with an internal viewer (colored +/-).
 - **S-TUI-004**: TUI must be able to export a plan file and show an equivalent CLI command.
 - **S-TUI-005**: TUI edit mode MUST surface the current input buffer/help and allow editing handoff plan path and packing limit overrides with keyboard navigation.
+- **S-TUI-006**: The handoff preview shown in TUI SHOULD surface canonical structured-context summary counts from `handoff.manifest.json` when that file is present in the temporary preview bundle.
+- **S-TUI-007**: When the temporary preview bundle manifest provides `reading_order`, the TUI handoff preview SHOULD surface that canonical guidance in the prepended structured-context header before the first patch part.
+- **S-TUI-008**: The TUI SHOULD provide a compare view that consumes `diffship compare --json` and surfaces canonical structured-context summary/reading-order deltas without inventing TUI-only comparison semantics.
 
 ### 4.2 `diffship build`
 
@@ -135,6 +138,11 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-OUT-003**: The handoff bundle layout is defined in `docs/BUNDLE_FORMAT.md`.
 - **S-OUT-004**: `HANDOFF.md` MUST be the primary entrypoint and contain a deterministic map to parts.
 - **S-OUT-005**: `--zip-only` MUST produce only a `.zip` bundle. When `--out <path>` is used with `--zip-only`, the path MUST end in `.zip`; otherwise diffship MUST auto-name `diffship_<timestamp>_<head7>.zip` under the selected parent directory and avoid collisions with existing diffship bundle stems.
+- **S-OUT-006**: `diffship build` MUST emit a deterministic root-level `handoff.manifest.json` that serves as the canonical machine-readable bundle summary (entrypoint, selected sources, filters, packing/warnings, parts/files index, and structured warnings/artifact metadata). Patch parts remain canonical for executable changes, and `HANDOFF.md` remains the primary human/LLM entrypoint.
+- **S-OUT-007**: `diffship build` MUST emit a deterministic `parts/part_XX.context.json` alongside each patch part. These per-part JSON files MUST remain supplemental to the patch parts, identify the corresponding patch/context paths, summarize the part scope/files/stats/constraints, and be derivable only from local deterministic repository facts.
+- **S-OUT-008**: `diffship build` MUST emit a deterministic root-level `handoff.context.xml` as a rendered view of the canonical JSON structured context. This XML view MUST remain supplemental to `handoff.manifest.json` and patch parts, and MUST be derived only from the same local deterministic repository facts.
+- **S-OUT-009**: The canonical JSON structured-context outputs (`handoff.manifest.json` and `parts/part_XX.context.json`) MUST include aggregate category/segment/status counts derived from the selected rows so downstream tooling can reason about scope without parsing rendered text views.
+- **S-OUT-010**: `handoff.manifest.json` MUST include a deterministic reading-order list derived from the selected rows so downstream tooling can reuse the same guidance without reparsing `HANDOFF.md`.
 
 #### 4.2.9 Packing algorithm and fallback
 
@@ -153,6 +161,8 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 - **S-PREVIEW-001**: Provide a simple viewer to browse `HANDOFF.md` and open parts/attachments references.
 - **S-PREVIEW-002**: Support `--json` output for bundle summary (`--list`) and entry text (`HANDOFF.md` / `--part`) so CI can consume preview results.
+- **S-PREVIEW-003**: When `handoff.manifest.json` is present, `diffship preview --list` and `--list --json` MUST surface the canonical structured-context summary (artifact presence plus aggregate category/segment/status counts) without reparsing rendered text views.
+- **S-PREVIEW-004**: When `handoff.manifest.json` provides `reading_order`, `diffship preview --list` and `--list --json` MUST surface that canonical guidance alongside the structured-context summary.
 
 ### 4.3.1 `diffship compare <bundle-a> <bundle-b>`
 
@@ -160,6 +170,8 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-COMPARE-002**: Support normalized comparison mode for determinism checks and `--strict` extracted-entry byte mode (without text normalization). Raw zip container metadata equality is out of scope for the current v1 contract.
 - **S-COMPARE-003**: Support `--json` output for machine-readable compare results while preserving non-zero exit on differences.
 - **S-COMPARE-004**: Classify compare differences by area/kind in both human-readable and JSON output.
+- **S-COMPARE-005**: When both bundles contain `handoff.manifest.json`, compare output MUST surface structured-context summary deltas derived from the canonical manifest JSON (for example file/category/segment/status count changes) in both human-readable and JSON output.
+- **S-COMPARE-006**: When both bundles contain manifest `reading_order`, compare output MUST surface canonical reading-order deltas in both human-readable and JSON output.
 
 ### 4.4 Patch bundle format (input contract)
 
@@ -273,6 +285,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, existing-file mode changes, unsupported new-file modes, and rename/copy metadata.
 - **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
 - **S-OPS-007**: Project/global config MAY define additional forbidden repo-relative path/glob patterns, and apply/loop MUST enforce them against both manifest paths and patch headers.
+- **S-OPS-008**: Project-local forbid rules MAY live in a dedicated `.diffship/forbid.toml` file in addition to the main project config, and `diffship init` SHOULD generate that file as a starter template without overwriting existing content unless `--force`.
 
 ### 7.1 OS mode sessions & worktrees
 
@@ -303,6 +316,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-RUN-004**: `status --json` and `runs --json` SHOULD surface effective base and promoted head information for runs when that data exists.
 - **S-RUN-005**: New ops run directories MUST use a human-readable timestamp-plus-`HEAD` `run_id` (`run_YYYY-MM-DD_HHMMSS_<head7>`), with a deterministic suffix when collisions occur, while older run directories remain readable.
 - **S-RUN-006**: Run directories MUST retain argv/stdout/stderr/duration metadata for diffship-spawned external commands in a machine-readable index plus per-command log files.
+- **S-RUN-007**: Human-readable `diffship runs` / `diffship status` and their JSON summaries SHOULD surface the run directory plus direct `commands.json` / phase-directory paths when command logs exist, so users can inspect hook/verify output without manually reconstructing paths.
 
 ---
 
@@ -332,10 +346,12 @@ Ops-specific codes:
 `diffship init` generates files that you can attach to a ChatGPT Project so the AI reliably follows the diffship contracts.
 
 - **S-INIT-001**: `diffship init` MUST create `.diffship/` if missing.
-- **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into .diffship/ for user attachment) and keep it suitable for copy/paste into external AI project-rule UIs.
+- **S-INIT-002**: It MUST write a human-readable workflow guide derived from `docs/PROJECT_KIT_TEMPLATE.md` (written into `.diffship/` for user attachment) and a separate short `PROJECT_RULES.md` file that is suitable for direct copy/paste into external AI project-rule UIs.
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
 - **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files, and it MUST append current repo metadata such as branch, HEAD, and active local forbid patterns.
 - **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.
 - **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.
-- **S-INIT-007**: `diffship init --zip` MUST export a minimal rules kit zip containing `PROJECT_KIT.md`, `AI_GUIDE.md`, and machine-readable metadata. The default output path MUST be under `.diffship/artifacts/rules/`, based on the current `HEAD` when available and falling back to the current `run_id` otherwise. `--out <path>` MAY override that destination.
+- **S-INIT-007**: `diffship init --zip` MUST export a minimal rules kit zip containing `PROJECT_KIT.md`, `PROJECT_RULES.md`, `AI_GUIDE.md`, and machine-readable metadata. The default output path MUST be under `.diffship/artifacts/rules/`, based on the current `HEAD` when available and falling back to the current `run_id` otherwise. `--out <path>` MAY override that destination.
 - **S-INIT-008**: Generated guides and config stub MUST include an immediately usable repository snapshot when discoverable, including repository identity, preferred promotion target, suggested read-first files, and starter commands.
+- **S-INIT-009**: `diffship init --lang <en|ja>` MUST select the language of the generated `PROJECT_RULES.md` snippet and record the resolved language in the rules-kit metadata. The default language is `en`.
+- **S-INIT-010**: `diffship init --refresh-forbid` MUST allow rewriting only `.diffship/forbid.toml` from current repo detections without requiring `--force` for unrelated generated files.

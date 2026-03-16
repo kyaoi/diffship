@@ -1,7 +1,7 @@
 use crate::cli::CompareArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::pathing::resolve_user_path;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -16,6 +16,8 @@ struct CompareReport {
     equivalent: bool,
     areas: BTreeMap<String, usize>,
     kinds: BTreeMap<String, usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    structured_context: Option<CompareStructuredContext>,
     diffs: Vec<CompareDiff>,
 }
 
@@ -25,6 +27,54 @@ struct CompareDiff {
     kind: String,
     path: String,
     detail: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CompareStructuredContext {
+    manifest_a: bool,
+    manifest_b: bool,
+    summary_diffs: Vec<CompareSummaryDiff>,
+    reading_order_diffs: Vec<CompareTextDiff>,
+}
+
+#[derive(Debug, Serialize)]
+struct CompareSummaryDiff {
+    key: String,
+    a: u64,
+    b: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct CompareTextDiff {
+    key: String,
+    a: String,
+    b: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestSummaryEnvelope {
+    summary: ManifestSummaryRaw,
+    #[serde(default)]
+    reading_order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestSummaryRaw {
+    file_count: u64,
+    part_count: u64,
+    commit_view_count: u64,
+    categories: ManifestCategoryCountsRaw,
+    segments: BTreeMap<String, u64>,
+    statuses: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestCategoryCountsRaw {
+    docs: u64,
+    config: u64,
+    source: u64,
+    tests: u64,
+    other: u64,
 }
 
 pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
@@ -79,6 +129,8 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
         }
     }
 
+    let structured_context = compare_structured_context(&a, &b);
+
     let report = CompareReport {
         bundle_a: a_path.display().to_string(),
         bundle_b: b_path.display().to_string(),
@@ -90,6 +142,7 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
         equivalent: diffs.is_empty(),
         areas: areas.clone(),
         kinds: kinds.clone(),
+        structured_context,
         diffs: diffs.clone(),
     };
     if args.json {
@@ -125,6 +178,22 @@ pub fn cmd(args: CompareArgs) -> Result<(), ExitError> {
     if !kinds.is_empty() {
         eprintln!("  kinds: {}", render_count_map(&kinds));
     }
+    if let Some(structured) = &report.structured_context
+        && !structured.summary_diffs.is_empty()
+    {
+        eprintln!("  manifest summary diffs:");
+        for diff in &structured.summary_diffs {
+            eprintln!("    - {}: {} -> {}", diff.key, diff.a, diff.b);
+        }
+    }
+    if let Some(structured) = &report.structured_context
+        && !structured.reading_order_diffs.is_empty()
+    {
+        eprintln!("  manifest reading-order diffs:");
+        for diff in &structured.reading_order_diffs {
+            eprintln!("    - {}: {:?} -> {:?}", diff.key, diff.a, diff.b);
+        }
+    }
     for d in &diffs {
         eprintln!("- [{}/{}] {}", d.area, d.kind, d.path);
     }
@@ -154,10 +223,14 @@ fn push_diff(
 }
 
 fn classify_area(path: &str) -> &'static str {
-    if path == "HANDOFF.md" {
+    if path == "HANDOFF.md" || path == "handoff.manifest.json" {
         "handoff"
+    } else if path == "handoff.context.xml" {
+        "context"
     } else if path.starts_with("parts/") && path.ends_with(".patch") {
         "patch"
+    } else if path.starts_with("parts/") && path.ends_with(".context.json") {
+        "context"
     } else if path == "attachments.zip" {
         "attachments"
     } else if path == "excluded.md" {
@@ -177,6 +250,137 @@ fn render_count_map(counts: &BTreeMap<String, usize>) -> String {
         .map(|(key, value)| format!("{key}={value}"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn compare_structured_context(
+    a: &BTreeMap<String, Vec<u8>>,
+    b: &BTreeMap<String, Vec<u8>>,
+) -> Option<CompareStructuredContext> {
+    let a_summary = manifest_summary(a);
+    let b_summary = manifest_summary(b);
+    let manifest_a = a_summary.is_some();
+    let manifest_b = b_summary.is_some();
+    if !manifest_a && !manifest_b {
+        return None;
+    }
+
+    let mut summary_diffs = Vec::new();
+    let mut reading_order_diffs = Vec::new();
+    if let (Some(a_summary), Some(b_summary)) = (a_summary, b_summary) {
+        push_summary_diff(
+            &mut summary_diffs,
+            "file_count",
+            a_summary.summary.file_count,
+            b_summary.summary.file_count,
+        );
+        push_summary_diff(
+            &mut summary_diffs,
+            "part_count",
+            a_summary.summary.part_count,
+            b_summary.summary.part_count,
+        );
+        push_summary_diff(
+            &mut summary_diffs,
+            "commit_view_count",
+            a_summary.summary.commit_view_count,
+            b_summary.summary.commit_view_count,
+        );
+        compare_named_counts(
+            &mut summary_diffs,
+            "categories",
+            BTreeMap::from([
+                ("docs".to_string(), a_summary.summary.categories.docs),
+                ("config".to_string(), a_summary.summary.categories.config),
+                ("source".to_string(), a_summary.summary.categories.source),
+                ("tests".to_string(), a_summary.summary.categories.tests),
+                ("other".to_string(), a_summary.summary.categories.other),
+            ]),
+            BTreeMap::from([
+                ("docs".to_string(), b_summary.summary.categories.docs),
+                ("config".to_string(), b_summary.summary.categories.config),
+                ("source".to_string(), b_summary.summary.categories.source),
+                ("tests".to_string(), b_summary.summary.categories.tests),
+                ("other".to_string(), b_summary.summary.categories.other),
+            ]),
+        );
+        compare_named_counts(
+            &mut summary_diffs,
+            "segments",
+            a_summary.summary.segments,
+            b_summary.summary.segments,
+        );
+        compare_named_counts(
+            &mut summary_diffs,
+            "statuses",
+            a_summary.summary.statuses,
+            b_summary.summary.statuses,
+        );
+        compare_string_lists(
+            &mut reading_order_diffs,
+            "reading_order",
+            &a_summary.reading_order,
+            &b_summary.reading_order,
+        );
+    }
+
+    Some(CompareStructuredContext {
+        manifest_a,
+        manifest_b,
+        summary_diffs,
+        reading_order_diffs,
+    })
+}
+
+fn manifest_summary(entries: &BTreeMap<String, Vec<u8>>) -> Option<ManifestSummaryEnvelope> {
+    let bytes = entries.get("handoff.manifest.json")?;
+    serde_json::from_slice::<ManifestSummaryEnvelope>(bytes).ok()
+}
+
+fn compare_named_counts(
+    out: &mut Vec<CompareSummaryDiff>,
+    prefix: &str,
+    a: BTreeMap<String, u64>,
+    b: BTreeMap<String, u64>,
+) {
+    let mut keys = BTreeSet::new();
+    keys.extend(a.keys().cloned());
+    keys.extend(b.keys().cloned());
+    for key in keys {
+        let a_value = a.get(&key).copied().unwrap_or(0);
+        let b_value = b.get(&key).copied().unwrap_or(0);
+        push_summary_diff(out, &format!("{prefix}.{key}"), a_value, b_value);
+    }
+}
+
+fn push_summary_diff(out: &mut Vec<CompareSummaryDiff>, key: &str, a: u64, b: u64) {
+    if a != b {
+        out.push(CompareSummaryDiff {
+            key: key.to_string(),
+            a,
+            b,
+        });
+    }
+}
+
+fn compare_string_lists(out: &mut Vec<CompareTextDiff>, prefix: &str, a: &[String], b: &[String]) {
+    let max_len = a.len().max(b.len());
+    for idx in 0..max_len {
+        let left = a
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "(missing)".to_string());
+        let right = b
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "(missing)".to_string());
+        if left != right {
+            out.push(CompareTextDiff {
+                key: format!("{prefix}[{idx}]"),
+                a: left,
+                b: right,
+            });
+        }
+    }
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {

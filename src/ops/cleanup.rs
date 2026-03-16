@@ -257,7 +257,8 @@ fn collect_sandbox_candidates(
         let run_dir = run::run_dir(git_root, &run_id);
         let size_bytes = dir_size_bytes(&path);
 
-        if !run_dir.exists() || worktree::read_sandbox_meta(git_root, &run_id).is_none() {
+        let run_meta_ok = run_has_valid_meta(&run_dir);
+        if !run_meta_ok || worktree::read_sandbox_meta(git_root, &run_id).is_none() {
             if !scopes.include_runs || !run_dir.exists() {
                 out.push(CleanupCandidate {
                     kind: CleanupKind::OrphanSandbox,
@@ -312,6 +313,7 @@ fn collect_run_candidates(
 
         let run_id = ent.file_name().to_string_lossy().to_string();
         let run_dir = ent.path();
+        let run_meta_ok = run_has_valid_meta(&run_dir);
         let sandbox_path = worktree::sandbox_dir(git_root, &run_id);
         let sandbox_meta = worktree::read_sandbox_meta(git_root, &run_id);
         let sandbox_exists = sandbox_path.exists();
@@ -334,13 +336,12 @@ fn collect_run_candidates(
             continue;
         }
 
-        if sandbox_meta.is_none() || !sandbox_exists {
+        if !run_meta_ok || sandbox_meta.is_none() || !sandbox_exists {
             out.push(CleanupCandidate {
                 kind: CleanupKind::OrphanRun,
                 name: run_id,
                 path: run_dir.clone(),
-                reason: "sandbox metadata is missing or the sandbox worktree no longer exists"
-                    .to_string(),
+                reason: orphan_run_reason(run_meta_ok, sandbox_meta.is_some(), sandbox_exists),
                 size_bytes: dir_size_bytes(&run_dir) + sandbox_size,
                 extra_paths,
                 extra_files: Vec::new(),
@@ -472,6 +473,27 @@ fn run_is_promoted(run_dir: &Path) -> bool {
         .and_then(|v| v.as_str())
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false)
+}
+
+fn run_has_valid_meta(run_dir: &Path) -> bool {
+    let path = run_dir.join("run.json");
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    serde_json::from_slice::<run::RunMeta>(&bytes).is_ok()
+}
+
+fn orphan_run_reason(run_meta_ok: bool, sandbox_meta_ok: bool, sandbox_exists: bool) -> String {
+    if !run_meta_ok {
+        return "run metadata is missing or invalid".to_string();
+    }
+    if !sandbox_meta_ok {
+        return "sandbox metadata is missing or invalid".to_string();
+    }
+    if !sandbox_exists {
+        return "sandbox worktree no longer exists".to_string();
+    }
+    "run metadata is inconsistent".to_string()
 }
 
 fn remove_candidate(git_root: &Path, candidate: &CleanupCandidate) -> Result<(), ExitError> {

@@ -1,5 +1,5 @@
 use crate::exit::{EXIT_GENERAL, ExitError};
-use crate::ops::{lock, run, session, tasks, worktree};
+use crate::ops::{command_log, lock, run, session, tasks, worktree};
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
@@ -21,6 +21,7 @@ enum Screen {
     Status,
     Loop,
     Handoff,
+    Compare,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,8 @@ enum InputMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditTarget {
     LoopBundle,
+    CompareBundleA,
+    CompareBundleB,
     HandoffFrom,
     HandoffTo,
     HandoffA,
@@ -70,6 +73,7 @@ struct RunDetail {
     apply: Option<Value>,
     verify: Option<Value>,
     promotion: Option<Value>,
+    commands: Vec<command_log::CommandLogRecord>,
     user_tasks_path: PathBuf,
 }
 
@@ -81,6 +85,17 @@ struct HandoffState {
     preview_title: String,
     preview_lines: Vec<String>,
     preview_scroll: usize,
+}
+
+#[derive(Debug, Clone)]
+struct CompareState {
+    bundle_a: String,
+    bundle_b: String,
+    strict: bool,
+    message: String,
+    report_title: String,
+    report_lines: Vec<String>,
+    report_scroll: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +130,9 @@ struct App {
     handoff_config: crate::handoff_config::HandoffConfig,
     handoff_profile_names: Vec<String>,
     handoff: HandoffState,
+
+    // Compare
+    compare: CompareState,
 
     should_exit: bool,
 }
@@ -212,6 +230,16 @@ impl App {
                 preview_scroll: 0,
             },
 
+            compare: CompareState {
+                bundle_a: String::new(),
+                bundle_b: String::new(),
+                strict: false,
+                message: "Type two bundle paths, then press Enter to compare.".to_string(),
+                report_title: "(no compare yet)".to_string(),
+                report_lines: vec![],
+                report_scroll: 0,
+            },
+
             should_exit: false,
         })
     }
@@ -251,7 +279,7 @@ impl App {
 
         writeln_trunc(
             &mut out,
-            "diffship TUI  |  [1]Runs [2]Status [3]Loop [4]Handoff  |  r=refresh  q/Esc=quit",
+            "diffship TUI  |  [1]Runs [2]Status [3]Loop [4]Handoff [5]Compare  |  r=refresh  q/Esc=quit",
             w,
         )?;
         writeln_trunc(&mut out, &line('-', w), w)?;
@@ -261,6 +289,7 @@ impl App {
             Screen::Status => self.draw_status(&mut out, w, h)?,
             Screen::Loop => self.draw_loop(&mut out, w, h)?,
             Screen::Handoff => self.draw_handoff(&mut out, w, h)?,
+            Screen::Compare => self.draw_compare(&mut out, w, h)?,
         }
 
         out.flush()
@@ -336,6 +365,23 @@ impl App {
             &format!("promotion : {}", summarize_step(d.promotion.as_ref())),
             w,
         )?;
+        if d.commands.is_empty() {
+            writeln_trunc(out, "commands  : (none)", w)?;
+        } else {
+            let phases = d
+                .commands
+                .iter()
+                .map(|record| record.phase.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(",");
+            writeln_trunc(
+                out,
+                &format!("commands  : {} ({})", d.commands.len(), phases),
+                w,
+            )?;
+        }
 
         // Paths / tasks
         let tasks_present = d.user_tasks_path.is_file();
@@ -376,12 +422,30 @@ impl App {
         writeln_trunc(
             out,
             &format!(
+                "  - commands.json   : {}",
+                d.run_dir.join("commands.json").display()
+            ),
+            w,
+        )?;
+        writeln_trunc(
+            out,
+            &format!(
                 "  - tasks           : {}{}",
                 d.user_tasks_path.display(),
                 if tasks_present { "" } else { " (missing)" }
             ),
             w,
         )?;
+        for phase in ["apply", "post-apply", "verify", "promote"] {
+            let phase_path = d.run_dir.join(phase);
+            if phase_path.exists() {
+                writeln_trunc(
+                    out,
+                    &format!("  - {:<15}: {}", format!("{phase}/"), phase_path.display()),
+                    w,
+                )?;
+            }
+        }
 
         Ok(())
     }
@@ -535,6 +599,35 @@ impl App {
         Ok(())
     }
 
+    fn draw_compare(&self, out: &mut impl Write, w: u16, h: u16) -> Result<(), ExitError> {
+        for line in compare_overview_lines(&self.input_mode, &self.compare) {
+            writeln_trunc(out, &line, w)?;
+        }
+        let reserved = 14usize;
+        let max_rows = h as usize;
+        let report_rows = max_rows.saturating_sub(reserved).max(4);
+        if self.compare.report_lines.is_empty() {
+            writeln_trunc(out, "  (no compare report yet)", w)?;
+        } else {
+            let start = self
+                .compare
+                .report_scroll
+                .min(self.compare.report_lines.len());
+            let end = (start + report_rows).min(self.compare.report_lines.len());
+            for line in &self.compare.report_lines[start..end] {
+                writeln_trunc(out, line, w)?;
+            }
+        }
+        writeln_trunc(out, "", w)?;
+        writeln_trunc(out, "4) Message", w)?;
+        writeln_trunc(out, &self.compare.message, w)?;
+        writeln_trunc(out, "", w)?;
+        for line in edit_status_lines(&self.input_mode, &self.edit_buffer) {
+            writeln_trunc(out, &line, w)?;
+        }
+        Ok(())
+    }
+
     fn handle_key(
         &mut self,
         git_root: &Path,
@@ -570,10 +663,14 @@ impl App {
             KeyCode::Char('4') => {
                 self.screen = Screen::Handoff;
             }
+            KeyCode::Char('5') => {
+                self.screen = Screen::Compare;
+            }
             KeyCode::Char('r') => {
                 self.refresh_all(git_root)?;
                 self.loop_message = "refreshed".to_string();
                 self.handoff.message = "refreshed".to_string();
+                self.compare.message = "refreshed".to_string();
             }
             _ => {}
         }
@@ -583,6 +680,7 @@ impl App {
             Screen::Status => Ok(()),
             Screen::Loop => self.handle_loop_keys(git_root, guard, key),
             Screen::Handoff => self.handle_handoff_keys(git_root, guard, key),
+            Screen::Compare => self.handle_compare_keys(git_root, guard, key),
         }
     }
 
@@ -644,6 +742,40 @@ impl App {
                 } else {
                     self.run_loop_now(git_root, guard)?;
                 }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_compare_keys(
+        &mut self,
+        git_root: &Path,
+        guard: &mut TerminalGuard,
+        key: KeyEvent,
+    ) -> Result<(), ExitError> {
+        match key.code {
+            KeyCode::Char('a') => {
+                self.start_edit(EditTarget::CompareBundleA, self.compare.bundle_a.clone());
+            }
+            KeyCode::Char('b') => {
+                self.start_edit(EditTarget::CompareBundleB, self.compare.bundle_b.clone());
+            }
+            KeyCode::Char('s') => {
+                self.compare.strict = !self.compare.strict;
+            }
+            KeyCode::Char('c') => {
+                self.compare.message.clear();
+                self.compare.report_scroll = 0;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.compare.report_scroll = self.compare.report_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.compare.report_scroll = self.compare.report_scroll.saturating_add(1);
+            }
+            KeyCode::Enter => {
+                self.run_compare_now(git_root, guard)?;
             }
             _ => {}
         }
@@ -930,6 +1062,49 @@ impl App {
         Ok(())
     }
 
+    fn run_compare_now(
+        &mut self,
+        git_root: &Path,
+        guard: &mut TerminalGuard,
+    ) -> Result<(), ExitError> {
+        if self.compare.bundle_a.trim().is_empty() || self.compare.bundle_b.trim().is_empty() {
+            self.compare.message =
+                "Both bundle paths are required. Press a / b to edit.".to_string();
+            return Ok(());
+        }
+
+        let mut args = vec![
+            "compare".to_string(),
+            self.compare.bundle_a.trim().to_string(),
+            self.compare.bundle_b.trim().to_string(),
+        ];
+        if self.compare.strict {
+            args.push("--strict".to_string());
+        }
+        args.push("--json".to_string());
+
+        guard.suspend()?;
+        let run = run_diffship_child_output(git_root, &args)?;
+        guard.resume()?;
+
+        match render_compare_report(&run) {
+            Ok((title, lines)) => {
+                self.compare.report_title = title;
+                self.compare.report_lines = lines;
+                self.compare.report_scroll = 0;
+                self.compare.message = if run.code == 0 {
+                    "Compare report refreshed.".to_string()
+                } else {
+                    "Compare report refreshed (differences detected).".to_string()
+                };
+            }
+            Err(message) => {
+                self.compare.message = message;
+            }
+        }
+        Ok(())
+    }
+
     fn start_edit(&mut self, target: EditTarget, initial: String) {
         self.edit_buffer = initial;
         self.input_mode = InputMode::Editing(target);
@@ -956,6 +1131,8 @@ impl App {
     fn current_edit_value(&self, target: EditTarget) -> String {
         match target {
             EditTarget::LoopBundle => self.bundle_input.clone(),
+            EditTarget::CompareBundleA => self.compare.bundle_a.clone(),
+            EditTarget::CompareBundleB => self.compare.bundle_b.clone(),
             EditTarget::HandoffFrom => self.handoff.plan.from.clone().unwrap_or_default(),
             EditTarget::HandoffTo => self.handoff.plan.to.clone().unwrap_or_default(),
             EditTarget::HandoffA => self.handoff.plan.a.clone().unwrap_or_default(),
@@ -973,6 +1150,12 @@ impl App {
         match target {
             EditTarget::LoopBundle => {
                 self.bundle_input = value;
+            }
+            EditTarget::CompareBundleA => {
+                self.compare.bundle_a = value;
+            }
+            EditTarget::CompareBundleB => {
+                self.compare.bundle_b = value;
             }
             EditTarget::HandoffFrom => {
                 self.handoff.plan.from = empty_to_none(value);
@@ -1162,8 +1345,91 @@ fn read_preview_lines(dir: &Path) -> Result<(String, Vec<String>), ExitError> {
         .unwrap_or(&first_part)
         .display()
         .to_string();
-    let lines = text.lines().map(|s| s.to_string()).collect::<Vec<_>>();
+    let mut lines = preview_summary_lines(dir);
+    lines.extend(text.lines().map(|s| s.to_string()));
     Ok((title, lines))
+}
+
+fn preview_summary_lines(dir: &Path) -> Vec<String> {
+    let manifest_path = dir.join("handoff.manifest.json");
+    let Ok(text) = fs::read_to_string(&manifest_path) else {
+        return vec![];
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return vec![];
+    };
+    let Some(summary) = value.get("summary") else {
+        return vec![];
+    };
+
+    let file_count = summary
+        .get("file_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let part_count = summary
+        .get("part_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let commit_view_count = summary
+        .get("commit_view_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let mut lines = vec![
+        "# Structured context".to_string(),
+        format!(
+            "files={} parts={} commit-views={}",
+            file_count, part_count, commit_view_count
+        ),
+    ];
+
+    if let Some(categories) = value_count_map(summary.get("categories")) {
+        lines.push(format!("categories: {}", render_u64_count_map(&categories)));
+    }
+    if let Some(segments) = value_count_map(summary.get("segments")) {
+        lines.push(format!("segments: {}", render_u64_count_map(&segments)));
+    }
+    if let Some(statuses) = value_count_map(summary.get("statuses")) {
+        lines.push(format!("statuses: {}", render_u64_count_map(&statuses)));
+    }
+    if let Some(reading_order) = value_string_list(value.get("reading_order"))
+        && !reading_order.is_empty()
+    {
+        lines.push("reading order:".to_string());
+        for item in reading_order {
+            lines.push(format!("- {item}"));
+        }
+    }
+    lines.push(String::new());
+    lines
+}
+
+fn value_count_map(value: Option<&Value>) -> Option<Vec<(String, u64)>> {
+    let object = value?.as_object()?;
+    let mut items = object
+        .iter()
+        .filter_map(|(key, value)| value.as_u64().map(|count| (key.clone(), count)))
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(items)
+}
+
+fn value_string_list(value: Option<&Value>) -> Option<Vec<String>> {
+    let array = value?.as_array()?;
+    Some(
+        array
+            .iter()
+            .filter_map(|entry| entry.as_str().map(str::to_string))
+            .collect(),
+    )
+}
+
+fn render_u64_count_map(items: &[(String, u64)]) -> String {
+    items
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn summarize_child_success(kind: &str, run: &ChildRunResult) -> String {
@@ -1189,6 +1455,126 @@ fn summarize_child_failure(kind: &str, run: &ChildRunResult) -> String {
         "(no output)".to_string()
     };
     format!("{kind} failed (exit={}): {detail}", run.code)
+}
+
+fn render_compare_report(run: &ChildRunResult) -> Result<(String, Vec<String>), String> {
+    let value = serde_json::from_str::<Value>(&run.stdout)
+        .map_err(|_| summarize_child_failure("compare", run))?;
+    let equivalent = value
+        .get("equivalent")
+        .and_then(|entry| entry.as_bool())
+        .unwrap_or(false);
+    let mode = value
+        .get("mode")
+        .and_then(|entry| entry.as_str())
+        .unwrap_or("unknown");
+    let title = if equivalent {
+        format!("compare ({mode}): equivalent")
+    } else {
+        format!("compare ({mode}): different")
+    };
+
+    let mut lines = vec![
+        "# Compare".to_string(),
+        format!("equivalent={}", yes_no(equivalent)),
+        format!(
+            "bundle_a={}",
+            value
+                .get("bundle_a")
+                .and_then(|entry| entry.as_str())
+                .unwrap_or("(unknown)")
+        ),
+        format!(
+            "bundle_b={}",
+            value
+                .get("bundle_b")
+                .and_then(|entry| entry.as_str())
+                .unwrap_or("(unknown)")
+        ),
+    ];
+
+    if let Some(areas) = value_count_map(value.get("areas")) {
+        lines.push(format!("areas: {}", render_u64_count_map(&areas)));
+    }
+    if let Some(kinds) = value_count_map(value.get("kinds")) {
+        lines.push(format!("kinds: {}", render_u64_count_map(&kinds)));
+    }
+
+    if let Some(structured) = value.get("structured_context") {
+        let manifest_a = structured
+            .get("manifest_a")
+            .and_then(|entry| entry.as_bool())
+            .unwrap_or(false);
+        let manifest_b = structured
+            .get("manifest_b")
+            .and_then(|entry| entry.as_bool())
+            .unwrap_or(false);
+        lines.push(format!(
+            "manifest-json: a={} b={}",
+            yes_no(manifest_a),
+            yes_no(manifest_b)
+        ));
+
+        if let Some(summary_diffs) = value_object_diffs(structured.get("summary_diffs"), false)
+            && !summary_diffs.is_empty()
+        {
+            lines.push("manifest summary diffs:".to_string());
+            lines.extend(summary_diffs.into_iter().map(|line| format!("- {line}")));
+        }
+        if let Some(reading_diffs) = value_object_diffs(structured.get("reading_order_diffs"), true)
+            && !reading_diffs.is_empty()
+        {
+            lines.push("manifest reading-order diffs:".to_string());
+            lines.extend(reading_diffs.into_iter().map(|line| format!("- {line}")));
+        }
+    }
+
+    if let Some(diff_lines) = value_diff_lines(value.get("diffs"))
+        && !diff_lines.is_empty()
+    {
+        lines.push("file diffs:".to_string());
+        lines.extend(diff_lines.into_iter().map(|line| format!("- {line}")));
+    }
+
+    Ok((title, lines))
+}
+
+fn value_object_diffs(value: Option<&Value>, quote_text: bool) -> Option<Vec<String>> {
+    let array = value?.as_array()?;
+    Some(
+        array
+            .iter()
+            .filter_map(|entry| {
+                let key = entry.get("key")?.as_str()?;
+                if quote_text {
+                    let a = entry.get("a")?.as_str()?;
+                    let b = entry.get("b")?.as_str()?;
+                    Some(format!("{key}: {a:?} -> {b:?}"))
+                } else {
+                    let a = entry.get("a")?.as_u64()?;
+                    let b = entry.get("b")?.as_u64()?;
+                    Some(format!("{key}: {a} -> {b}"))
+                }
+            })
+            .collect(),
+    )
+}
+
+fn value_diff_lines(value: Option<&Value>) -> Option<Vec<String>> {
+    let array = value?.as_array()?;
+    Some(
+        array
+            .iter()
+            .filter_map(|entry| {
+                Some(format!(
+                    "[{}/{}] {}",
+                    entry.get("area")?.as_str()?,
+                    entry.get("kind")?.as_str()?,
+                    entry.get("path")?.as_str()?
+                ))
+            })
+            .collect(),
+    )
 }
 
 fn load_status(git_root: &Path, recent_runs_limit: usize) -> Result<StatusSnapshot, ExitError> {
@@ -1253,6 +1639,7 @@ fn load_run_detail(git_root: &Path, run_id: &str) -> Result<Option<RunDetail>, E
     let apply = read_json_value_opt(&run_dir.join("apply.json"))?;
     let verify = read_json_value_opt(&run_dir.join("verify.json"))?;
     let promotion = read_json_value_opt(&run_dir.join("promotion.json"))?;
+    let commands = command_log::read_records(&run_dir)?;
 
     Ok(Some(RunDetail {
         meta,
@@ -1261,6 +1648,7 @@ fn load_run_detail(git_root: &Path, run_id: &str) -> Result<Option<RunDetail>, E
         apply,
         verify,
         promotion,
+        commands,
         user_tasks_path: tasks::user_tasks_path_in_run(&run_dir),
     }))
 }
@@ -1325,6 +1713,8 @@ fn summarize_step(v: Option<&Value>) -> String {
 fn edit_target_label(target: EditTarget) -> &'static str {
     match target {
         EditTarget::LoopBundle => "loop.bundle",
+        EditTarget::CompareBundleA => "compare.bundle_a",
+        EditTarget::CompareBundleB => "compare.bundle_b",
         EditTarget::HandoffFrom => "handoff.from",
         EditTarget::HandoffTo => "handoff.to",
         EditTarget::HandoffA => "handoff.a",
@@ -1403,6 +1793,7 @@ fn yes_no(v: bool) -> &'static str {
 }
 
 fn next_edit_target(target: EditTarget, reverse: bool) -> Option<EditTarget> {
+    const COMPARE_ORDER: &[EditTarget] = &[EditTarget::CompareBundleA, EditTarget::CompareBundleB];
     const ORDER: &[EditTarget] = &[
         EditTarget::HandoffFrom,
         EditTarget::HandoffTo,
@@ -1416,13 +1807,18 @@ fn next_edit_target(target: EditTarget, reverse: bool) -> Option<EditTarget> {
         EditTarget::HandoffMaxBytes,
     ];
 
-    let idx = ORDER.iter().position(|entry| *entry == target)?;
-    let next = if reverse {
-        idx.checked_sub(1).unwrap_or(ORDER.len() - 1)
+    let order = if COMPARE_ORDER.contains(&target) {
+        COMPARE_ORDER
     } else {
-        (idx + 1) % ORDER.len()
+        ORDER
     };
-    Some(ORDER[next])
+    let idx = order.iter().position(|entry| *entry == target)?;
+    let next = if reverse {
+        idx.checked_sub(1).unwrap_or(order.len() - 1)
+    } else {
+        (idx + 1) % order.len()
+    };
+    Some(order[next])
 }
 
 fn trim_last_word(s: &mut String) {
@@ -1441,7 +1837,7 @@ fn edit_status_lines(input_mode: &InputMode, edit_buffer: &str) -> Vec<String> {
     match input_mode {
         InputMode::Normal => vec![
             "7) Edit Buffer".to_string(),
-            "  - idle (press a field key to edit, Tab/Shift+Tab works while editing handoff fields)"
+            "  - idle (press a field key to edit, Tab/Shift+Tab works while editing handoff/compare fields)"
                 .to_string(),
         ],
         InputMode::Editing(target) => vec![
@@ -1463,6 +1859,9 @@ fn edit_status_lines(input_mode: &InputMode, edit_buffer: &str) -> Vec<String> {
 fn edit_help_line(target: EditTarget) -> &'static str {
     match target {
         EditTarget::LoopBundle => "Enter=save+run  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete word",
+        EditTarget::CompareBundleA | EditTarget::CompareBundleB => {
+            "Enter=save  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete word  Tab/Shift+Tab=next field"
+        }
         EditTarget::HandoffInclude | EditTarget::HandoffExclude => {
             "Enter=save  Esc=cancel  Ctrl+U=clear  Ctrl+W=delete token  comma/newline separated"
         }
@@ -1558,6 +1957,57 @@ fn handoff_overview_lines(input_mode: &InputMode, handoff: &HandoffState) -> Vec
     ]
 }
 
+fn compare_overview_lines(input_mode: &InputMode, compare: &CompareState) -> Vec<String> {
+    let mode = match input_mode {
+        InputMode::Normal => "normal".to_string(),
+        InputMode::Editing(target) => format!("editing {}", edit_target_label(*target)),
+    };
+    let mut compare_cmd = format!(
+        "diffship compare {} {}",
+        if compare.bundle_a.trim().is_empty() {
+            "<bundle-a>"
+        } else {
+            compare.bundle_a.trim()
+        },
+        if compare.bundle_b.trim().is_empty() {
+            "<bundle-b>"
+        } else {
+            compare.bundle_b.trim()
+        }
+    );
+    if compare.strict {
+        compare_cmd.push_str(" --strict");
+    }
+
+    vec![
+        "Compare".to_string(),
+        "Keys: a=bundle-a  b=bundle-b  s=strict  Enter=compare  c=clear message  ↑/↓=scroll report"
+            .to_string(),
+        String::new(),
+        format!("mode        : {mode}"),
+        format!("compare cmd : {compare_cmd}"),
+        format!(
+            "bundle a    : {}",
+            if compare.bundle_a.trim().is_empty() {
+                "(empty)"
+            } else {
+                compare.bundle_a.trim()
+            }
+        ),
+        format!(
+            "bundle b    : {}",
+            if compare.bundle_b.trim().is_empty() {
+                "(empty)"
+            } else {
+                compare.bundle_b.trim()
+            }
+        ),
+        format!("strict      : {}", yes_no(compare.strict)),
+        String::new(),
+        format!("3) Report: {}", compare.report_title),
+    ]
+}
+
 fn current_plan_export_path(handoff: &HandoffState) -> String {
     if handoff.plan.zip_only {
         handoff.plan_path.clone()
@@ -1640,10 +2090,11 @@ fn display_opt_num<T: ToString>(value: Option<T>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChildRunResult, EditTarget, HandoffState, InputMode, PreviewLineStyle,
-        current_plan_export_path, cycle_named_value, cycle_value, edit_status_lines,
-        handoff_overview_lines, next_edit_target, parse_optional_u64, parse_optional_usize,
-        parse_pattern_list, preview_line_style, should_start_tui_impl, summarize_child_failure,
+        ChildRunResult, CompareState, EditTarget, HandoffState, InputMode, PreviewLineStyle,
+        compare_overview_lines, current_plan_export_path, cycle_named_value, cycle_value,
+        edit_status_lines, handoff_overview_lines, next_edit_target, parse_optional_u64,
+        parse_optional_usize, parse_pattern_list, preview_line_style, read_preview_lines,
+        render_compare_report, should_start_tui_impl, summarize_child_failure,
         summarize_child_success,
     };
 
@@ -1704,6 +2155,22 @@ mod tests {
             Some(EditTarget::HandoffMaxBytes)
         );
         assert_eq!(next_edit_target(EditTarget::LoopBundle, false), None);
+    }
+
+    #[test]
+    fn next_edit_target_cycles_compare_fields() {
+        assert_eq!(
+            next_edit_target(EditTarget::CompareBundleA, false),
+            Some(EditTarget::CompareBundleB)
+        );
+        assert_eq!(
+            next_edit_target(EditTarget::CompareBundleB, false),
+            Some(EditTarget::CompareBundleA)
+        );
+        assert_eq!(
+            next_edit_target(EditTarget::CompareBundleA, true),
+            Some(EditTarget::CompareBundleB)
+        );
     }
 
     #[test]
@@ -1787,6 +2254,29 @@ mod tests {
     }
 
     #[test]
+    fn compare_overview_lists_command_and_inputs() {
+        let compare = CompareState {
+            bundle_a: "out/a.zip".to_string(),
+            bundle_b: "out/b.zip".to_string(),
+            strict: true,
+            message: String::new(),
+            report_title: "compare (strict): different".to_string(),
+            report_lines: vec![],
+            report_scroll: 0,
+        };
+        let lines =
+            compare_overview_lines(&InputMode::Editing(EditTarget::CompareBundleA), &compare);
+        let joined = lines.join("\n");
+        assert!(joined.contains("Compare"));
+        assert!(joined.contains("editing compare.bundle_a"));
+        assert!(joined.contains("diffship compare out/a.zip out/b.zip --strict"));
+        assert!(joined.contains("bundle a    : out/a.zip"));
+        assert!(joined.contains("bundle b    : out/b.zip"));
+        assert!(joined.contains("strict      : yes"));
+        assert!(joined.contains("3) Report: compare (strict): different"));
+    }
+
+    #[test]
     fn preview_line_style_classifies_diff_lines() {
         assert_eq!(preview_line_style("+added"), PreviewLineStyle::Added);
         assert_eq!(preview_line_style("-removed"), PreviewLineStyle::Removed);
@@ -1794,6 +2284,109 @@ mod tests {
         assert_eq!(preview_line_style("diff --git"), PreviewLineStyle::Plain);
         assert_eq!(preview_line_style("--- a/file"), PreviewLineStyle::Plain);
         assert_eq!(preview_line_style("+++ b/file"), PreviewLineStyle::Plain);
+    }
+
+    #[test]
+    fn read_preview_lines_includes_manifest_summary_when_present() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let root = td.path();
+        std::fs::create_dir_all(root.join("parts")).expect("parts dir");
+        std::fs::write(
+            root.join("handoff.manifest.json"),
+            r#"{
+    "summary": {
+    "file_count": 2,
+    "part_count": 1,
+    "commit_view_count": 0,
+    "categories": {
+      "docs": 1,
+      "config": 0,
+      "source": 1,
+      "tests": 0,
+      "other": 0
+    },
+    "segments": {
+      "committed": 2
+    },
+      "statuses": {
+      "M": 1,
+      "A": 1
+    }
+  },
+  "reading_order": [
+    "Source changes: `part_01.patch` (2 files)",
+    "Other changes"
+  ]
+}
+"#,
+        )
+        .expect("manifest");
+        std::fs::write(
+            root.join("parts").join("part_01.patch"),
+            "diff --git a/a.txt b/a.txt\n+line\n",
+        )
+        .expect("patch");
+
+        let (title, lines) = read_preview_lines(root).expect("preview lines");
+        assert_eq!(title, "parts/part_01.patch");
+        assert_eq!(
+            lines.first().map(String::as_str),
+            Some("# Structured context")
+        );
+        assert_eq!(
+            lines.get(1).map(String::as_str),
+            Some("files=2 parts=1 commit-views=0")
+        );
+        let joined = lines.join("\n");
+        assert!(joined.contains("categories: config=0, docs=1, other=0, source=1, tests=0"));
+        assert!(joined.contains("segments: committed=2"));
+        assert!(joined.contains("statuses: A=1, M=1"));
+        assert!(joined.contains("reading order:"));
+        assert!(joined.contains("- Source changes: `part_01.patch` (2 files)"));
+        assert!(joined.contains("- Other changes"));
+        assert!(joined.contains("diff --git a/a.txt b/a.txt"));
+    }
+
+    #[test]
+    fn render_compare_report_surfaces_structured_context_deltas() {
+        let run = ChildRunResult {
+            code: 1,
+            stdout: r#"{
+  "bundle_a": "a.zip",
+  "bundle_b": "b.zip",
+  "mode": "normalized",
+  "equivalent": false,
+  "areas": { "handoff": 1, "patch": 1 },
+  "kinds": { "content_differs": 2 },
+  "structured_context": {
+    "manifest_a": true,
+    "manifest_b": true,
+    "summary_diffs": [
+      { "key": "file_count", "a": 1, "b": 2 }
+    ],
+    "reading_order_diffs": [
+      { "key": "reading_order[0]", "a": "Docs", "b": "Source" }
+    ]
+  },
+  "diffs": [
+    { "area": "patch", "kind": "content_differs", "path": "parts/part_01.patch", "detail": "content differs: parts/part_01.patch" }
+  ]
+}"#
+            .to_string(),
+            stderr: "bundle comparison failed (see JSON diff output)".to_string(),
+        };
+
+        let (title, lines) = render_compare_report(&run).expect("compare report");
+        let joined = lines.join("\n");
+        assert_eq!(title, "compare (normalized): different");
+        assert!(joined.contains("equivalent=no"));
+        assert!(joined.contains("areas: handoff=1, patch=1"));
+        assert!(joined.contains("manifest summary diffs:"));
+        assert!(joined.contains("- file_count: 1 -> 2"));
+        assert!(joined.contains("manifest reading-order diffs:"));
+        assert!(joined.contains(r#"- reading_order[0]: "Docs" -> "Source""#));
+        assert!(joined.contains("file diffs:"));
+        assert!(joined.contains("- [patch/content_differs] parts/part_01.patch"));
     }
 
     #[test]
