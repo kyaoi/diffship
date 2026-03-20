@@ -14,6 +14,8 @@
 - Current HEAD (for staged/unstaged/untracked): `<head>`
 - Include filters (optional): `<glob1>`, `<glob2>`
 - Exclude filters (optional): `<glob3>`
+- Project context (optional): `PROJECT_CONTEXT.md` (`<included snapshots>` snapshots, `<omitted>` omitted)
+- AI request kit: `AI_REQUESTS.md`
 - Reading order:
   1) Docs changes: `<parts/files>`
   2) Config/build changes: `<parts/files>`
@@ -73,6 +75,19 @@
 
 ### part_02.patch
 ...
+
+---
+
+## Project Context (optional)
+- Read `PROJECT_CONTEXT.md` before widening scope beyond the changed files.
+- `project.context.json` is the canonical machine-readable index for the supplemental project-context pack.
+- `project_context/files/...` contains the selected text snapshots.
+
+---
+
+## AI Request Kit
+- `AI_REQUESTS.md` provides the deterministic bundle-local hosted-AI request scaffold.
+- It should summarize the reading order, supported output modes, and hard loop-safety constraints for the current bundle.
 
 ---
 

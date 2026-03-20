@@ -124,6 +124,42 @@ Conventions:
 - **S-OUT-008** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs`, `tests/m6_compare.rs` — Code: `src/handoff.rs`, `src/bundle_compare.rs` — Status: Implemented
 - **S-OUT-009** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-010** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-011** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-012** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-013** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-014** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-015** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-016** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-017** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_preview.rs` — Code: `src/handoff.rs`, `src/preview.rs`, `src/cli.rs`, `src/plan.rs` — Status: Implemented
+- **S-OUT-018** — Tests: `tests/m6_handoff_build.rs`, `tests/m6_preview.rs` — Code: `src/handoff.rs`, `src/preview.rs` — Status: Implemented
+- **S-OUT-019** — Tests: `src/handoff.rs`, `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-020** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-021** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-022** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-023** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-024** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-025** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-026** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-027** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-028** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-029** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-030** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-031** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-032** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-033** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-034** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-035** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-036** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-037** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-038** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-039** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-040** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-041** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-042** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-043** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-044** — Tests: `tests/m6_handoff_build.rs`, `src/handoff.rs` unit tests — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-045** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-046** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -159,6 +195,12 @@ Conventions:
 - **S-PREVIEW-002** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs`, `src/cli.rs` — Status: Implemented
 - **S-PREVIEW-003** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
 - **S-PREVIEW-004** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-005** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-006** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-007** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-008** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-009** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
+- **S-PREVIEW-010** — Tests: `tests/m6_preview.rs` — Code: `src/preview.rs` — Status: Implemented
 
 ---
 
@@ -197,6 +239,7 @@ Conventions:
 - **S-APPLY-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/apply.rs` — Status: Implemented
 - **S-APPLY-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-APPLY-009** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/config.rs` — Status: Implemented
+- **S-APPLY-011** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/post_apply.rs` — Status: Implemented
 
 ---
 
@@ -223,6 +266,8 @@ Conventions:
 
 - **S-PACKFIX-001** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 - **S-PACKFIX-002** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-PACKFIX-003** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-PACKFIX-004** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -333,6 +378,7 @@ Conventions:
 - **S-INIT-008** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-009** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
+- **S-INIT-011** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 
 ---
 

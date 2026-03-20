@@ -211,6 +211,10 @@ pub struct BuildArgs {
     #[arg(long, default_value_t = false)]
     pub zip_only: bool,
 
+    /// Add supplemental project-context artifacts for hosted AI handoff: none|focused
+    #[arg(long, default_value = "none")]
+    pub project_context: String,
+
     /// Automatically continue when secrets-like content is detected
     #[arg(long, default_value_t = false)]
     pub yes: bool,

@@ -3,8 +3,9 @@
 ## Start Here
 1. Read the TL;DR to understand the scope and included segments.
 2. Use the Change Map to see which files changed and which patch part they belong to.
-3. Use the Parts Index to decide reading order inside the patch bundle.
-4. Open the first patch part: `parts/part_01.patch`
+3. Read `AI_REQUESTS.md` if you are forwarding this bundle to a hosted AI.
+4. Use the Parts Index to decide reading order inside the patch bundle.
+5. Open the first patch part: `parts/part_01.patch`
 
 ---
 
@@ -17,6 +18,7 @@
 - Commit count (approx): `1`
 - Current HEAD (workspace base): `<HEX40>`
 - Ignore rules: `.diffshipignore` = `no`
+- AI request kit: `AI_REQUESTS.md`
 - Reading order:
   1. Docs changes: `part_01.patch` (1 files)
 
@@ -83,6 +85,7 @@ Use this section to decide reading order inside the patch bundle.
 ## Where to start
 
 Open this document first.
+Then read `AI_REQUESTS.md` if you need a bundle-local hosted-AI request scaffold.
 Then apply/read `parts/part_01.patch`.
 
 ---

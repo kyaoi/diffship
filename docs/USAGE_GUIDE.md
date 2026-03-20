@@ -241,6 +241,110 @@ diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list
 
 If the bundle includes `handoff.manifest.json`, the list view also surfaces the canonical structured-context summary, including aggregate category / segment / status counts and the manifest's reading-order guidance.
 
+That canonical manifest JSON now also includes deterministic cross-part `task_groups` that cluster parts by shared `intent_labels`, so downstream AI tooling can spot likely multi-part tasks without reclustering part contexts on its own.
+
+Those canonical task groups now also carry `primary_labels`, `related_context_paths`, `related_project_files`, `suggested_read_order`, and `risk_hints`, which gives hosted AI a bounded task-level reading plan before it starts inventing one from raw files.
+
+Those same task groups now also carry `review_labels`, so hosted AI can tell whether a multi-part task looks behavioral, mechanical, verification-heavy, or policy-sensitive before it reparses every part.
+
+They now also carry deterministic `verification_targets`, so hosted AI can keep likely tests/config/policy surfaces bounded instead of improvising verification scope from raw filenames.
+
+They now also carry deterministic `verification_labels`, so hosted AI can tell whether a task needs test follow-up, config/policy follow-up, dependency validation, behavioral-regression review, or only a lightweight sanity check.
+
+They now also carry deterministic `widening_labels`, so hosted AI can tell whether to stay patch-only or widen into related tests/config/docs/repo rules before it starts reading extra context.
+
+They now also carry deterministic `execution_labels`, so hosted AI can keep a coarse execution flow in view instead of improvising whether to stay patch-only, widen before editing, review rules first, or plan post-edit verification.
+
+They now also carry deterministic `task_shape_labels`, so hosted AI can tell whether a task is single-area or cross-cutting and whether it likely deserves heavier review or verification attention before reparsing more of the bundle.
+
+They now also carry deterministic `edit_targets` and `context_only_files`, so hosted AI can separate bounded write scope from read-only supporting context instead of guessing which related files are safe to edit.
+
+Per-part `parts/part_XX.context.json` files now also carry deterministic task-group linkage such as `task_group_ref`, `task_shape_labels`, `task_edit_targets`, and `task_context_only_files`, so a model that starts from one part context can still recover the bounded task contract without reopening the whole manifest first.
+
+Canonical file semantic facts now also expose deterministic path-role hints such as `repo_rule_touch`, `dependency_policy_touch`, `build_graph_touch`, and `test_infrastructure_touch`, so hosted AI can distinguish rule/build/test-support surfaces without parser-heavy analysis.
+
+`diffship preview --list` and `--list --json` now also surface those manifest task groups directly, so you can confirm the bundle's task clustering without opening `handoff.manifest.json` by hand.
+
+If the bundle also includes the optional focused project-context pack, the list view surfaces `project.context.json` / `PROJECT_CONTEXT.md` presence plus lightweight counts for selected files, included snapshots, omitted files, and total snapshot bytes.
+
+The list view also reports whether `AI_REQUESTS.md` is present so you can confirm the bundle carries its deterministic hosted-AI request scaffold.
+
+The canonical JSON file entries also include deterministic semantic facts such as `language`, generated / lockfile / CI-tooling flags, and related test candidates derived from local repository facts.
+
+Those same canonical file entries now also include deterministic coarse semantic labels such as `docs_only`, `config_only`, `test_only`, `generated_output_touch`, `lockfile_touch`, `ci_or_tooling_touch`, `import_churn`, `signature_change_like`, and `api_surface_like`.
+
+Per-part `parts/part_XX.context.json` files also carry a deterministic `scoped_context` section with hints such as hunk-header text, symbol-like names, import-like references, and related test candidates.
+
+That `scoped_context` section now also includes per-file entries so symbol/import hints remain attributable to specific changed files when a patch part touches more than one path.
+
+Those same per-part JSON files now also expose deterministic `intent_labels` such as `source_update`, `docs_update`, `cross_area_change`, `api_surface_touch`, `import_churn`, `rename_or_copy`, and `reduced_context`.
+
+They now also expose deterministic `review_labels` such as `behavioral_change_like`, `mechanical_update_like`, `verification_surface_touch`, `needs_related_test_review`, and `repo_policy_touch`.
+
+File semantics are now also bidirectional for source/test navigation: source files can point to likely tests, and changed test-like files can point back to likely source files.
+
+Those same file semantics can also point to likely docs and config/build files such as `README.md`, `docs/*.md`, `Cargo.toml`, `pyproject.toml`, `package.json`, or `tsconfig.json` when matching local files exist.
+
+Canonical file entries also expose deterministic `change_hints` for common handling outcomes such as rename ancestry, `attachments.zip` routing, `excluded.md` routing, and reduced-context fallback.
+
+### 5.7 Optional focused project context for hosted AI handoff
+
+Enable a bounded supplemental context pack:
+
+```bash
+diffship build --project-context focused
+```
+
+This adds:
+
+- `project.context.json` as the canonical machine-readable index
+- `PROJECT_CONTEXT.md` as the rendered view
+- `project_context/files/...` as deterministic text snapshots of selected local files
+
+Selection is intentionally bounded. diffship seeds from changed files and adds only strongly related local files such as likely tests, likely source files for changed tests, likely docs/config files, root `README.md`, and generated `.diffship/*` guide files when they exist.
+
+Each selected file entry in `project.context.json` now also carries a `changed` marker, deterministic semantic facts, and inbound/outbound relationship refs. That lets hosted AI consumers inspect the focused context file-by-file instead of relying only on the flat top-level relationship list.
+
+Focused project-context file entries now also expose `usage_role`, `priority`, `edit_scope_role`, `verification_relevance`, `verification_labels`, `why_included`, and `task_group_refs`, and the summary includes `priority_counts` plus `edit_scope_counts`. That lets hosted AI read the bounded repo context by importance, write-scope, and verification relevance instead of treating every supplemental file as equally relevant.
+
+The context pack is supplemental. Patch parts remain canonical, and `none` remains the default so diff-first handoff is unchanged unless you opt in.
+
+### 5.8 Bundle-local AI request scaffold
+
+Every new handoff bundle now includes `AI_REQUESTS.md`.
+
+Use it when forwarding the bundle to a hosted AI. It gives you:
+
+- the current bundle's deterministic reading order
+- explicit output-mode guidance for analysis-only, plain text edits, and loop-ready patch bundles
+- hard constraints such as exact current-head usage for `base_commit`
+- whether optional project-context artifacts are present and when to read them
+- patch-part guidance that points to `parts/part_XX.context.json` with intent labels, segments, and top files
+
+When focused project context exists, `AI_REQUESTS.md` now also includes changed/supplemental counts plus direct relationship hints for changed context files. That gives the hosted AI a bounded widening strategy before it starts inventing its own repo walk.
+
+Focused project context now also includes per-file `context_labels` such as `changed_target`, `supplemental_context`, `source_context`, `doc_context`, `related_context`, `repo_guide_context`, `relationship_source`, and `relationship_target`, plus summary counts by selected-file category and relationship kind.
+
+`AI_REQUESTS.md` now also includes deterministic patch-part guidance such as ``parts/part_01.patch`` plus its matching context path, `intent_labels`, segments, and top files. That lets the hosted AI inspect the most relevant per-part JSON first instead of reparsing every patch part in full.
+
+It now also includes a deterministic task-group execution recipe derived from manifest `task_groups` plus focused project-context usage metadata. That recipe points the hosted AI at the right part-context files first, then the matching patch parts, then only the focused project-context snapshots that diffship marked as relevant.
+
+That same scaffold now also reuses canonical `review_labels` from both task groups and patch parts, so the hosted AI keeps behavioral/mechanical/verification strategy hints in view while deciding how deeply to reason about each change.
+
+It now also reuses canonical `verification_targets` plus focused project-context `verification_relevance` / `verification_labels`, so the hosted AI sees a bounded verification-reading plan before it proposes local checks or follow-up fixes.
+
+It now also reuses task-group `verification_labels`, so that bounded verification-reading plan comes with a coarse verification strategy instead of just a flat list of files.
+
+It now also reuses task-group `widening_labels`, so that same scaffold carries a deterministic context-widening strategy instead of leaving the model to improvise how far it should walk beyond the patch.
+
+It now also reuses task-group `execution_labels`, so that same scaffold carries a deterministic coarse execution flow instead of leaving the model to improvise when to widen, review rules, or bias toward post-edit verification.
+
+It now also reuses task-group `task_shape_labels`, so that same scaffold carries a deterministic coarse task-shape signal instead of leaving the model to improvise whether a task is single-area, cross-cutting, review-heavy, or verification-heavy.
+
+It now also reuses task-group `edit_targets` and `context_only_files`, so that same scaffold tells the model which files are the bounded write scope and which related files should remain read-only context unless the task explicitly broadens scope.
+
+When focused project context exists, that same scaffold now also reuses per-file `edit_scope_role` values from `project.context.json`, so widened repo context stays explicitly read-only unless diffship marked a selected file as a `write_target`.
+
 Show a patch part:
 
 ```bash
@@ -253,7 +357,7 @@ Machine-readable preview:
 diffship preview ./diffship_YYYY-MM-DD_HHMM_<head7> --list --json
 ```
 
-The JSON list output includes a `structured_context` object when canonical structured-context files are present, including the manifest `reading_order` when available.
+The JSON list output includes a `structured_context` object when canonical structured-context files are present, including the manifest `reading_order` when available. It now also reports lightweight semantic/coarse-label/change-hint/scoped inspection coverage, while the canonical bundle JSON files themselves keep the full richer facts for downstream tooling.
 
 The TUI handoff preview uses the same temporary bundle and now prepends the canonical structured-context summary before the first patch part when the manifest JSON is present.
 
@@ -398,6 +502,7 @@ The generated `.diffship/config.toml` now follows the same idea:
 - core defaults stay close to the repository's actual diffship workflow
 - "Customize this section" comments show where to set repo-specific defaults such as verify profile, handoff profile, output directory, promotion mode, and post-apply commands
 - the generated handoff `output_dir` defaults to `./.diffship/artifacts/handoffs` so diffship-owned outputs stay under `.diffship/` after `diffship init`
+- the generated config stub now also includes stack-oriented commented `ops.post_apply` presets and explicitly frames post-apply as local normalization rather than AI-output repair
 
 ### 6.2 Full loop
 
@@ -511,6 +616,10 @@ You can recreate it manually:
 ```bash
 diffship pack-fix --run-id <run-id>
 ```
+
+When local `ops.post_apply` hooks ran, the reprompt zip also includes `run/post_apply.json` plus `run/post-apply/*`, and the generated `PROMPT.md` points the AI at that evidence before the verify logs.
+
+`run/post_apply.json` now also records deterministic `changed_paths`, coarse `change_categories`, and a machine-readable normalization summary derived from sandbox state before and after post-apply. The reprompt `PROMPT.md` repeats that summary inline so the AI sees local normalization effects before it starts interpreting verify failures.
 
 ### 6.7 Acknowledgement gates
 

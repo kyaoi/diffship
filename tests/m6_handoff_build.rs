@@ -65,6 +65,26 @@ fn write_project_config(root: &Path, body: &str) {
     fs::write(path.join("config.toml"), body).unwrap();
 }
 
+fn only_generated_bundle(root: &Path) -> std::path::PathBuf {
+    let mut bundles = fs::read_dir(root)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if !ent.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = ent.file_name().to_string_lossy().to_string();
+            if !name.starts_with("diffship_") {
+                return None;
+            }
+            Some(ent.path())
+        })
+        .collect::<Vec<_>>();
+    bundles.sort();
+    assert_eq!(bundles.len(), 1, "expected exactly one generated bundle");
+    bundles.remove(0)
+}
+
 #[test]
 fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     let td = init_repo();
@@ -111,6 +131,7 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
 
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());
+    assert!(bundle.join("AI_REQUESTS.md").exists());
     assert!(bundle.join("handoff.manifest.json").exists());
     assert!(bundle.join("handoff.context.xml").exists());
     assert!(bundle.join("parts").join("part_01.patch").exists());
@@ -127,7 +148,36 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(handoff.contains("## 3) Parts Index"));
     assert!(handoff.contains("### 3.1 Quick index"));
     assert!(handoff.contains("### 3.2 Part details"));
-    assert!(handoff.contains("4. Open the first patch part: `parts/part_01.patch`"));
+    assert!(handoff.contains("5. Open the first patch part: `parts/part_01.patch`"));
+
+    let ai_requests = fs::read_to_string(bundle.join("AI_REQUESTS.md")).unwrap();
+    assert!(ai_requests.contains("# AI REQUESTS"));
+    assert!(ai_requests.contains("MODE: ANALYSIS_ONLY"));
+    assert!(ai_requests.contains("MODE: OPS_PATCH_BUNDLE"));
+    assert!(ai_requests.contains(&head));
+    assert!(!ai_requests.contains("## Focused project-context guidance"));
+    assert!(ai_requests.contains("## Task-group execution order"));
+    assert!(ai_requests.contains("Treat `review_labels` as generation/review strategy hints"));
+    assert!(ai_requests.contains(
+        "Use `task_shape_labels` to decide whether a task is single-area or cross-cutting"
+    ));
+    assert!(ai_requests.contains(
+        "Use `edit_targets` as the bounded write scope for the task and `context_only_files` as read-only context"
+    ));
+    assert!(
+        ai_requests
+            .contains("Use `verification_labels` to keep verification strategy coarse and bounded")
+    );
+    assert!(ai_requests.contains("Use `widening_labels` to decide whether to stay patch-first or widen into related tests/config/docs/repo rules."));
+    assert!(
+        ai_requests
+            .contains("Use `execution_labels` to keep the execution flow coarse and deterministic")
+    );
+    assert!(ai_requests.contains("`task_01` primary=`other_task` shape=`single_area` review=`mechanical_update_like` intents=`other_update` risks=`-` edit=`a.txt` context=`-` verify=`-` verify-strategy=`sanity_check_first` widen=`patch_only` execute=`mechanical_first,patch_only_flow,verify_after_edit` read=`parts/part_01.context.json,parts/part_01.patch` project=`-`"));
+    assert!(ai_requests.contains("## Patch-part guidance"));
+    assert!(ai_requests.contains("Reuse part `review_labels` before editing"));
+    assert!(ai_requests.contains("Use `parts/part_XX.context.json` when you need machine-readable part-local facts such as `intent_labels`, `scoped_context`, and per-file semantic hints."));
+    assert!(ai_requests.contains("`parts/part_01.patch` context=`parts/part_01.context.json` review=`mechanical_update_like` intents=`other_update` segments=`committed` files=`a.txt`"));
 
     let part = fs::read_to_string(bundle.join("parts").join("part_01.patch")).unwrap();
     assert!(part.contains("diffship segment: committed"));
@@ -159,6 +209,13 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
             .and_then(|v| v.get("committed"))
             .and_then(|v| v.as_bool()),
         Some(true)
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("ai_requests_md"))
+            .and_then(|v| v.as_str()),
+        Some("AI_REQUESTS.md")
     );
     assert_eq!(
         manifest
@@ -195,6 +252,126 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
             .get("parts")
             .and_then(|v| v.get(0))
             .and_then(|v| v.get("context_path"))
+            .and_then(|v| v.as_str()),
+        Some("parts/part_01.context.json")
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("intent_labels"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("other_update")
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("primary_labels"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("other_task")
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("part_count"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("related_context_paths"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("parts/part_01.context.json")
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("task_shape_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["single_area"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("edit_targets"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["a.txt"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("context_only_files"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(Vec::<&str>::new())
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("verification_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["sanity_check_first"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("widening_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["patch_only"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("execution_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "mechanical_first",
+            "patch_only_flow",
+            "verify_after_edit",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("suggested_read_order"))
+            .and_then(|v| v.get(0))
             .and_then(|v| v.as_str()),
         Some("parts/part_01.context.json")
     );
@@ -283,6 +460,16 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     );
     assert_eq!(
         part_context
+            .get("review_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["mechanical_update_like"])
+    );
+    assert_eq!(
+        part_context
             .get("diff_stats")
             .and_then(|v| v.get("segments"))
             .and_then(|v| v.get("committed"))
@@ -303,6 +490,1299 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(handoff_context.contains("<handoff-context"));
     assert!(handoff_context.contains("rendered-from=\"handoff.manifest.json\""));
     assert!(handoff_context.contains("path=\"parts/part_01.context.json\""));
+}
+
+#[test]
+fn build_structured_context_includes_file_semantic_facts() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::create_dir_all(root.join("target/generated")).unwrap();
+    fs::create_dir_all(root.join(".github/workflows")).unwrap();
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "use crate::old_dep;\npub fn value() -> i32 { 1 }\n",
+    )
+    .unwrap();
+    fs::write(root.join("tests/lib_test.rs"), "#[test]\nfn smoke() {}\n").unwrap();
+    fs::write(root.join("Cargo.lock"), "version = 3\n").unwrap();
+    fs::write(root.join(".github/workflows/ci.yml"), "name: ci\n").unwrap();
+    fs::write(
+        root.join("target/generated/schema.generated.json"),
+        "{\"v\":1}\n",
+    )
+    .unwrap();
+    commit_all(root, "c1");
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "use crate::new_dep;\npub fn value(input: i32) -> i32 { input + 2 }\n",
+    )
+    .unwrap();
+    fs::write(root.join("Cargo.lock"), "version = 4\n").unwrap();
+    fs::write(
+        root.join(".github/workflows/ci.yml"),
+        "name: ci\non: push\n",
+    )
+    .unwrap();
+    fs::write(root.join("AGENTS.md"), "Repository rules.\n").unwrap();
+    fs::create_dir_all(root.join("tests/fixtures")).unwrap();
+    fs::write(root.join("tests/fixtures/api.json"), "{\"ok\":true}\n").unwrap();
+    fs::write(
+        root.join("target/generated/schema.generated.json"),
+        "{\"v\":2}\n",
+    )
+    .unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("manifest files array");
+
+    let src_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("src/lib.rs"))
+        .expect("src/lib.rs entry");
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("rust")
+    );
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("generated_like"))
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_test_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("tests/lib_test.rs")
+    );
+    let src_labels = src_entry
+        .get("semantic")
+        .and_then(|v| v.get("coarse_labels"))
+        .and_then(|v| v.as_array())
+        .map(|labels| {
+            labels
+                .iter()
+                .filter_map(|label| label.as_str())
+                .collect::<Vec<_>>()
+        })
+        .expect("src/lib.rs coarse labels");
+    assert!(src_labels.contains(&"api_surface_like"));
+    assert!(src_labels.contains(&"signature_change_like"));
+
+    let lockfile_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("Cargo.lock"))
+        .expect("Cargo.lock entry");
+    assert_eq!(
+        lockfile_entry
+            .get("semantic")
+            .and_then(|v| v.get("lockfile"))
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        lockfile_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("unknown")
+    );
+    assert_eq!(
+        lockfile_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "config_only",
+            "dependency_policy_touch",
+            "lockfile_touch",
+        ])
+    );
+
+    let tooling_entry = files
+        .iter()
+        .find(|entry| {
+            entry.get("path").and_then(|v| v.as_str()) == Some(".github/workflows/ci.yml")
+        })
+        .expect("workflow entry");
+    assert_eq!(
+        tooling_entry
+            .get("semantic")
+            .and_then(|v| v.get("ci_or_tooling"))
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        tooling_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("yaml")
+    );
+    assert_eq!(
+        tooling_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["ci_or_tooling_touch", "config_only"])
+    );
+
+    let repo_rule_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("AGENTS.md"))
+        .expect("AGENTS.md entry");
+    assert_eq!(
+        repo_rule_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["docs_only", "repo_rule_touch"])
+    );
+
+    let fixture_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("tests/fixtures/api.json"))
+        .expect("fixture entry");
+    assert_eq!(
+        fixture_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["config_only", "test_infrastructure_touch"])
+    );
+
+    let generated_entry = files
+        .iter()
+        .find(|entry| {
+            entry.get("path").and_then(|v| v.as_str())
+                == Some("target/generated/schema.generated.json")
+        })
+        .expect("generated entry");
+    assert_eq!(
+        generated_entry
+            .get("semantic")
+            .and_then(|v| v.get("generated_like"))
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        generated_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("json")
+    );
+    assert_eq!(
+        generated_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["config_only", "generated_output_touch"])
+    );
+
+    let part_context: Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join("parts").join("part_01.context.json")).unwrap(),
+    )
+    .unwrap();
+    let part_files = part_context
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("part files array");
+    let part_src_entry = part_files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("src/lib.rs"))
+        .expect("part src/lib.rs entry");
+    assert_eq!(
+        part_src_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("rust")
+    );
+    assert_eq!(
+        part_src_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_test_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("tests/lib_test.rs")
+    );
+    assert_eq!(
+        part_src_entry
+            .get("semantic")
+            .and_then(|v| v.get("coarse_labels"))
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "api_surface_like",
+            "import_churn",
+            "signature_change_like",
+        ])
+    );
+}
+
+#[test]
+fn build_part_context_includes_scoped_context_hints() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value() -> i32 {\n    1\n}\n",
+    )
+    .unwrap();
+    fs::write(root.join("tests/lib_test.rs"), "#[test]\nfn smoke() {}\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "use crate::helper;\n\npub fn value_v2() -> i32 {\n    let current = helper();\n    current\n}\n",
+    )
+    .unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let part_context: Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join("parts").join("part_01.context.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("symbol_like_names"))
+            .and_then(|v| v.as_array())
+            .map(|items| items.iter().any(|item| item.as_str() == Some("value_v2"))),
+        Some(true)
+    );
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("import_like_refs"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("use crate::helper")
+    );
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("related_test_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("tests/lib_test.rs")
+    );
+    assert!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("hunk_headers"))
+            .and_then(|v| v.as_array())
+            .is_some()
+    );
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("files"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("path"))
+            .and_then(|v| v.as_str()),
+        Some("src/lib.rs")
+    );
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("files"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("symbol_like_names"))
+            .and_then(|v| v.as_array())
+            .map(|items| items.iter().any(|item| item.as_str() == Some("value_v2"))),
+        Some(true)
+    );
+    assert_eq!(
+        part_context
+            .get("scoped_context")
+            .and_then(|v| v.get("files"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("import_like_refs"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("use crate::helper")
+    );
+    assert_eq!(
+        part_context.get("task_group_ref").and_then(|v| v.as_str()),
+        Some("task_01")
+    );
+    assert_eq!(
+        part_context
+            .get("task_shape_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["review_heavy", "single_area", "verification_heavy"])
+    );
+    assert_eq!(
+        part_context
+            .get("task_edit_targets")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["src/lib.rs"])
+    );
+    assert_eq!(
+        part_context
+            .get("task_context_only_files")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(Vec::<&str>::new())
+    );
+    assert_eq!(
+        part_context
+            .get("intent_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec!["api_surface_touch", "import_churn", "source_update",])
+    );
+}
+
+#[test]
+fn build_structured_context_includes_related_source_candidates_for_tests() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src/nested")).unwrap();
+    fs::create_dir_all(root.join("tests/nested")).unwrap();
+
+    fs::write(
+        root.join("src/nested/foo.py"),
+        "def value():\n    return 1\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("tests/nested/test_foo.py"),
+        "def test_value():\n    assert value() == 1\n",
+    )
+    .unwrap();
+    commit_all(root, "c1");
+
+    fs::write(
+        root.join("tests/nested/test_foo.py"),
+        "def test_value():\n    assert value() == 2\n",
+    )
+    .unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("manifest files array");
+    let test_entry = files
+        .iter()
+        .find(|entry| {
+            entry.get("path").and_then(|v| v.as_str()) == Some("tests/nested/test_foo.py")
+        })
+        .expect("test file entry");
+
+    assert_eq!(
+        test_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_source_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("src/nested/foo.py")
+    );
+}
+
+#[test]
+fn build_structured_context_includes_related_doc_and_config_candidates() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("docs")).unwrap();
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("README.md"), "# Demo\n").unwrap();
+    fs::write(root.join("docs/lib.md"), "# Lib\n").unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "use crate::old_dep;\npub fn value() -> i32 { 1 }\n",
+    )
+    .unwrap();
+    commit_all(root, "c1");
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "use crate::new_dep;\npub fn value(input: i32) -> i32 { input + 2 }\n",
+    )
+    .unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("manifest files array");
+    let src_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("src/lib.rs"))
+        .expect("src/lib.rs entry");
+
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_doc_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("README.md")
+    );
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_doc_candidates"))
+            .and_then(|v| v.get(1))
+            .and_then(|v| v.as_str()),
+        Some("docs/lib.md")
+    );
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_config_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("Cargo.toml")
+    );
+}
+
+#[test]
+fn build_structured_context_includes_change_hints() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("tracked.txt"), "next\n").unwrap();
+    commit_all(root, "c2");
+    fs::write(root.join("bin.dat"), [0_u8, 159, 146, 150]).unwrap();
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--include-untracked", "--include-binary"]);
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("manifest files array");
+
+    let tracked_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("tracked.txt"))
+        .expect("tracked.txt entry");
+    assert_eq!(
+        tracked_entry
+            .get("change_hints")
+            .and_then(|v| v.get("new_file"))
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        tracked_entry
+            .get("change_hints")
+            .and_then(|v| v.get("reduced_context"))
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+
+    let attachment_entry = files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("bin.dat"))
+        .expect("bin.dat entry");
+    assert_eq!(
+        attachment_entry
+            .get("change_hints")
+            .and_then(|v| v.get("stored_as_attachment"))
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+
+    let part_context: Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join("parts").join("part_01.context.json")).unwrap(),
+    )
+    .unwrap();
+    let part_files = part_context
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("part files array");
+    let part_tracked_entry = part_files
+        .iter()
+        .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("tracked.txt"))
+        .expect("part tracked.txt entry");
+    assert_eq!(
+        part_tracked_entry
+            .get("change_hints")
+            .and_then(|v| v.get("new_file"))
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+}
+
+#[test]
+fn build_project_context_focused_emits_context_pack() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::create_dir_all(root.join(".diffship")).unwrap();
+
+    fs::write(root.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+    fs::write(root.join("README.md"), "# Demo\n").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn value() -> i32 { 1 }\n").unwrap();
+    fs::write(root.join("tests/lib_test.rs"), "#[test]\nfn smoke() {}\n").unwrap();
+    fs::write(root.join("docs/lib.md"), "# Lib\n").unwrap();
+    fs::write(
+        root.join(".diffship/PROJECT_RULES.md"),
+        "Keep changes scoped.\n",
+    )
+    .unwrap();
+    commit_all(root, "c1");
+
+    fs::write(root.join("src/lib.rs"), "pub fn value() -> i32 { 2 }\n").unwrap();
+    commit_all(root, "c2");
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--project-context", "focused"]);
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    assert!(bundle.join("project.context.json").exists());
+    assert!(bundle.join("PROJECT_CONTEXT.md").exists());
+    assert!(bundle.join("project_context/files/src/lib.rs").exists());
+    assert!(
+        bundle
+            .join("project_context/files/tests/lib_test.rs")
+            .exists()
+    );
+    assert!(bundle.join("project_context/files/docs/lib.md").exists());
+    assert!(bundle.join("project_context/files/Cargo.toml").exists());
+    assert!(bundle.join("project_context/files/README.md").exists());
+    assert!(
+        bundle
+            .join("project_context/files/.diffship/PROJECT_RULES.md")
+            .exists()
+    );
+
+    let handoff = fs::read_to_string(bundle.join("HANDOFF.md")).unwrap();
+    assert!(handoff.contains("Read `PROJECT_CONTEXT.md` before widening scope"));
+    assert!(handoff.contains("Project context: `PROJECT_CONTEXT.md`"));
+
+    let ai_requests = fs::read_to_string(bundle.join("AI_REQUESTS.md")).unwrap();
+    assert!(ai_requests.contains("## Focused project-context guidance"));
+    assert!(
+        ai_requests
+            .contains("selected files: `6` (`1` changed, `5` supplemental; `10` relationship(s))")
+    );
+    assert!(ai_requests.contains("Use `project.context.json` when you need file-by-file `changed`, `usage_role`, `priority`, `edit_scope_role`, `verification_relevance`, `verification_labels`, `why_included`, `task_group_refs`, `context_labels`, `semantic`, `outbound_relationships`, and `inbound_relationships` data."));
+    assert!(ai_requests.contains("changed context: `src/lib.rs` [source] role=`target` priority=`primary` edit=`write_target` verify=`primary:api_surface,changed_target,relationship_backed` tasks=`task_01` context=`changed_target,relationship_source,relationship_target,source_context`"));
+    assert!(ai_requests.contains("direct=`related-config:Cargo.toml"));
+    assert!(ai_requests.contains("related-doc:README.md"));
+    assert!(ai_requests.contains("related-doc:docs/lib.md"));
+    assert!(ai_requests.contains("related-test:tests/lib_test.rs"));
+    assert!(ai_requests.contains("## Task-group execution order"));
+    assert!(ai_requests.contains(
+        "Use `task_shape_labels` to decide whether a task is single-area or cross-cutting"
+    ));
+    assert!(ai_requests.contains(
+        "Use `edit_targets` as the bounded write scope for the task and `context_only_files` as read-only context"
+    ));
+    assert!(ai_requests.contains("Use `verification_targets` as the bounded set of likely tests/config/policy surfaces to inspect before proposing local verification."));
+    assert!(ai_requests.contains("Use `widening_labels` to decide whether to stay patch-first or widen into related tests/config/docs/repo rules."));
+    assert!(
+        ai_requests
+            .contains("Use `execution_labels` to keep the execution flow coarse and deterministic")
+    );
+    assert!(ai_requests.contains("`task_01` primary=`api_surface_task,source_task` shape=`cross_cutting,review_heavy,verification_heavy` review=`behavioral_change_like,needs_related_test_review,verification_surface_touch` intents=`api_surface_touch,source_update` risks=`-` edit=`src/lib.rs` context=`Cargo.toml(config_reference/secondary), README.md(repo_rule/secondary), docs/lib.md(doc_reference/secondary), tests/lib_test.rs(test_reference/secondary)` verify=`Cargo.toml(supporting/config_reference), src/lib.rs(primary/target), tests/lib_test.rs(primary/test_reference)` verify-strategy=`behavioral_regression_watch,config_follow_up,needs_targeted_test_read,policy_follow_up,test_follow_up` widen=`read_related_config,read_related_docs,read_related_tests,read_repo_rules` execute=`behavior_first,check_config_after_edit,check_tests_after_edit,rules_before_edit,verify_after_edit,widen_before_edit`"));
+    assert!(ai_requests.contains("project=`Cargo.toml(config_reference/secondary), README.md(repo_rule/secondary), docs/lib.md(doc_reference/secondary), src/lib.rs(target/primary)`"));
+    assert!(ai_requests.contains("## Patch-part guidance"));
+    assert!(ai_requests.contains("`parts/part_01.patch` context=`parts/part_01.context.json` review=`behavioral_change_like,needs_related_test_review,verification_surface_touch` intents=`api_surface_touch,source_update` segments=`committed` files=`src/lib.rs`"));
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("review_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "behavioral_change_like",
+            "needs_related_test_review",
+            "verification_surface_touch",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("task_shape_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["cross_cutting", "review_heavy", "verification_heavy",])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("edit_targets"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["src/lib.rs"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("context_only_files"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "Cargo.toml",
+            "README.md",
+            "docs/lib.md",
+            "tests/lib_test.rs",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("verification_targets"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["Cargo.toml", "src/lib.rs", "tests/lib_test.rs"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("verification_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "behavioral_regression_watch",
+            "config_follow_up",
+            "needs_targeted_test_read",
+            "policy_follow_up",
+            "test_follow_up",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("widening_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "read_related_config",
+            "read_related_docs",
+            "read_related_tests",
+            "read_repo_rules",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("execution_labels"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "behavior_first",
+            "check_config_after_edit",
+            "check_tests_after_edit",
+            "rules_before_edit",
+            "verify_after_edit",
+            "widen_before_edit",
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("project_context_json"))
+            .and_then(|v| v.as_str()),
+        Some("project.context.json")
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("project_context_md"))
+            .and_then(|v| v.as_str()),
+        Some("PROJECT_CONTEXT.md")
+    );
+
+    let project_context: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("project.context.json")).unwrap())
+            .unwrap();
+    let part_context: Value = serde_json::from_str(
+        &fs::read_to_string(bundle.join("parts").join("part_01.context.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        part_context.get("task_group_ref").and_then(|v| v.as_str()),
+        Some("task_01")
+    );
+    assert_eq!(
+        part_context
+            .get("task_shape_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["cross_cutting", "review_heavy", "verification_heavy",])
+    );
+    assert_eq!(
+        part_context
+            .get("task_edit_targets")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["src/lib.rs"])
+    );
+    assert_eq!(
+        part_context
+            .get("task_context_only_files")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "Cargo.toml",
+            "README.md",
+            "docs/lib.md",
+            "tests/lib_test.rs",
+        ])
+    );
+    assert_eq!(
+        part_context
+            .get("review_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "behavioral_change_like",
+            "needs_related_test_review",
+            "verification_surface_touch",
+        ])
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("selected_files"))
+            .and_then(|v| v.as_u64()),
+        Some(6)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("changed_files"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("supplemental_files"))
+            .and_then(|v| v.as_u64()),
+        Some(5)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("included_snapshots"))
+            .and_then(|v| v.as_u64()),
+        Some(6)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("relationship_count"))
+            .and_then(|v| v.as_u64()),
+        Some(10)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("categories"))
+            .and_then(|v| v.get("source"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("categories"))
+            .and_then(|v| v.get("docs"))
+            .and_then(|v| v.as_u64()),
+        Some(3)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("priority_counts"))
+            .and_then(|v| v.get("primary"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("priority_counts"))
+            .and_then(|v| v.get("secondary"))
+            .and_then(|v| v.as_u64()),
+        Some(5)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("edit_scope_counts"))
+            .and_then(|v| v.get("write_target"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("edit_scope_counts"))
+            .and_then(|v| v.get("read_only_verification"))
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("edit_scope_counts"))
+            .and_then(|v| v.get("read_only_rule"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("edit_scope_counts"))
+            .and_then(|v| v.get("read_only_context"))
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("verification_relevance_counts"))
+            .and_then(|v| v.get("primary"))
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("verification_relevance_counts"))
+            .and_then(|v| v.get("supporting"))
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        project_context
+            .get("summary")
+            .and_then(|v| v.get("relationship_kinds"))
+            .and_then(|v| v.get("related-doc"))
+            .and_then(|v| v.as_u64()),
+        Some(6)
+    );
+
+    let src_entry = project_context
+        .get("files")
+        .and_then(|v| v.as_array())
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|entry| entry.get("path").and_then(|v| v.as_str()) == Some("src/lib.rs"))
+        })
+        .expect("src/lib.rs project context entry");
+    assert_eq!(
+        src_entry.get("changed").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        src_entry.get("usage_role").and_then(|v| v.as_str()),
+        Some("target")
+    );
+    assert_eq!(
+        src_entry.get("priority").and_then(|v| v.as_str()),
+        Some("primary")
+    );
+    assert_eq!(
+        src_entry.get("edit_scope_role").and_then(|v| v.as_str()),
+        Some("write_target")
+    );
+    assert_eq!(
+        src_entry
+            .get("verification_relevance")
+            .and_then(|v| v.as_str()),
+        Some("primary")
+    );
+    assert_eq!(
+        src_entry
+            .get("verification_labels")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["api_surface", "changed_target", "relationship_backed",])
+    );
+    assert_eq!(
+        src_entry
+            .get("why_included")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["changed_file"])
+    );
+    assert_eq!(
+        src_entry
+            .get("task_group_refs")
+            .and_then(|v| v.as_array())
+            .and_then(|items| items.first())
+            .and_then(|v| v.as_str()),
+        Some("task_01")
+    );
+    assert_eq!(
+        src_entry
+            .get("semantic")
+            .and_then(|v| v.get("language"))
+            .and_then(|v| v.as_str()),
+        Some("rust")
+    );
+    let src_labels = src_entry
+        .get("semantic")
+        .and_then(|v| v.get("coarse_labels"))
+        .and_then(|v| v.as_array())
+        .map(|labels| {
+            labels
+                .iter()
+                .filter_map(|label| label.as_str())
+                .collect::<Vec<_>>()
+        })
+        .expect("src/lib.rs coarse labels");
+    assert!(src_labels.contains(&"api_surface_like"));
+    assert!(src_labels.contains(&"signature_change_like"));
+    assert_eq!(
+        src_entry
+            .get("context_labels")
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "changed_target",
+            "relationship_source",
+            "relationship_target",
+            "source_context",
+        ])
+    );
+    assert!(
+        src_entry
+            .get("outbound_relationships")
+            .and_then(|v| v.as_array())
+            .is_some_and(|items| items.iter().any(|entry| {
+                entry.get("kind").and_then(|v| v.as_str()) == Some("related-test")
+                    && entry.get("path").and_then(|v| v.as_str()) == Some("tests/lib_test.rs")
+            }))
+    );
+    assert!(
+        src_entry
+            .get("inbound_relationships")
+            .and_then(|v| v.as_array())
+            .is_some_and(|items| items.iter().any(|entry| {
+                entry.get("kind").and_then(|v| v.as_str()) == Some("related-source")
+                    && entry.get("path").and_then(|v| v.as_str()) == Some("tests/lib_test.rs")
+            }))
+    );
+
+    let test_entry = project_context
+        .get("files")
+        .and_then(|v| v.as_array())
+        .and_then(|items| {
+            items.iter().find(|entry| {
+                entry.get("path").and_then(|v| v.as_str()) == Some("tests/lib_test.rs")
+            })
+        })
+        .expect("tests/lib_test.rs project context entry");
+    assert_eq!(
+        test_entry
+            .get("source_reasons")
+            .and_then(|v| v.as_array())
+            .and_then(|items| items.first())
+            .and_then(|v| v.as_str()),
+        Some("related-test:src/lib.rs")
+    );
+    assert_eq!(
+        test_entry.get("changed").and_then(|v| v.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        test_entry.get("usage_role").and_then(|v| v.as_str()),
+        Some("test_reference")
+    );
+    assert_eq!(
+        test_entry.get("priority").and_then(|v| v.as_str()),
+        Some("secondary")
+    );
+    assert_eq!(
+        test_entry.get("edit_scope_role").and_then(|v| v.as_str()),
+        Some("read_only_verification")
+    );
+    assert_eq!(
+        test_entry
+            .get("verification_relevance")
+            .and_then(|v| v.as_str()),
+        Some("primary")
+    );
+    assert_eq!(
+        test_entry
+            .get("semantic")
+            .and_then(|v| v.get("related_source_candidates"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("src/lib.rs")
+    );
+    assert_eq!(
+        test_entry
+            .get("context_labels")
+            .and_then(|v| v.as_array())
+            .map(|labels| {
+                labels
+                    .iter()
+                    .filter_map(|label| label.as_str())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "related_context",
+            "relationship_source",
+            "relationship_target",
+            "supplemental_context",
+            "test_context",
+        ])
+    );
+    assert_eq!(
+        test_entry
+            .get("why_included")
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["related_test"])
+    );
+    assert_eq!(
+        test_entry
+            .get("task_group_refs")
+            .and_then(|v| v.as_array())
+            .and_then(|items| items.first())
+            .and_then(|v| v.as_str()),
+        Some("task_01")
+    );
+    let rules_entry = project_context
+        .get("files")
+        .and_then(|v| v.as_array())
+        .and_then(|items| {
+            items.iter().find(|entry| {
+                entry.get("path").and_then(|v| v.as_str()) == Some(".diffship/PROJECT_RULES.md")
+            })
+        })
+        .expect(".diffship/PROJECT_RULES.md project context entry");
+    assert_eq!(
+        rules_entry.get("edit_scope_role").and_then(|v| v.as_str()),
+        Some("read_only_context")
+    );
+    let project_context_md = fs::read_to_string(bundle.join("PROJECT_CONTEXT.md")).unwrap();
+    assert!(project_context_md.contains("## Edit-scope counts"));
+    assert!(project_context_md.contains(
+        "- `src/lib.rs` [source] changed=`yes` role=`target` priority=`primary` edit=`write_target`"
+    ));
+    assert!(
+        project_context
+            .get("relationships")
+            .and_then(|v| v.as_array())
+            .is_some_and(|items| items.iter().any(|entry| {
+                entry.get("from").and_then(|v| v.as_str()) == Some("src/lib.rs")
+                    && entry.get("kind").and_then(|v| v.as_str()) == Some("related-config")
+                    && entry.get("to").and_then(|v| v.as_str()) == Some("Cargo.toml")
+            }))
+    );
+
+    let project_context_md = fs::read_to_string(bundle.join("PROJECT_CONTEXT.md")).unwrap();
+    assert!(project_context_md.contains("selected files: `6` (`1` changed, `5` supplemental"));
+    assert!(project_context_md.contains("relationship(s)"));
+    assert!(project_context_md.contains("## Category counts"));
+    assert!(project_context_md.contains("## Verification relevance counts"));
+    assert!(project_context_md.contains("`related-doc`: 6 relationship(s)"));
+    assert!(project_context_md.contains("`src/lib.rs` [source] changed=`yes`"));
+    assert!(project_context_md.contains("verify=`primary`"));
+    assert!(
+        project_context_md.contains("verify-why=`api_surface,changed_target,relationship_backed`")
+    );
+    assert!(project_context_md.contains(
+        "context=`changed_target,relationship_source,relationship_target,source_context`"
+    ));
+    assert!(project_context_md.contains("labels=`"));
+    assert!(project_context_md.contains("api_surface_like"));
+    assert!(project_context_md.contains("signature_change_like"));
 }
 
 #[test]
@@ -966,6 +2446,71 @@ fn build_split_by_commit_creates_multiple_parts_and_commit_view() {
     assert!(handoff.contains("feat b"));
     assert!(handoff.contains("`a.txt` → `part_01.patch`"));
     assert!(handoff.contains("`b.txt` → `part_02.patch`"));
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(out.join("handoff.manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("intent_labels"))
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("other_update")
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("part_count"))
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("part_ids"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["part_01.patch", "part_02.patch"])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("related_context_paths"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "parts/part_01.context.json",
+            "parts/part_02.context.json"
+        ])
+    );
+    assert_eq!(
+        manifest
+            .get("task_groups")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.get("suggested_read_order"))
+            .and_then(|v| v.as_array())
+            .map(|items| items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec![
+            "parts/part_01.context.json",
+            "parts/part_02.context.json",
+            "parts/part_01.patch",
+            "parts/part_02.patch",
+        ])
+    );
 }
 
 #[test]

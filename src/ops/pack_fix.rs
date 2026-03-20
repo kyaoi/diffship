@@ -19,6 +19,14 @@ struct VerifyJson {
     profile: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct PostApplyBrief {
+    #[serde(default)]
+    changed_paths: Vec<String>,
+    #[serde(default)]
+    change_categories: Vec<String>,
+}
+
 /// Create a "reprompt zip" that contains run metadata, bundle, verify logs, and sandbox diffs.
 ///
 /// Default output path: `.diffship/runs/<run-id>/pack-fix_<timestamp>_<head7>[_N].zip`.
@@ -126,6 +134,9 @@ fn write_pack_fix_zip(
     // 1) PROMPT.md / SAFETY.md
     let verify_json_path = run_dir.join("verify.json");
     let verify_info = read_verify_json_brief(&verify_json_path);
+    let post_apply_json_path = run_dir.join("post_apply.json");
+    let has_post_apply = post_apply_json_path.exists();
+    let post_apply_info = read_post_apply_brief(&post_apply_json_path);
 
     let mut prompt = String::new();
     prompt.push_str("# diffship pack-fix (reprompt kit)\n\n");
@@ -138,13 +149,46 @@ fn write_pack_fix_zip(
     if let Some(ok) = verify_info.1 {
         prompt.push_str(&format!("- verify_ok: `{}`\n", ok));
     }
+    if let Some(post_apply) = post_apply_info.as_ref() {
+        prompt.push_str(&format!(
+            "- post_apply_changed_paths: `{}`\n",
+            post_apply.changed_paths.len()
+        ));
+        if !post_apply.change_categories.is_empty() {
+            prompt.push_str(&format!(
+                "- post_apply_change_categories: `{}`\n",
+                post_apply.change_categories.join(",")
+            ));
+        }
+    }
     prompt.push_str("\n## What you should do\n\n");
-    prompt.push_str("1. Inspect `run/verify/` logs to see why verification failed.\n");
-    prompt.push_str("2. Inspect `sandbox/git_diff.patch` to see the current uncommitted changes in the sandbox.\n");
-    prompt.push_str("3. Create a new patch bundle that fixes the failure, and re-run:\n\n");
+    if has_post_apply {
+        prompt.push_str("1. Inspect `run/post_apply.json` and `run/post-apply/` first to see what local post-apply normalization changed or failed.\n");
+        if let Some(post_apply) = post_apply_info.as_ref() {
+            if !post_apply.changed_paths.is_empty() {
+                prompt.push_str(&format!(
+                    "   - changed paths: `{}`\n",
+                    post_apply.changed_paths.join("`, `")
+                ));
+            }
+            if !post_apply.change_categories.is_empty() {
+                prompt.push_str(&format!(
+                    "   - change categories: `{}`\n",
+                    post_apply.change_categories.join(", ")
+                ));
+            }
+        }
+        prompt.push_str("2. Inspect `run/verify/` logs to see why verification failed after post-apply finished.\n");
+        prompt.push_str("3. Inspect `sandbox/git_diff.patch` to see the current uncommitted changes in the sandbox.\n");
+        prompt.push_str("4. Create a new patch bundle that fixes the failure, and re-run:\n\n");
+    } else {
+        prompt.push_str("1. Inspect `run/verify/` logs to see why verification failed.\n");
+        prompt.push_str("2. Inspect `sandbox/git_diff.patch` to see the current uncommitted changes in the sandbox.\n");
+        prompt.push_str("3. Create a new patch bundle that fixes the failure, and re-run:\n\n");
+    }
     prompt.push_str("```bash\ndiffship loop <your-fix-bundle.zip>\n```\n\n");
     prompt.push_str("## Contents\n\n");
-    prompt.push_str("- `run/`    : run metadata + apply/verify summaries\n");
+    prompt.push_str("- `run/`    : run metadata + apply/post-apply/verify summaries\n");
     prompt.push_str("- `bundle/` : original patch bundle (if present)\n");
     prompt.push_str("- `sandbox/`: git status + git diff from the sandbox worktree\n");
 
@@ -162,9 +206,25 @@ fn write_pack_fix_zip(
     add_if_exists(
         &mut zip,
         opts,
+        run_dir.join("post_apply.json"),
+        "run/post_apply.json",
+    )?;
+    add_if_exists(
+        &mut zip,
+        opts,
         run_dir.join("verify.json"),
         "run/verify.json",
     )?;
+    let post_apply_dir = run_dir.join("post-apply");
+    if post_apply_dir.exists() {
+        add_dir_recursive(
+            &mut zip,
+            opts,
+            &post_apply_dir,
+            &post_apply_dir,
+            "run/post-apply",
+        )?;
+    }
 
     let verify_dir = run_dir.join("verify");
     if verify_dir.exists() {
@@ -218,6 +278,11 @@ fn read_verify_json_brief(path: &Path) -> (Option<String>, Option<bool>) {
         return (None, None);
     };
     (v.profile, v.ok)
+}
+
+fn read_post_apply_brief(path: &Path) -> Option<PostApplyBrief> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice::<PostApplyBrief>(&bytes).ok()
 }
 
 fn default_pack_fix_zip_name(run_dir: &Path, run_id: &str) -> String {

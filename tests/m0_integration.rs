@@ -135,6 +135,10 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains(
         "Customize this section: local-only commands to run automatically after a successful apply"
     ));
+    assert!(cfg.contains("Keep `post_apply` narrow: repository-local normalization only"));
+    assert!(cfg.contains("# Rust-oriented preset:"));
+    assert!(cfg.contains("# Node/TS-oriented preset:"));
+    assert!(cfg.contains("# Docs/spec-oriented preset:"));
     assert!(cfg.contains("prefer `.diffship/forbid.toml` for dedicated forbid patterns"));
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));

@@ -103,6 +103,15 @@ When verify fails, diffship writes a default reprompt zip at:
 
 - `.diffship/runs/<run-id>/pack-fix_YYYY-MM-DD_HHMMSS_<head7>[_N].zip`
 
+When local post-apply hooks ran, that reprompt zip also includes:
+
+- `run/post_apply.json`
+- `run/post-apply/*`
+
+`run/post_apply.json` now also summarizes `changed_paths`, coarse `change_categories`, and a machine-readable normalization summary derived from sandbox state before/after the local normalization step.
+
+The generated `PROMPT.md` points the AI at that post-apply evidence before the verify logs and repeats the changed-path summary inline.
+
 You can also create or re-create it explicitly:
 
 ```bash

@@ -26,6 +26,7 @@ pub struct HandoffPlan {
     pub out: Option<String>,
     pub zip: bool,
     pub zip_only: bool,
+    pub project_context: String,
     pub yes: bool,
     pub fail_on_secrets: bool,
 }
@@ -55,6 +56,7 @@ impl Default for HandoffPlan {
             out: None,
             zip: false,
             zip_only: false,
+            project_context: "none".to_string(),
             yes: false,
             fail_on_secrets: false,
         }
@@ -86,6 +88,7 @@ impl HandoffPlan {
             out: args.out.clone(),
             zip: args.zip,
             zip_only: args.zip_only,
+            project_context: args.project_context.clone(),
             yes: args.yes,
             fail_on_secrets: args.fail_on_secrets,
         }
@@ -117,6 +120,7 @@ impl HandoffPlan {
             out: self.out,
             zip: self.zip,
             zip_only: self.zip_only,
+            project_context: self.project_context,
             yes: self.yes,
             fail_on_secrets: self.fail_on_secrets,
         }
@@ -188,6 +192,10 @@ impl HandoffPlan {
         if self.zip_only {
             out.push("--zip-only".to_string());
         }
+        if self.project_context != "none" {
+            out.push("--project-context".to_string());
+            out.push(self.project_context.clone());
+        }
         if self.yes {
             out.push("--yes".to_string());
         }
@@ -238,6 +246,10 @@ impl HandoffPlan {
         if let Some(max_bytes) = self.max_bytes_per_part {
             out.push_str(&format!("max_bytes_per_part = {max_bytes}\n"));
         }
+        out.push_str(&format!(
+            "project_context = {}\n",
+            toml_string(&self.project_context)
+        ));
         out
     }
 
@@ -291,6 +303,7 @@ impl HandoffPlan {
                 "max_bytes_per_part" => {
                     plan.max_bytes_per_part = Some(parse_toml_u64(value)?);
                 }
+                "project_context" => plan.project_context = parse_toml_string(value)?,
                 "out" => plan.out = Some(parse_toml_string(value)?),
                 "zip" => plan.zip = parse_toml_bool(value)?,
                 "zip_only" => plan.zip_only = parse_toml_bool(value)?,
@@ -452,6 +465,7 @@ mod tests {
             split_by: "commit".to_string(),
             zip: true,
             zip_only: true,
+            project_context: "focused".to_string(),
             ..HandoffPlan::default()
         };
         assert_eq!(
@@ -476,11 +490,13 @@ mod tests {
                 "commit",
                 "--zip",
                 "--zip-only",
+                "--project-context",
+                "focused",
             ]
         );
         assert_eq!(
             plan.to_shell_command(),
-            "diffship build --profile 10x100 --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip --zip-only"
+            "diffship build --profile 10x100 --range-mode direct --from 'HEAD~3' --to 'feature branch' --include-staged --include-untracked --include 'src/*.rs' --exclude src/generated.rs --split-by commit --zip --zip-only --project-context focused"
         );
     }
 
@@ -500,6 +516,7 @@ mod tests {
             out: Some("out dir".to_string()),
             zip: true,
             zip_only: true,
+            project_context: "focused".to_string(),
             yes: true,
             ..HandoffPlan::default()
         };
@@ -508,6 +525,7 @@ mod tests {
         assert_eq!(parsed.out, None);
         assert!(!parsed.zip);
         assert!(!parsed.zip_only);
+        assert_eq!(parsed.project_context, plan.project_context);
         assert!(!parsed.yes);
         assert_eq!(parsed.profile, plan.profile);
         assert_eq!(parsed.range_mode, plan.range_mode);

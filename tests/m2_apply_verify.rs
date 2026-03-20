@@ -1,4 +1,5 @@
 use assert_cmd::prelude::*;
+use serde_json::Value;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -533,6 +534,30 @@ cmd1 = "printf hook >> README.md"
     assert!(readme.contains("hook"));
     assert!(run_dir.join("post_apply.json").exists());
     assert!(run_dir.join("post-apply").join("01_cmd1.stdout").exists());
+    let post_apply: Value =
+        serde_json::from_str(&fs::read_to_string(run_dir.join("post_apply.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        post_apply
+            .get("changed_paths")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("README.md")
+    );
+    assert_eq!(
+        post_apply
+            .get("change_categories")
+            .and_then(|v| v.get(0))
+            .and_then(|v| v.as_str()),
+        Some("docs_touch")
+    );
+    assert_eq!(
+        post_apply
+            .get("normalization_summary")
+            .and_then(|v| v.get("changed_path_count"))
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
     let commands = fs::read_to_string(run_dir.join("commands.json")).unwrap();
     assert!(commands.contains("\"phase\": \"post-apply\""));
 }

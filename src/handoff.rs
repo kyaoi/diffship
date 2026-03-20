@@ -18,6 +18,8 @@ use zip::{CompressionMethod, DateTime as ZipDateTime, ZipWriter};
 const AUTO_PATCH_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_MAX_PARTS: usize = 20;
 const DEFAULT_MAX_BYTES_PER_PART: u64 = 512 * 1024 * 1024;
+const PROJECT_CONTEXT_PER_FILE_MAX_BYTES: usize = 64 * 1024;
+const PROJECT_CONTEXT_TOTAL_MAX_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RangeMode {
@@ -46,6 +48,12 @@ enum BinaryMode {
     Raw,
     Patch,
     Meta,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectContextMode {
+    None,
+    Focused,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +228,7 @@ struct HandoffManifest {
     reading_order: Vec<String>,
     artifacts: ManifestArtifacts,
     parts: Vec<ManifestPart>,
+    task_groups: Vec<ManifestTaskGroup>,
     files: Vec<ManifestFile>,
     commit_views: Vec<ManifestCommitView>,
     attachments: Vec<ManifestAttachment>,
@@ -295,7 +304,14 @@ struct ManifestArtifacts {
     handoff_md: String,
     manifest_json: String,
     context_xml: String,
+    ai_requests_md: String,
     part_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_context_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_context_md: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_context_snapshot_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     attachments_zip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -316,6 +332,30 @@ struct ManifestPart {
     reduced_context_paths: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+struct ManifestTaskGroup {
+    task_id: String,
+    intent_labels: Vec<String>,
+    primary_labels: Vec<String>,
+    task_shape_labels: Vec<String>,
+    edit_targets: Vec<String>,
+    context_only_files: Vec<String>,
+    review_labels: Vec<String>,
+    verification_targets: Vec<String>,
+    verification_labels: Vec<String>,
+    widening_labels: Vec<String>,
+    execution_labels: Vec<String>,
+    part_ids: Vec<String>,
+    segments: Vec<String>,
+    top_files: Vec<String>,
+    related_context_paths: Vec<String>,
+    related_project_files: Vec<String>,
+    suggested_read_order: Vec<String>,
+    risk_hints: Vec<String>,
+    part_count: usize,
+    file_count: usize,
+}
+
 #[derive(Debug, Serialize)]
 struct ManifestFile {
     category: String,
@@ -332,6 +372,33 @@ struct ManifestFile {
     part: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+    change_hints: ManifestFileChangeHints,
+    semantic: ManifestFileSemantic,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ManifestFileChangeHints {
+    new_file: bool,
+    deleted_file: bool,
+    rename_or_copy: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_path: Option<String>,
+    stored_as_attachment: bool,
+    excluded: bool,
+    reduced_context: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ManifestFileSemantic {
+    language: String,
+    generated_like: bool,
+    lockfile: bool,
+    ci_or_tooling: bool,
+    coarse_labels: Vec<String>,
+    related_test_candidates: Vec<String>,
+    related_source_candidates: Vec<String>,
+    related_doc_candidates: Vec<String>,
+    related_config_candidates: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -379,16 +446,40 @@ struct PartContext {
     part_id: String,
     patch_path: String,
     context_path: String,
+    task_group_ref: String,
+    task_shape_labels: Vec<String>,
+    task_edit_targets: Vec<String>,
+    task_context_only_files: Vec<String>,
     title: String,
     summary: String,
     intent: String,
+    intent_labels: Vec<String>,
+    review_labels: Vec<String>,
     segments: Vec<String>,
     files: Vec<ManifestFile>,
+    scoped_context: PartScopedContext,
     diff_stats: PartContextDiffStats,
     scope: PartContextScope,
     constraints: PartContextConstraints,
     warnings: PartContextWarnings,
     acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PartScopedContext {
+    hunk_headers: Vec<String>,
+    symbol_like_names: Vec<String>,
+    import_like_refs: Vec<String>,
+    related_test_candidates: Vec<String>,
+    files: Vec<PartScopedFileContext>,
+}
+
+#[derive(Debug, Serialize)]
+struct PartScopedFileContext {
+    path: String,
+    hunk_headers: Vec<String>,
+    symbol_like_names: Vec<String>,
+    import_like_refs: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -434,6 +525,125 @@ struct PartContextWarnings {
     bundle_has_secret_warnings: bool,
 }
 
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextManifest {
+    schema_version: u32,
+    mode: String,
+    patch_canonical: bool,
+    entrypoint: String,
+    rendered_view: String,
+    snapshot_root: String,
+    summary: ProjectContextSummary,
+    top_level_dirs: Vec<ProjectContextTopLevelDir>,
+    files: Vec<ProjectContextFile>,
+    relationships: Vec<ProjectContextRelationship>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextSummary {
+    selected_files: usize,
+    changed_files: usize,
+    supplemental_files: usize,
+    included_snapshots: usize,
+    omitted_files: usize,
+    total_snapshot_bytes: usize,
+    relationship_count: usize,
+    categories: BTreeMap<String, usize>,
+    priority_counts: BTreeMap<String, usize>,
+    edit_scope_counts: BTreeMap<String, usize>,
+    verification_relevance_counts: BTreeMap<String, usize>,
+    relationship_kinds: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextTopLevelDir {
+    path: String,
+    file_count: usize,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextFile {
+    path: String,
+    category: String,
+    changed: bool,
+    source_reasons: Vec<String>,
+    usage_role: String,
+    priority: String,
+    edit_scope_role: String,
+    verification_relevance: String,
+    verification_labels: Vec<String>,
+    why_included: Vec<String>,
+    task_group_refs: Vec<String>,
+    context_labels: Vec<String>,
+    semantic: ManifestFileSemantic,
+    outbound_relationships: Vec<ProjectContextFileRelationship>,
+    inbound_relationships: Vec<ProjectContextFileRelationship>,
+    exists_in_workspace: bool,
+    included: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snapshot_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_len: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    omitted_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextFileRelationship {
+    kind: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ProjectContextRelationship {
+    from: String,
+    kind: String,
+    to: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectContextSnapshot {
+    path: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectContextBundle {
+    manifest: ProjectContextManifest,
+    markdown: String,
+    snapshots: Vec<ProjectContextSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectContextFileInputs {
+    path: String,
+    changed: bool,
+    source_reasons: Vec<String>,
+    usage_role: String,
+    priority: String,
+    edit_scope_role: String,
+    verification_relevance: String,
+    verification_labels: Vec<String>,
+    why_included: Vec<String>,
+    semantic: ManifestFileSemantic,
+    outbound_relationships: Vec<ProjectContextFileRelationship>,
+    inbound_relationships: Vec<ProjectContextFileRelationship>,
+}
+
+#[derive(Debug, Clone)]
+struct TaskGroupComputed {
+    manifest: ManifestTaskGroup,
+    all_files: BTreeSet<String>,
+    related_project_files: BTreeSet<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct FilePatchClues {
+    has_import_churn: bool,
+    has_signature_change_like: bool,
+    has_api_surface_like: bool,
+}
+
 pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     let cwd = std::env::current_dir()
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to detect current dir: {e}")))?;
@@ -461,6 +671,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             include_binary: args.include_binary,
             binary_mode: parse_binary_mode(&args.binary_mode)?,
         };
+        let project_context_mode = parse_project_context_mode(&args.project_context)?;
 
         let mut parts = Vec::<PartOutput>::new();
         let mut rows = Vec::<FileRow>::new();
@@ -652,8 +863,61 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
         for part in &parts {
             write_text_file(&parts_dir.join(&part.name), &part.patch)?;
         }
-        let part_contexts =
-            render_part_contexts(&parts, &rows, &attachments, &exclusions, &secret_hits)?;
+        let file_semantics = build_file_semantics(git_root, &rows, &parts)?;
+        let mut project_context =
+            build_project_context_bundle(git_root, &rows, &file_semantics, project_context_mode)?;
+        let task_groups = build_manifest_task_group_details(
+            &parts,
+            &rows,
+            &file_semantics,
+            project_context.as_ref().map(|bundle| &bundle.manifest),
+        );
+        if let Some(project_context) = project_context.as_mut() {
+            enrich_project_context_with_task_groups(&mut project_context.manifest, &task_groups);
+            project_context.markdown = render_project_context_md(&project_context.manifest);
+        }
+        if let Some(project_context) = project_context.as_ref() {
+            write_text_file(
+                &out_dir.join(project_context_json_path()),
+                &render_project_context_manifest(project_context)?,
+            )?;
+            write_text_file(
+                &out_dir.join(project_context_md_path()),
+                &project_context.markdown,
+            )?;
+            for snapshot in &project_context.snapshots {
+                let path = out_dir.join(&snapshot.path);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        ExitError::new(
+                            EXIT_GENERAL,
+                            format!(
+                                "failed to create project context snapshot dir {}: {e}",
+                                parent.display()
+                            ),
+                        )
+                    })?;
+                }
+                fs::write(&path, &snapshot.bytes).map_err(|e| {
+                    ExitError::new(
+                        EXIT_GENERAL,
+                        format!(
+                            "failed to write project context snapshot {}: {e}",
+                            path.display()
+                        ),
+                    )
+                })?;
+            }
+        }
+        let part_contexts = render_part_contexts(
+            &parts,
+            &rows,
+            &attachments,
+            &exclusions,
+            &secret_hits,
+            &file_semantics,
+            &task_groups,
+        )?;
         for (path, contents) in &part_contexts {
             write_text_file(&out_dir.join(path), contents)?;
         }
@@ -704,6 +968,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             include_patterns: filters.includes(),
             exclude_patterns: filters.excludes(),
             secret_hits: &secret_hits,
+            project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
         });
         write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
         let handoff_manifest = render_handoff_manifest(&HandoffManifestInputs {
@@ -724,7 +989,33 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             exclude_patterns: filters.excludes(),
             secret_hits: &secret_hits,
             reading_order: &reading_order,
+            file_semantics: &file_semantics,
+            project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
+            task_groups: &task_groups,
         })?;
+        let ai_requests = render_ai_requests_md(&HandoffManifestInputs {
+            plan: plan.as_ref(),
+            head: &head,
+            split_by,
+            packing_limits: &packing_limits,
+            binary_policy,
+            sources,
+            untracked_mode,
+            rows: &rows,
+            parts: &parts,
+            commit_views: &commit_views,
+            attachments: &attachments,
+            exclusions: &exclusions,
+            ignore_enabled: filters.has_ignore_rules(),
+            include_patterns: filters.includes(),
+            exclude_patterns: filters.excludes(),
+            secret_hits: &secret_hits,
+            reading_order: &reading_order,
+            file_semantics: &file_semantics,
+            project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
+            task_groups: &task_groups,
+        });
+        write_text_file(&out_dir.join(ai_requests_md_path()), &ai_requests)?;
         write_text_file(&out_dir.join("handoff.manifest.json"), &handoff_manifest)?;
         let handoff_context_xml = render_handoff_context_xml(&HandoffManifestInputs {
             plan: plan.as_ref(),
@@ -744,6 +1035,9 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             exclude_patterns: filters.excludes(),
             secret_hits: &secret_hits,
             reading_order: &reading_order,
+            file_semantics: &file_semantics,
+            project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
+            task_groups: &task_groups,
         });
         write_text_file(
             &out_dir.join(handoff_context_xml_path()),
@@ -855,6 +1149,7 @@ fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
         || args.binary_mode != "raw"
         || args.max_parts.is_some()
         || args.max_bytes_per_part.is_some()
+        || args.project_context != "none"
 }
 
 fn resolve_plan_path(cwd: &Path, raw: &str) -> Result<PathBuf, ExitError> {
@@ -1463,6 +1758,17 @@ fn parse_binary_mode(raw: &str) -> Result<BinaryMode, ExitError> {
         other => Err(ExitError::new(
             EXIT_GENERAL,
             format!("invalid --binary-mode '{other}' (expected: raw|patch|meta)"),
+        )),
+    }
+}
+
+fn parse_project_context_mode(raw: &str) -> Result<ProjectContextMode, ExitError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "none" => Ok(ProjectContextMode::None),
+        "focused" => Ok(ProjectContextMode::Focused),
+        other => Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("invalid --project-context '{other}' (expected: none|focused)"),
         )),
     }
 }
@@ -3026,6 +3332,7 @@ struct HandoffDocInputs<'a> {
     include_patterns: &'a [String],
     exclude_patterns: &'a [String],
     secret_hits: &'a [SecretHit],
+    project_context: Option<&'a ProjectContextManifest>,
 }
 
 struct HandoffManifestInputs<'a> {
@@ -3046,6 +3353,9 @@ struct HandoffManifestInputs<'a> {
     exclude_patterns: &'a [String],
     secret_hits: &'a [SecretHit],
     reading_order: &'a [String],
+    file_semantics: &'a BTreeMap<String, ManifestFileSemantic>,
+    project_context: Option<&'a ProjectContextManifest>,
+    task_groups: &'a [TaskGroupComputed],
 }
 
 fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
@@ -3094,19 +3404,37 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str(
         "2. Use the Change Map to see which files changed and which patch part they belong to.\n",
     );
-    s.push_str("3. Use the Parts Index to decide reading order inside the patch bundle.\n");
+    s.push_str("3. Read `AI_REQUESTS.md` if you are forwarding this bundle to a hosted AI.\n");
+    if inp.project_context.is_some() {
+        s.push_str(
+            "4. Read `PROJECT_CONTEXT.md` before widening scope beyond the changed files.\n",
+        );
+        s.push_str("5. Use the Parts Index to decide reading order inside the patch bundle.\n");
+    } else {
+        s.push_str("4. Use the Parts Index to decide reading order inside the patch bundle.\n");
+    }
     s.push_str(&format!(
-        "4. Open the first patch part: `{}`\n",
+        "{}. Open the first patch part: `{}`\n",
+        if inp.project_context.is_some() { 6 } else { 5 },
         inp.first_part_rel
     ));
     if !inp.attachments.is_empty() {
-        s.push_str("5. After the patch parts, inspect attachments.zip for raw files that were intentionally kept out of patch text.\n");
+        s.push_str(&format!(
+            "{}. After the patch parts, inspect attachments.zip for raw files that were intentionally kept out of patch text.\n",
+            if inp.project_context.is_some() { 7 } else { 6 }
+        ));
     }
     if !inp.exclusions.is_empty() {
-        s.push_str("6. Check excluded.md for files that were omitted on purpose and why.\n");
+        s.push_str(&format!(
+            "{}. Check excluded.md for files that were omitted on purpose and why.\n",
+            if inp.project_context.is_some() { 8 } else { 7 }
+        ));
     }
     if !inp.secret_hits.is_empty() {
-        s.push_str("7. Review secrets.md before sharing the bundle. It lists only paths and reasons, never secret values.\n");
+        s.push_str(&format!(
+            "{}. Review secrets.md before sharing the bundle. It lists only paths and reasons, never secret values.\n",
+            if inp.project_context.is_some() { 9 } else { 8 }
+        ));
     }
 
     s.push_str("\n---\n\n");
@@ -3176,6 +3504,13 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         s.push_str(&format!(
             "- Secrets warnings: `secrets.md` ({} hit(s))\n",
             inp.secret_hits.len()
+        ));
+    }
+    s.push_str("- AI request kit: `AI_REQUESTS.md`\n");
+    if let Some(project_context) = inp.project_context {
+        s.push_str(&format!(
+            "- Project context: `PROJECT_CONTEXT.md` + `{}` snapshot(s) (`{}` omitted)\n",
+            project_context.summary.included_snapshots, project_context.summary.omitted_files
         ));
     }
     s.push_str("- Reading order:\n");
@@ -3311,6 +3646,14 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
 
     s.push_str("\n---\n\n## Where to start\n\n");
     s.push_str("Open this document first.\n");
+    s.push_str(
+        "Then read `AI_REQUESTS.md` if you need a bundle-local hosted-AI request scaffold.\n",
+    );
+    if inp.project_context.is_some() {
+        s.push_str(
+            "Then read `PROJECT_CONTEXT.md` if you need surrounding repo structure beyond the changed files.\n",
+        );
+    }
     s.push_str(&format!("Then apply/read `{}`.\n", inp.first_part_rel));
     if !inp.attachments.is_empty() {
         s.push_str("After patch parts, inspect `attachments.zip` for raw files that were intentionally kept out of patch text.\n");
@@ -3325,6 +3668,1781 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("- `.diffshipignore` is applied before writing parts / attachments / exclusions.\n");
     s.push_str("- Explicit `--include` / `--exclude` path filters apply consistently to all selected segments.\n");
     s
+}
+
+fn build_project_context_bundle(
+    git_root: &Path,
+    rows: &[FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+    mode: ProjectContextMode,
+) -> Result<Option<ProjectContextBundle>, ExitError> {
+    if mode == ProjectContextMode::None {
+        return Ok(None);
+    }
+
+    let mut selected = BTreeMap::<String, BTreeSet<String>>::new();
+    let changed_paths = rows
+        .iter()
+        .map(|row| row.path.clone())
+        .collect::<BTreeSet<_>>();
+    for path in &changed_paths {
+        selected
+            .entry(path.clone())
+            .or_default()
+            .insert("changed".to_string());
+    }
+    for path in &changed_paths {
+        let Some(semantic) = file_semantics.get(path) else {
+            continue;
+        };
+        for candidate in &semantic.related_test_candidates {
+            selected
+                .entry(candidate.clone())
+                .or_default()
+                .insert(format!("related-test:{path}"));
+        }
+        for candidate in &semantic.related_source_candidates {
+            selected
+                .entry(candidate.clone())
+                .or_default()
+                .insert(format!("related-source:{path}"));
+        }
+        for candidate in &semantic.related_doc_candidates {
+            selected
+                .entry(candidate.clone())
+                .or_default()
+                .insert(format!("related-doc:{path}"));
+        }
+        for candidate in &semantic.related_config_candidates {
+            selected
+                .entry(candidate.clone())
+                .or_default()
+                .insert(format!("related-config:{path}"));
+        }
+    }
+    for (path, reason) in [
+        ("README.md", "root-readme"),
+        (".diffship/PROJECT_RULES.md", "project-rules"),
+        (".diffship/AI_GUIDE.md", "ai-guide"),
+        (".diffship/PROJECT_KIT.md", "project-kit"),
+    ] {
+        if git_root.join(path).is_file() {
+            selected
+                .entry(path.to_string())
+                .or_default()
+                .insert(reason.to_string());
+        }
+    }
+
+    let mut total_snapshot_bytes = 0usize;
+    let mut files = Vec::new();
+    let mut snapshots = Vec::new();
+    let mut ordered_paths = selected.keys().cloned().collect::<Vec<_>>();
+    ordered_paths.sort_by(|a, b| {
+        path_category_rank(a)
+            .cmp(&path_category_rank(b))
+            .then(a.cmp(b))
+    });
+    let selected_paths = ordered_paths.iter().cloned().collect::<BTreeSet<_>>();
+    let project_context_semantics =
+        build_project_context_semantics(&selected_paths, file_semantics);
+    let relationships =
+        build_project_context_relationships(&selected_paths, &project_context_semantics);
+    let relationship_refs = build_project_context_relationship_refs(&relationships);
+    for path in ordered_paths {
+        let reasons = selected
+            .get(&path)
+            .map(|items| items.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let semantic = project_context_semantics
+            .get(&path)
+            .cloned()
+            .unwrap_or_else(|| {
+                build_manifest_file_semantic(&path, &selected_paths, FilePatchClues::default())
+            });
+        let (outbound_relationships, inbound_relationships) = relationship_refs
+            .get(&path)
+            .cloned()
+            .unwrap_or_else(|| (Vec::new(), Vec::new()));
+        let changed = changed_paths.contains(&path);
+        let usage_role = build_project_context_usage_role(&path, changed, &reasons);
+        let priority = build_project_context_priority(
+            changed,
+            &reasons,
+            &outbound_relationships,
+            &inbound_relationships,
+        );
+        let verification_relevance = build_project_context_verification_relevance(
+            changed,
+            &semantic,
+            &reasons,
+            &outbound_relationships,
+            &inbound_relationships,
+        );
+        let verification_labels = build_project_context_verification_labels(
+            changed,
+            &semantic,
+            &reasons,
+            &outbound_relationships,
+            &inbound_relationships,
+        );
+        let why_included = build_project_context_why_included(changed, &reasons);
+        let entry = build_project_context_file(
+            git_root,
+            ProjectContextFileInputs {
+                path: path.clone(),
+                changed,
+                source_reasons: reasons,
+                usage_role,
+                priority,
+                edit_scope_role: "read_only_context".to_string(),
+                verification_relevance,
+                verification_labels,
+                why_included,
+                semantic,
+                outbound_relationships,
+                inbound_relationships,
+            },
+            &mut total_snapshot_bytes,
+            &mut snapshots,
+        )?;
+        files.push(entry);
+    }
+
+    let manifest = ProjectContextManifest {
+        schema_version: 1,
+        mode: "focused".to_string(),
+        patch_canonical: true,
+        entrypoint: "HANDOFF.md".to_string(),
+        rendered_view: project_context_md_path().to_string(),
+        snapshot_root: project_context_snapshot_root().to_string(),
+        summary: build_project_context_summary(&files, &relationships, total_snapshot_bytes),
+        top_level_dirs: build_project_context_top_level_dirs(&files),
+        files,
+        relationships,
+    };
+    let markdown = render_project_context_md(&manifest);
+    Ok(Some(ProjectContextBundle {
+        manifest,
+        markdown,
+        snapshots,
+    }))
+}
+
+fn build_project_context_file(
+    git_root: &Path,
+    input: ProjectContextFileInputs,
+    total_snapshot_bytes: &mut usize,
+    snapshots: &mut Vec<ProjectContextSnapshot>,
+) -> Result<ProjectContextFile, ExitError> {
+    let workspace_path = git_root.join(&input.path);
+    let context_labels = build_project_context_context_labels(&input);
+    if !workspace_path.is_file() {
+        return Ok(ProjectContextFile {
+            path: input.path.clone(),
+            category: path_category_label(&input.path).to_string(),
+            changed: input.changed,
+            source_reasons: input.source_reasons,
+            usage_role: input.usage_role,
+            priority: input.priority,
+            edit_scope_role: input.edit_scope_role,
+            verification_relevance: input.verification_relevance,
+            verification_labels: input.verification_labels,
+            why_included: input.why_included,
+            task_group_refs: Vec::new(),
+            context_labels: context_labels.clone(),
+            semantic: input.semantic,
+            outbound_relationships: input.outbound_relationships,
+            inbound_relationships: input.inbound_relationships,
+            exists_in_workspace: false,
+            included: false,
+            snapshot_path: None,
+            byte_len: None,
+            omitted_reason: Some("missing-in-workspace".to_string()),
+        });
+    }
+    if is_generated_like_path(&input.path) {
+        return Ok(ProjectContextFile {
+            path: input.path.clone(),
+            category: path_category_label(&input.path).to_string(),
+            changed: input.changed,
+            source_reasons: input.source_reasons,
+            usage_role: input.usage_role,
+            priority: input.priority,
+            edit_scope_role: input.edit_scope_role,
+            verification_relevance: input.verification_relevance,
+            verification_labels: input.verification_labels,
+            why_included: input.why_included,
+            task_group_refs: Vec::new(),
+            context_labels: context_labels.clone(),
+            semantic: input.semantic,
+            outbound_relationships: input.outbound_relationships,
+            inbound_relationships: input.inbound_relationships,
+            exists_in_workspace: true,
+            included: false,
+            snapshot_path: None,
+            byte_len: None,
+            omitted_reason: Some("generated-like".to_string()),
+        });
+    }
+
+    let bytes = fs::read(&workspace_path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "failed to read project context candidate {}: {e}",
+                workspace_path.display()
+            ),
+        )
+    })?;
+    if bytes.len() > PROJECT_CONTEXT_PER_FILE_MAX_BYTES {
+        return Ok(ProjectContextFile {
+            path: input.path.clone(),
+            category: path_category_label(&input.path).to_string(),
+            changed: input.changed,
+            source_reasons: input.source_reasons,
+            usage_role: input.usage_role,
+            priority: input.priority,
+            edit_scope_role: input.edit_scope_role,
+            verification_relevance: input.verification_relevance,
+            verification_labels: input.verification_labels,
+            why_included: input.why_included,
+            task_group_refs: Vec::new(),
+            context_labels: context_labels.clone(),
+            semantic: input.semantic,
+            outbound_relationships: input.outbound_relationships,
+            inbound_relationships: input.inbound_relationships,
+            exists_in_workspace: true,
+            included: false,
+            snapshot_path: None,
+            byte_len: Some(bytes.len()),
+            omitted_reason: Some("oversized".to_string()),
+        });
+    }
+    if *total_snapshot_bytes + bytes.len() > PROJECT_CONTEXT_TOTAL_MAX_BYTES {
+        return Ok(ProjectContextFile {
+            path: input.path.clone(),
+            category: path_category_label(&input.path).to_string(),
+            changed: input.changed,
+            source_reasons: input.source_reasons,
+            usage_role: input.usage_role,
+            priority: input.priority,
+            edit_scope_role: input.edit_scope_role,
+            verification_relevance: input.verification_relevance,
+            verification_labels: input.verification_labels,
+            why_included: input.why_included,
+            task_group_refs: Vec::new(),
+            context_labels: context_labels.clone(),
+            semantic: input.semantic,
+            outbound_relationships: input.outbound_relationships,
+            inbound_relationships: input.inbound_relationships,
+            exists_in_workspace: true,
+            included: false,
+            snapshot_path: None,
+            byte_len: Some(bytes.len()),
+            omitted_reason: Some("budget-exceeded".to_string()),
+        });
+    }
+    if std::str::from_utf8(&bytes).is_err() {
+        return Ok(ProjectContextFile {
+            path: input.path.clone(),
+            category: path_category_label(&input.path).to_string(),
+            changed: input.changed,
+            source_reasons: input.source_reasons,
+            usage_role: input.usage_role,
+            priority: input.priority,
+            edit_scope_role: input.edit_scope_role,
+            verification_relevance: input.verification_relevance,
+            verification_labels: input.verification_labels,
+            why_included: input.why_included,
+            task_group_refs: Vec::new(),
+            context_labels: context_labels.clone(),
+            semantic: input.semantic,
+            outbound_relationships: input.outbound_relationships,
+            inbound_relationships: input.inbound_relationships,
+            exists_in_workspace: true,
+            included: false,
+            snapshot_path: None,
+            byte_len: Some(bytes.len()),
+            omitted_reason: Some("non-utf8".to_string()),
+        });
+    }
+
+    let snapshot_path = format!("{}/{}", project_context_snapshot_root(), input.path);
+    *total_snapshot_bytes += bytes.len();
+    snapshots.push(ProjectContextSnapshot {
+        path: snapshot_path.clone(),
+        bytes: bytes.clone(),
+    });
+    Ok(ProjectContextFile {
+        path: input.path.clone(),
+        category: path_category_label(&input.path).to_string(),
+        changed: input.changed,
+        source_reasons: input.source_reasons,
+        usage_role: input.usage_role,
+        priority: input.priority,
+        edit_scope_role: input.edit_scope_role,
+        verification_relevance: input.verification_relevance,
+        verification_labels: input.verification_labels,
+        why_included: input.why_included,
+        task_group_refs: Vec::new(),
+        context_labels,
+        semantic: input.semantic,
+        outbound_relationships: input.outbound_relationships,
+        inbound_relationships: input.inbound_relationships,
+        exists_in_workspace: true,
+        included: true,
+        snapshot_path: Some(snapshot_path),
+        byte_len: Some(bytes.len()),
+        omitted_reason: None,
+    })
+}
+
+fn build_project_context_summary(
+    files: &[ProjectContextFile],
+    relationships: &[ProjectContextRelationship],
+    total_snapshot_bytes: usize,
+) -> ProjectContextSummary {
+    ProjectContextSummary {
+        selected_files: files.len(),
+        changed_files: files.iter().filter(|file| file.changed).count(),
+        supplemental_files: files.iter().filter(|file| !file.changed).count(),
+        included_snapshots: files.iter().filter(|file| file.included).count(),
+        omitted_files: files.iter().filter(|file| !file.included).count(),
+        total_snapshot_bytes,
+        relationship_count: relationships.len(),
+        categories: count_project_context_categories(files),
+        priority_counts: count_project_context_priorities(files),
+        edit_scope_counts: count_project_context_edit_scope(files),
+        verification_relevance_counts: count_project_context_verification_relevance(files),
+        relationship_kinds: count_project_context_relationship_kinds(relationships),
+    }
+}
+
+fn build_project_context_top_level_dirs(
+    files: &[ProjectContextFile],
+) -> Vec<ProjectContextTopLevelDir> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for file in files {
+        let dir = file
+            .path
+            .split('/')
+            .next()
+            .filter(|value| !value.is_empty())
+            .unwrap_or(".");
+        *counts.entry(dir.to_string()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(path, file_count)| ProjectContextTopLevelDir { path, file_count })
+        .collect()
+}
+
+fn count_project_context_categories(files: &[ProjectContextFile]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for file in files {
+        *counts.entry(file.category.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn count_project_context_priorities(files: &[ProjectContextFile]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for file in files {
+        *counts.entry(file.priority.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn count_project_context_edit_scope(files: &[ProjectContextFile]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for file in files {
+        *counts.entry(file.edit_scope_role.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn count_project_context_verification_relevance(
+    files: &[ProjectContextFile],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for file in files {
+        *counts
+            .entry(file.verification_relevance.clone())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn count_project_context_relationship_kinds(
+    relationships: &[ProjectContextRelationship],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for relationship in relationships {
+        *counts.entry(relationship.kind.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn build_project_context_context_labels(input: &ProjectContextFileInputs) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    if input.changed {
+        labels.insert("changed_target".to_string());
+    } else {
+        labels.insert("supplemental_context".to_string());
+    }
+    labels.insert(
+        match path_category_label(&input.path) {
+            "docs" => "doc_context",
+            "config" => "config_context",
+            "source" => "source_context",
+            "tests" => "test_context",
+            _ => "other_context",
+        }
+        .to_string(),
+    );
+    if input
+        .source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-"))
+    {
+        labels.insert("related_context".to_string());
+    }
+    if input.source_reasons.iter().any(|reason| {
+        matches!(
+            reason.as_str(),
+            "root-readme" | "project-rules" | "ai-guide" | "project-kit"
+        )
+    }) {
+        labels.insert("repo_guide_context".to_string());
+    }
+    if !input.outbound_relationships.is_empty() {
+        labels.insert("relationship_source".to_string());
+    }
+    if !input.inbound_relationships.is_empty() {
+        labels.insert("relationship_target".to_string());
+    }
+    labels.into_iter().collect()
+}
+
+fn build_project_context_usage_role(
+    path: &str,
+    changed: bool,
+    source_reasons: &[String],
+) -> String {
+    if changed {
+        return "target".to_string();
+    }
+    if source_reasons.iter().any(|reason| {
+        matches!(
+            reason.as_str(),
+            "root-readme" | "project-rules" | "ai-guide" | "project-kit"
+        )
+    }) {
+        return "repo_rule".to_string();
+    }
+    match path_category_label(path) {
+        "tests" => "test_reference",
+        "docs" => "doc_reference",
+        "config" => "config_reference",
+        _ => "direct_support",
+    }
+    .to_string()
+}
+
+fn build_project_context_priority(
+    changed: bool,
+    source_reasons: &[String],
+    outbound_relationships: &[ProjectContextFileRelationship],
+    inbound_relationships: &[ProjectContextFileRelationship],
+) -> String {
+    if changed {
+        return "primary".to_string();
+    }
+    if source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-"))
+        || !outbound_relationships.is_empty()
+        || !inbound_relationships.is_empty()
+    {
+        return "secondary".to_string();
+    }
+    "background".to_string()
+}
+
+fn build_project_context_verification_relevance(
+    changed: bool,
+    semantic: &ManifestFileSemantic,
+    source_reasons: &[String],
+    _outbound_relationships: &[ProjectContextFileRelationship],
+    _inbound_relationships: &[ProjectContextFileRelationship],
+) -> String {
+    if changed || is_test_like_semantic_target(semantic, source_reasons) {
+        return "primary".to_string();
+    }
+    if semantic.lockfile
+        || semantic.ci_or_tooling
+        || source_reasons
+            .iter()
+            .any(|reason| reason.starts_with("related-config:"))
+        || source_reasons.iter().any(|reason| {
+            matches!(
+                reason.as_str(),
+                "project-rules" | "ai-guide" | "project-kit"
+            )
+        })
+    {
+        return "supporting".to_string();
+    }
+    "background".to_string()
+}
+
+fn build_project_context_verification_labels(
+    changed: bool,
+    semantic: &ManifestFileSemantic,
+    source_reasons: &[String],
+    outbound_relationships: &[ProjectContextFileRelationship],
+    inbound_relationships: &[ProjectContextFileRelationship],
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    if changed {
+        labels.insert("changed_target".to_string());
+    }
+    if source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-test:"))
+    {
+        labels.insert("related_test".to_string());
+    }
+    if source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-config:"))
+        || semantic.lockfile
+        || semantic.ci_or_tooling
+    {
+        labels.insert("config_or_policy".to_string());
+    }
+    if source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-doc:"))
+    {
+        labels.insert("docs_alignment".to_string());
+    }
+    if semantic
+        .coarse_labels
+        .iter()
+        .any(|label| matches!(label.as_str(), "api_surface_like" | "signature_change_like"))
+    {
+        labels.insert("api_surface".to_string());
+    }
+    if semantic
+        .coarse_labels
+        .iter()
+        .any(|label| matches!(label.as_str(), "import_churn" | "lockfile_touch"))
+    {
+        labels.insert("dependency_or_import".to_string());
+    }
+    if !outbound_relationships.is_empty() || !inbound_relationships.is_empty() {
+        labels.insert("relationship_backed".to_string());
+    }
+    labels.into_iter().collect()
+}
+
+fn is_test_like_semantic_target(
+    semantic: &ManifestFileSemantic,
+    source_reasons: &[String],
+) -> bool {
+    source_reasons
+        .iter()
+        .any(|reason| reason.starts_with("related-test:"))
+        || semantic
+            .coarse_labels
+            .iter()
+            .any(|label| label == "test_only")
+}
+
+fn build_project_context_why_included(changed: bool, source_reasons: &[String]) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    if changed {
+        out.insert("changed_file".to_string());
+    }
+    for reason in source_reasons {
+        let label = if reason.starts_with("related-test:") {
+            "related_test"
+        } else if reason.starts_with("related-source:") {
+            "related_source"
+        } else if reason.starts_with("related-doc:") {
+            "related_doc"
+        } else if reason.starts_with("related-config:") {
+            "related_config"
+        } else {
+            match reason.as_str() {
+                "root-readme" => "root_readme",
+                "project-rules" => "project_rules",
+                "ai-guide" => "ai_guide",
+                "project-kit" => "project_kit",
+                _ => continue,
+            }
+        };
+        out.insert(label.to_string());
+    }
+    out.into_iter().collect()
+}
+
+fn build_project_context_semantics(
+    selected_paths: &BTreeSet<String>,
+    changed_file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> BTreeMap<String, ManifestFileSemantic> {
+    selected_paths
+        .iter()
+        .map(|path| {
+            let semantic = changed_file_semantics
+                .get(path)
+                .cloned()
+                .unwrap_or_else(|| {
+                    build_manifest_file_semantic(path, selected_paths, FilePatchClues::default())
+                });
+            (path.clone(), semantic)
+        })
+        .collect()
+}
+
+fn build_project_context_relationships(
+    selected_paths: &BTreeSet<String>,
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<ProjectContextRelationship> {
+    let mut out = BTreeSet::<(String, String, String)>::new();
+    for path in selected_paths {
+        let Some(semantic) = file_semantics.get(path) else {
+            continue;
+        };
+        for candidate in &semantic.related_test_candidates {
+            if selected_paths.contains(candidate) {
+                out.insert((path.clone(), "related-test".to_string(), candidate.clone()));
+            }
+        }
+        for candidate in &semantic.related_source_candidates {
+            if selected_paths.contains(candidate) {
+                out.insert((
+                    path.clone(),
+                    "related-source".to_string(),
+                    candidate.clone(),
+                ));
+            }
+        }
+        for candidate in &semantic.related_doc_candidates {
+            if selected_paths.contains(candidate) {
+                out.insert((path.clone(), "related-doc".to_string(), candidate.clone()));
+            }
+        }
+        for candidate in &semantic.related_config_candidates {
+            if selected_paths.contains(candidate) {
+                out.insert((
+                    path.clone(),
+                    "related-config".to_string(),
+                    candidate.clone(),
+                ));
+            }
+        }
+    }
+    out.into_iter()
+        .map(|(from, kind, to)| ProjectContextRelationship { from, kind, to })
+        .collect()
+}
+
+fn build_project_context_relationship_refs(
+    relationships: &[ProjectContextRelationship],
+) -> BTreeMap<
+    String,
+    (
+        Vec<ProjectContextFileRelationship>,
+        Vec<ProjectContextFileRelationship>,
+    ),
+> {
+    let mut out = BTreeMap::<
+        String,
+        (
+            Vec<ProjectContextFileRelationship>,
+            Vec<ProjectContextFileRelationship>,
+        ),
+    >::new();
+    for rel in relationships {
+        out.entry(rel.from.clone())
+            .or_default()
+            .0
+            .push(ProjectContextFileRelationship {
+                kind: rel.kind.clone(),
+                path: rel.to.clone(),
+            });
+        out.entry(rel.to.clone())
+            .or_default()
+            .1
+            .push(ProjectContextFileRelationship {
+                kind: rel.kind.clone(),
+                path: rel.from.clone(),
+            });
+    }
+    for (outbound, inbound) in out.values_mut() {
+        outbound.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.path.cmp(&b.path)));
+        inbound.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.path.cmp(&b.path)));
+    }
+    out
+}
+
+fn render_project_context_manifest(bundle: &ProjectContextBundle) -> Result<String, ExitError> {
+    serde_json::to_string_pretty(&bundle.manifest).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to render project context JSON: {e}"),
+        )
+    })
+}
+
+fn render_project_context_md(manifest: &ProjectContextManifest) -> String {
+    let mut s = String::new();
+    s.push_str("# PROJECT CONTEXT\n\n");
+    s.push_str("This file is supplemental context for hosted AI handoff. Patch parts remain canonical.\n\n");
+    s.push_str("## Summary\n");
+    s.push_str(&format!("- mode: `{}`\n", manifest.mode));
+    s.push_str(&format!(
+        "- selected files: `{}` (`{}` changed, `{}` supplemental; `{}` snapshot(s), `{}` omitted)\n",
+        manifest.summary.selected_files,
+        manifest.summary.changed_files,
+        manifest.summary.supplemental_files,
+        manifest.summary.included_snapshots,
+        manifest.summary.omitted_files
+    ));
+    s.push_str(&format!(
+        "- snapshot root: `{}` (`{}` total bytes, `{}` relationship(s))\n",
+        manifest.snapshot_root,
+        manifest.summary.total_snapshot_bytes,
+        manifest.summary.relationship_count
+    ));
+
+    s.push_str("\n## Top-level directories\n");
+    for dir in &manifest.top_level_dirs {
+        s.push_str(&format!("- `{}`: {} file(s)\n", dir.path, dir.file_count));
+    }
+
+    if !manifest.summary.categories.is_empty() {
+        s.push_str("\n## Category counts\n");
+        for (category, count) in &manifest.summary.categories {
+            s.push_str(&format!("- `{}`: {} file(s)\n", category, count));
+        }
+    }
+
+    if !manifest.summary.priority_counts.is_empty() {
+        s.push_str("\n## Priority counts\n");
+        for (priority, count) in &manifest.summary.priority_counts {
+            s.push_str(&format!("- `{}`: {} file(s)\n", priority, count));
+        }
+    }
+
+    if !manifest.summary.edit_scope_counts.is_empty() {
+        s.push_str("\n## Edit-scope counts\n");
+        for (scope, count) in &manifest.summary.edit_scope_counts {
+            s.push_str(&format!("- `{}`: {} file(s)\n", scope, count));
+        }
+    }
+
+    if !manifest.summary.verification_relevance_counts.is_empty() {
+        s.push_str("\n## Verification relevance counts\n");
+        for (relevance, count) in &manifest.summary.verification_relevance_counts {
+            s.push_str(&format!("- `{}`: {} file(s)\n", relevance, count));
+        }
+    }
+
+    if !manifest.summary.relationship_kinds.is_empty() {
+        s.push_str("\n## Relationship kinds\n");
+        for (kind, count) in &manifest.summary.relationship_kinds {
+            s.push_str(&format!("- `{}`: {} relationship(s)\n", kind, count));
+        }
+    }
+
+    s.push_str("\n## Selected files\n");
+    for file in &manifest.files {
+        let reasons = if file.source_reasons.is_empty() {
+            "-".to_string()
+        } else {
+            file.source_reasons.join(", ")
+        };
+        if file.included {
+            s.push_str(&format!(
+                "- `{}` [{}] changed=`{}` role=`{}` priority=`{}` edit=`{}` verify=`{}` verify-why=`{}` why=`{}` task-groups=`{}` reasons=`{}` context=`{}` snapshot=`{}` language=`{}` labels=`{}` outbound=`{}` inbound=`{}`\n",
+                file.path,
+                file.category,
+                yes_no(file.changed),
+                file.usage_role,
+                file.priority,
+                file.edit_scope_role,
+                file.verification_relevance,
+                render_string_list_or_dash(&file.verification_labels),
+                render_string_list_or_dash(&file.why_included),
+                render_string_list_or_dash(&file.task_group_refs),
+                reasons,
+                file.context_labels.join(","),
+                file.snapshot_path.as_deref().unwrap_or("-"),
+                file.semantic.language,
+                render_semantic_labels(&file.semantic),
+                file.outbound_relationships.len(),
+                file.inbound_relationships.len()
+            ));
+        } else {
+            s.push_str(&format!(
+                "- `{}` [{}] changed=`{}` role=`{}` priority=`{}` edit=`{}` verify=`{}` verify-why=`{}` why=`{}` task-groups=`{}` reasons=`{}` context=`{}` omitted=`{}` language=`{}` labels=`{}` outbound=`{}` inbound=`{}`\n",
+                file.path,
+                file.category,
+                yes_no(file.changed),
+                file.usage_role,
+                file.priority,
+                file.edit_scope_role,
+                file.verification_relevance,
+                render_string_list_or_dash(&file.verification_labels),
+                render_string_list_or_dash(&file.why_included),
+                render_string_list_or_dash(&file.task_group_refs),
+                reasons,
+                file.context_labels.join(","),
+                file.omitted_reason.as_deref().unwrap_or("unknown"),
+                file.semantic.language,
+                render_semantic_labels(&file.semantic),
+                file.outbound_relationships.len(),
+                file.inbound_relationships.len()
+            ));
+        }
+    }
+
+    if !manifest.relationships.is_empty() {
+        s.push_str("\n## Relationships\n");
+        for rel in &manifest.relationships {
+            s.push_str(&format!(
+                "- `{}` --{}--> `{}`\n",
+                rel.from, rel.kind, rel.to
+            ));
+        }
+    }
+
+    s
+}
+
+fn render_semantic_labels(semantic: &ManifestFileSemantic) -> String {
+    if semantic.coarse_labels.is_empty() {
+        "-".to_string()
+    } else {
+        semantic.coarse_labels.join(",")
+    }
+}
+
+fn render_string_list_or_dash(items: &[String]) -> String {
+    if items.is_empty() {
+        "-".to_string()
+    } else {
+        items.join(",")
+    }
+}
+
+fn project_context_json_path() -> &'static str {
+    "project.context.json"
+}
+
+fn project_context_md_path() -> &'static str {
+    "PROJECT_CONTEXT.md"
+}
+
+fn project_context_snapshot_root() -> &'static str {
+    "project_context/files"
+}
+
+fn render_ai_requests_md(inp: &HandoffManifestInputs<'_>) -> String {
+    let mut s = String::new();
+    let reading_order_start = if inp.project_context.is_some() { 4 } else { 3 };
+    s.push_str("# AI REQUESTS\n\n");
+    s.push_str("Use this file as the bundle-local request scaffold when forwarding the handoff to a hosted AI. Patch parts remain canonical.\n\n");
+    s.push_str("## Read order\n");
+    s.push_str("1. Read `HANDOFF.md` first.\n");
+    s.push_str("2. Use the Change Map plus Parts Index to identify the patch parts that matter.\n");
+    if inp.project_context.is_some() {
+        s.push_str("3. Read `PROJECT_CONTEXT.md` only when you need surrounding repo structure beyond the changed files.\n");
+    }
+    for (idx, item) in inp.reading_order.iter().enumerate() {
+        s.push_str(&format!("{}. {}\n", idx + reading_order_start, item));
+    }
+
+    s.push_str("\n## Hard constraints\n");
+    s.push_str("- Patch parts remain canonical. Do not replace them with a repo snapshot.\n");
+    s.push_str(
+        "- Use the exact current workspace head below when emitting a loop-ready patch bundle.\n",
+    );
+    s.push_str("- If loop-ready output is impossible, ask for the missing SHA or return `MODE: ANALYSIS_ONLY`. Do not fabricate fallback zip formats.\n");
+    s.push_str("- If you return plain text edits instead of a loop-ready patch bundle, keep them as plain text. Do not invent a zip unless the user explicitly asked for a non-ops package.\n");
+    s.push_str(&format!(
+        "- Current workspace HEAD for loop-ready output: `{}`\n",
+        inp.head.trim()
+    ));
+
+    s.push_str("\n## Requested output modes\n");
+    s.push_str("### 1. Analysis only\n");
+    s.push_str("- Return `MODE: ANALYSIS_ONLY` plus the reasoning, risks, and a concrete plan.\n");
+    s.push_str("- Use this when the task is exploratory, blocked, or missing the exact base SHA required for a loop-ready patch bundle.\n");
+
+    s.push_str("\n### 2. Plain text diffs or file edits\n");
+    s.push_str("- Return unified diffs or file-by-file edits directly in text.\n");
+    s.push_str("- Keep the response scoped to the files listed in `HANDOFF.md` unless the request explicitly widens scope.\n");
+
+    s.push_str("\n### 3. Ops-compatible patch bundle\n");
+    s.push_str("- Return `MODE: OPS_PATCH_BUNDLE` only when you can produce a valid diffship loop-ready patch bundle.\n");
+    s.push_str("- The bundle root must contain `manifest.yaml` and `changes/*.patch`.\n");
+    s.push_str("- Use repo-relative paths only.\n");
+    s.push_str("- Use `base_commit` = the exact current workspace head above.\n");
+    s.push_str("- Use `apply_mode` = `git-apply` unless mail patches are explicitly requested.\n");
+    s.push_str("- If you emit `git-am`, default the patch mail author to `Diffship <diffship@example.com>` unless the repository says otherwise.\n");
+
+    s.push_str("\n## Bundle context available\n");
+    s.push_str(
+        "- `handoff.manifest.json` is the canonical machine-readable summary for this bundle.\n",
+    );
+    if inp.project_context.is_some() {
+        s.push_str("- `project.context.json` / `PROJECT_CONTEXT.md` provide bounded supplemental repo context for hosted AI use.\n");
+    } else {
+        s.push_str("- No supplemental project-context pack is included in this bundle.\n");
+    }
+    if !inp.attachments.is_empty() {
+        s.push_str("- `attachments.zip` contains raw files that were intentionally kept out of patch text.\n");
+    }
+    if !inp.exclusions.is_empty() {
+        s.push_str("- `excluded.md` records files that were intentionally omitted from the patch payload.\n");
+    }
+    if let Some(project_context) = inp.project_context {
+        s.push_str("\n## Focused project-context guidance\n");
+        s.push_str(&format!(
+            "- selected files: `{}` (`{}` changed, `{}` supplemental; `{}` relationship(s))\n",
+            project_context.summary.selected_files,
+            project_context.summary.changed_files,
+            project_context.summary.supplemental_files,
+            project_context.summary.relationship_count
+        ));
+        s.push_str("- Read changed focused-context files first. Follow only their direct relationships before widening scope.\n");
+        s.push_str("- Use `project.context.json` when you need file-by-file `changed`, `usage_role`, `priority`, `edit_scope_role`, `verification_relevance`, `verification_labels`, `why_included`, `task_group_refs`, `context_labels`, `semantic`, `outbound_relationships`, and `inbound_relationships` data.\n");
+        s.push_str("- Use `PROJECT_CONTEXT.md` when you want the same focused selection rendered in text.\n");
+        for file in project_context
+            .files
+            .iter()
+            .filter(|file| file.changed)
+            .take(5)
+        {
+            let verify = format!(
+                "{}:{}",
+                file.verification_relevance,
+                render_string_list_or_dash(&file.verification_labels)
+            );
+            s.push_str(&format!(
+                "- changed context: `{}` [{}] role=`{}` priority=`{}` edit=`{}` verify=`{}` tasks=`{}` context=`{}` language=`{}` labels=`{}` direct=`{}`\n",
+                file.path,
+                file.category,
+                file.usage_role,
+                file.priority,
+                file.edit_scope_role,
+                verify,
+                render_string_list_or_dash(&file.task_group_refs),
+                file.context_labels.join(","),
+                file.semantic.language,
+                render_semantic_labels(&file.semantic),
+                render_project_context_ai_relationships(file)
+            ));
+        }
+    }
+
+    if !inp.task_groups.is_empty() {
+        s.push_str("\n## Task-group execution order\n");
+        s.push_str("- Read each task group's part context before its patch payload, then widen into focused project context only for the listed related files.\n");
+        s.push_str("- Treat `risk_hints` as local verification prompts, not as a substitute for `verify`.\n");
+        s.push_str("- Treat `review_labels` as generation/review strategy hints: behavioral changes need deeper reasoning, mechanical updates need scope discipline, and verification-heavy tasks need stronger local check follow-up.\n");
+        s.push_str("- Use `task_shape_labels` to decide whether a task is single-area or cross-cutting and whether it deserves extra review/verification budget before you start editing.\n");
+        s.push_str("- Use `edit_targets` as the bounded write scope for the task and `context_only_files` as read-only context unless the task explicitly broadens scope.\n");
+        s.push_str("- Use `verification_targets` as the bounded set of likely tests/config/policy surfaces to inspect before proposing local verification.\n");
+        s.push_str("- Use `verification_labels` to keep verification strategy coarse and bounded: distinguish test follow-up, config/policy follow-up, dependency validation, and lightweight sanity checks before you suggest local commands.\n");
+        s.push_str("- Use `widening_labels` to decide whether to stay patch-first or widen into related tests/config/docs/repo rules.\n");
+        s.push_str("- Use `execution_labels` to keep the execution flow coarse and deterministic: decide whether to stay patch-only, widen before editing, review repo rules first, and bias toward post-edit verification without improvising a wider repo walk.\n");
+        for line in render_ai_request_task_groups(inp.task_groups, inp.project_context) {
+            s.push_str(&format!("- {line}\n"));
+        }
+    }
+
+    s.push_str("\n## Patch-part guidance\n");
+    s.push_str("- Use `parts/part_XX.context.json` when you need machine-readable part-local facts such as `intent_labels`, `scoped_context`, and per-file semantic hints.\n");
+    s.push_str("- Reuse part `review_labels` before editing: they tell you whether to optimize for behavioral reasoning, mechanical consistency, verification follow-up, or policy-sensitive review.\n");
+    for line in render_ai_request_part_guidance(inp.parts, inp.rows, inp.file_semantics) {
+        s.push_str(&format!("- {line}\n"));
+    }
+
+    s
+}
+
+fn render_project_context_ai_relationships(file: &ProjectContextFile) -> String {
+    let mut items = file
+        .outbound_relationships
+        .iter()
+        .map(|rel| format!("{}:{}", rel.kind, rel.path))
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        "-".to_string()
+    } else {
+        items.truncate(6);
+        items.join(", ")
+    }
+}
+
+fn render_ai_request_task_groups(
+    task_groups: &[TaskGroupComputed],
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<String> {
+    task_groups
+        .iter()
+        .take(8)
+        .map(|group| {
+            let project = group
+                .manifest
+                .related_project_files
+                .iter()
+                .take(4)
+                .map(|path| render_ai_request_project_file(path, project_context))
+                .collect::<Vec<_>>();
+            format!(
+                "`{}` primary=`{}` shape=`{}` review=`{}` intents=`{}` risks=`{}` edit=`{}` context=`{}` verify=`{}` verify-strategy=`{}` widen=`{}` execute=`{}` read=`{}` project=`{}`",
+                group.manifest.task_id,
+                render_string_list_or_dash(&group.manifest.primary_labels),
+                render_string_list_or_dash(&group.manifest.task_shape_labels),
+                render_string_list_or_dash(&group.manifest.review_labels),
+                render_string_list_or_dash(&group.manifest.intent_labels),
+                render_string_list_or_dash(&group.manifest.risk_hints),
+                render_string_list_or_dash(&group.manifest.edit_targets),
+                render_ai_request_context_only_files(
+                    &group.manifest.context_only_files,
+                    project_context,
+                ),
+                render_ai_request_verification_targets(
+                    &group.manifest.verification_targets,
+                    project_context,
+                ),
+                render_string_list_or_dash(&group.manifest.verification_labels),
+                render_string_list_or_dash(&group.manifest.widening_labels),
+                render_string_list_or_dash(&group.manifest.execution_labels),
+                render_string_list_or_dash(&group.manifest.suggested_read_order),
+                if project.is_empty() {
+                    "-".to_string()
+                } else {
+                    project.join(", ")
+                }
+            )
+        })
+        .collect()
+}
+
+fn render_ai_request_context_only_files(
+    paths: &[String],
+    project_context: Option<&ProjectContextManifest>,
+) -> String {
+    if paths.is_empty() {
+        return "-".to_string();
+    }
+    paths
+        .iter()
+        .take(5)
+        .map(|path| render_ai_request_project_file(path, project_context))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn render_ai_request_project_file(
+    path: &str,
+    project_context: Option<&ProjectContextManifest>,
+) -> String {
+    let Some(project_context) = project_context else {
+        return path.to_string();
+    };
+    if let Some(file) = project_context.files.iter().find(|file| file.path == path) {
+        return format!("{}({}/{})", path, file.usage_role, file.priority);
+    }
+    path.to_string()
+}
+
+fn render_ai_request_verification_targets(
+    paths: &[String],
+    project_context: Option<&ProjectContextManifest>,
+) -> String {
+    if paths.is_empty() {
+        return "-".to_string();
+    }
+    paths
+        .iter()
+        .take(5)
+        .map(|path| {
+            if let Some(project_context) = project_context
+                && let Some(file) = project_context.files.iter().find(|file| file.path == *path)
+            {
+                return format!(
+                    "{}({}/{})",
+                    path, file.verification_relevance, file.usage_role
+                );
+            }
+            path.clone()
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn render_ai_request_part_guidance(
+    parts: &[PartOutput],
+    rows: &[FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<String> {
+    parts
+        .iter()
+        .take(8)
+        .map(|part| {
+            let part_rows = rows
+                .iter()
+                .filter(|row| row.part == part.name)
+                .collect::<Vec<_>>();
+            let intents = build_part_intent_labels(&part_rows, file_semantics);
+            let review = build_review_labels_for_rows(&part_rows, file_semantics);
+            let files = part_rows
+                .iter()
+                .map(|row| row.path.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .take(3)
+                .collect::<Vec<_>>();
+            format!(
+                "`parts/{}` context=`{}` review=`{}` intents=`{}` segments=`{}` files=`{}`",
+                part.name,
+                part_context_path(&part.name),
+                if review.is_empty() {
+                    "-".to_string()
+                } else {
+                    review.join(",")
+                },
+                if intents.is_empty() {
+                    "-".to_string()
+                } else {
+                    intents.join(",")
+                },
+                if part.segments.is_empty() {
+                    "-".to_string()
+                } else {
+                    part.segments.join(",")
+                },
+                if files.is_empty() {
+                    "-".to_string()
+                } else {
+                    files.join(",")
+                }
+            )
+        })
+        .collect()
+}
+
+fn ai_requests_md_path() -> &'static str {
+    "AI_REQUESTS.md"
+}
+
+fn build_manifest_task_group_details(
+    parts: &[PartOutput],
+    rows: &[FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<TaskGroupComputed> {
+    #[derive(Default)]
+    struct TaskGroupAccum {
+        part_ids: BTreeSet<String>,
+        segments: BTreeSet<String>,
+        files: BTreeSet<String>,
+    }
+
+    let mut grouped = BTreeMap::<Vec<String>, TaskGroupAccum>::new();
+    for part in parts {
+        let part_rows = rows
+            .iter()
+            .filter(|row| row.part == part.name)
+            .collect::<Vec<_>>();
+        let intent_labels = build_part_intent_labels(&part_rows, file_semantics);
+        let entry = grouped.entry(intent_labels).or_default();
+        entry.part_ids.insert(part.name.clone());
+        for segment in &part.segments {
+            entry.segments.insert(segment.clone());
+        }
+        for row in part_rows {
+            entry.files.insert(row.path.clone());
+        }
+    }
+
+    grouped
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (intent_labels, accum))| {
+            let task_id = format!("task_{:02}", idx + 1);
+            let part_ids = accum.part_ids.into_iter().collect::<Vec<_>>();
+            let segments = accum.segments.into_iter().collect::<Vec<_>>();
+            let files = accum.files;
+            let related_context_paths = part_ids
+                .iter()
+                .map(|part_id| part_context_path(part_id))
+                .collect::<Vec<_>>();
+            let related_project_files =
+                build_task_group_related_project_files(&files, project_context);
+            let verification_targets = build_task_group_verification_targets(
+                &files,
+                &related_project_files,
+                file_semantics,
+                project_context,
+            );
+            let review_labels = build_review_labels_for_rows(
+                &rows
+                    .iter()
+                    .filter(|row| part_ids.contains(&row.part))
+                    .collect::<Vec<_>>(),
+                file_semantics,
+            );
+            let verification_labels = build_task_group_verification_labels(
+                &files,
+                &verification_targets,
+                &review_labels,
+                file_semantics,
+                project_context,
+            );
+            let widening_labels =
+                build_task_group_widening_labels(&files, &related_project_files, project_context);
+            let manifest = ManifestTaskGroup {
+                task_id: task_id.clone(),
+                intent_labels: intent_labels.clone(),
+                primary_labels: build_task_group_primary_labels(
+                    &intent_labels,
+                    &files,
+                    file_semantics,
+                ),
+                task_shape_labels: build_task_group_shape_labels(
+                    &files,
+                    &review_labels,
+                    &verification_labels,
+                    &widening_labels,
+                ),
+                edit_targets: files.iter().cloned().collect(),
+                context_only_files: related_project_files
+                    .iter()
+                    .filter(|path| !files.contains(*path))
+                    .cloned()
+                    .collect(),
+                review_labels: review_labels.clone(),
+                part_count: part_ids.len(),
+                file_count: files.len(),
+                part_ids: part_ids.clone(),
+                segments,
+                top_files: files.iter().take(8).cloned().collect(),
+                verification_targets: verification_targets.clone(),
+                verification_labels: verification_labels.clone(),
+                widening_labels: widening_labels.clone(),
+                execution_labels: build_task_group_execution_labels(
+                    &review_labels,
+                    &verification_labels,
+                    &widening_labels,
+                ),
+                related_context_paths: related_context_paths.clone(),
+                related_project_files: related_project_files.iter().cloned().collect(),
+                suggested_read_order: build_task_group_suggested_read_order(
+                    &related_context_paths,
+                    &part_ids,
+                    &related_project_files,
+                    project_context,
+                ),
+                risk_hints: build_task_group_risk_hints(rows, &part_ids, file_semantics),
+            };
+            TaskGroupComputed {
+                manifest,
+                all_files: files,
+                related_project_files,
+            }
+        })
+        .collect()
+}
+
+fn build_task_group_primary_labels(
+    intent_labels: &[String],
+    files: &BTreeSet<String>,
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    for path in files {
+        match path_category_label(path) {
+            "source" => {
+                labels.insert("source_task".to_string());
+            }
+            "docs" => {
+                labels.insert("docs_task".to_string());
+            }
+            "config" => {
+                labels.insert("config_task".to_string());
+            }
+            "tests" => {
+                labels.insert("test_task".to_string());
+            }
+            _ => {
+                labels.insert("other_task".to_string());
+            }
+        }
+        if let Some(semantic) = file_semantics.get(path) {
+            for label in &semantic.coarse_labels {
+                match label.as_str() {
+                    "api_surface_like" => {
+                        labels.insert("api_surface_task".to_string());
+                    }
+                    "import_churn" => {
+                        labels.insert("import_heavy_task".to_string());
+                    }
+                    "generated_output_touch" => {
+                        labels.insert("generated_output_task".to_string());
+                    }
+                    "lockfile_touch" => {
+                        labels.insert("dependency_task".to_string());
+                    }
+                    "ci_or_tooling_touch" => {
+                        labels.insert("repo_tooling_task".to_string());
+                    }
+                    "repo_rule_touch" => {
+                        labels.insert("repo_rule_task".to_string());
+                    }
+                    "dependency_policy_touch" => {
+                        labels.insert("dependency_policy_task".to_string());
+                    }
+                    "build_graph_touch" => {
+                        labels.insert("build_graph_task".to_string());
+                    }
+                    "test_infrastructure_touch" => {
+                        labels.insert("test_infra_task".to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    for label in intent_labels {
+        match label.as_str() {
+            "cross_area_change" => {
+                labels.insert("cross_area_task".to_string());
+            }
+            "rename_or_copy" => {
+                labels.insert("rename_task".to_string());
+            }
+            "reduced_context" => {
+                labels.insert("reduced_context_task".to_string());
+            }
+            _ => {}
+        }
+    }
+    labels.into_iter().collect()
+}
+
+fn build_task_group_related_project_files(
+    files: &BTreeSet<String>,
+    project_context: Option<&ProjectContextManifest>,
+) -> BTreeSet<String> {
+    let Some(project_context) = project_context else {
+        return BTreeSet::new();
+    };
+    let mut out = BTreeSet::new();
+    let selected = project_context
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<BTreeSet<_>>();
+    for file in files {
+        if selected.contains(file) {
+            out.insert(file.clone());
+        }
+    }
+    for relationship in &project_context.relationships {
+        if files.contains(&relationship.from) && selected.contains(&relationship.to) {
+            out.insert(relationship.to.clone());
+        }
+        if files.contains(&relationship.to) && selected.contains(&relationship.from) {
+            out.insert(relationship.from.clone());
+        }
+    }
+    out
+}
+
+fn build_task_group_suggested_read_order(
+    related_context_paths: &[String],
+    part_ids: &[String],
+    related_project_files: &BTreeSet<String>,
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<String> {
+    let mut items = Vec::new();
+    items.extend(related_context_paths.iter().cloned());
+    items.extend(part_ids.iter().map(|part_id| format!("parts/{part_id}")));
+    if let Some(project_context) = project_context {
+        for path in related_project_files {
+            if let Some(snapshot_path) = project_context
+                .files
+                .iter()
+                .find(|file| file.path == *path)
+                .and_then(|file| file.snapshot_path.clone())
+            {
+                items.push(snapshot_path);
+            }
+        }
+    }
+    items
+}
+
+fn build_task_group_risk_hints(
+    rows: &[FileRow],
+    part_ids: &[String],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<String> {
+    let part_ids = part_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let mut hints = BTreeSet::new();
+    for row in rows.iter().filter(|row| part_ids.contains(&row.part)) {
+        let change_hints = build_manifest_file_change_hints(row);
+        if change_hints.reduced_context {
+            hints.insert("reduced_context".to_string());
+        }
+        if change_hints.stored_as_attachment {
+            hints.insert("attachment_routed".to_string());
+        }
+        if change_hints.excluded {
+            hints.insert("excluded_entry".to_string());
+        }
+        if let Some(semantic) = file_semantics.get(&row.path) {
+            if semantic.lockfile {
+                hints.insert("lockfile_touch".to_string());
+            }
+            if semantic.ci_or_tooling {
+                hints.insert("ci_or_tooling_touch".to_string());
+            }
+            if semantic.generated_like {
+                hints.insert("generated_output_touch".to_string());
+            }
+        }
+    }
+    hints.into_iter().collect()
+}
+
+fn build_task_group_verification_targets(
+    files: &BTreeSet<String>,
+    related_project_files: &BTreeSet<String>,
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<String> {
+    let mut targets = BTreeSet::new();
+    for path in files {
+        let category = path_category_label(path);
+        if let Some(semantic) = file_semantics.get(path) {
+            let has_api_like = semantic.coarse_labels.iter().any(|label| {
+                matches!(label.as_str(), "api_surface_like" | "signature_change_like")
+            });
+            let has_import_like = semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "import_churn");
+            if matches!(category, "source" | "tests" | "config")
+                || semantic.lockfile
+                || semantic.ci_or_tooling
+                || has_api_like
+                || has_import_like
+                || !semantic.related_test_candidates.is_empty()
+                || !semantic.related_config_candidates.is_empty()
+            {
+                targets.insert(path.clone());
+            }
+            for candidate in &semantic.related_test_candidates {
+                targets.insert(candidate.clone());
+            }
+            for candidate in &semantic.related_config_candidates {
+                targets.insert(candidate.clone());
+            }
+        }
+    }
+    if let Some(project_context) = project_context {
+        for path in related_project_files {
+            if let Some(file) = project_context.files.iter().find(|file| file.path == *path)
+                && file.verification_relevance != "background"
+            {
+                targets.insert(path.clone());
+            }
+        }
+    }
+    targets.into_iter().collect()
+}
+
+fn build_task_group_verification_labels(
+    files: &BTreeSet<String>,
+    verification_targets: &[String],
+    review_labels: &[String],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    let has_changed_tests = files
+        .iter()
+        .any(|path| path_category_label(path) == "tests");
+    let has_target_tests = verification_targets
+        .iter()
+        .any(|path| path_category_label(path) == "tests" || is_test_like_path(path));
+    let has_target_config = verification_targets.iter().any(|path| {
+        path_category_label(path) == "config"
+            || file_semantics
+                .get(path)
+                .is_some_and(|semantic| semantic.lockfile || semantic.ci_or_tooling)
+    });
+    let has_target_policy = project_context.is_some_and(|project_context| {
+        verification_targets.iter().any(|path| {
+            project_context
+                .files
+                .iter()
+                .find(|file| file.path == *path)
+                .is_some_and(|file| {
+                    file.verification_labels.iter().any(|label| {
+                        matches!(label.as_str(), "config_or_policy" | "relationship_backed")
+                    })
+                })
+        })
+    });
+
+    if has_target_tests {
+        labels.insert("test_follow_up".to_string());
+    }
+    if has_target_config {
+        labels.insert("config_follow_up".to_string());
+    }
+    if has_target_policy {
+        labels.insert("policy_follow_up".to_string());
+    }
+    if review_labels
+        .iter()
+        .any(|label| label == "behavioral_change_like")
+    {
+        labels.insert("behavioral_regression_watch".to_string());
+    }
+    if review_labels
+        .iter()
+        .any(|label| label == "dependency_or_import_review")
+    {
+        labels.insert("dependency_validation".to_string());
+    }
+    if review_labels
+        .iter()
+        .any(|label| label == "mechanical_update_like")
+        && !review_labels
+            .iter()
+            .any(|label| label == "behavioral_change_like")
+    {
+        labels.insert("sanity_check_first".to_string());
+    }
+    if !has_changed_tests && has_target_tests {
+        labels.insert("needs_targeted_test_read".to_string());
+    }
+
+    labels.into_iter().collect()
+}
+
+fn build_task_group_widening_labels(
+    files: &BTreeSet<String>,
+    related_project_files: &BTreeSet<String>,
+    project_context: Option<&ProjectContextManifest>,
+) -> Vec<String> {
+    let Some(project_context) = project_context else {
+        return vec!["patch_only".to_string()];
+    };
+
+    let mut labels = BTreeSet::new();
+    for path in related_project_files {
+        if files.contains(path) {
+            continue;
+        }
+        if let Some(file) = project_context.files.iter().find(|file| file.path == *path) {
+            match file.usage_role.as_str() {
+                "test_reference" => {
+                    labels.insert("read_related_tests".to_string());
+                }
+                "config_reference" => {
+                    labels.insert("read_related_config".to_string());
+                }
+                "doc_reference" => {
+                    labels.insert("read_related_docs".to_string());
+                }
+                "repo_rule" => {
+                    labels.insert("read_repo_rules".to_string());
+                }
+                "direct_support" => {
+                    labels.insert("read_direct_support".to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if labels.is_empty() {
+        labels.insert("patch_only".to_string());
+    }
+
+    labels.into_iter().collect()
+}
+
+fn build_task_group_execution_labels(
+    review_labels: &[String],
+    verification_labels: &[String],
+    widening_labels: &[String],
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    if widening_labels.iter().any(|label| label == "patch_only") {
+        labels.insert("patch_only_flow".to_string());
+    } else {
+        labels.insert("widen_before_edit".to_string());
+    }
+    if widening_labels
+        .iter()
+        .any(|label| label == "read_repo_rules")
+    {
+        labels.insert("rules_before_edit".to_string());
+    }
+    if review_labels
+        .iter()
+        .any(|label| label == "behavioral_change_like")
+    {
+        labels.insert("behavior_first".to_string());
+    } else if review_labels
+        .iter()
+        .any(|label| label == "mechanical_update_like")
+    {
+        labels.insert("mechanical_first".to_string());
+    }
+    if !verification_labels.is_empty() {
+        labels.insert("verify_after_edit".to_string());
+    }
+    if verification_labels.iter().any(|label| {
+        matches!(
+            label.as_str(),
+            "test_follow_up" | "needs_targeted_test_read"
+        )
+    }) {
+        labels.insert("check_tests_after_edit".to_string());
+    }
+    if verification_labels
+        .iter()
+        .any(|label| matches!(label.as_str(), "config_follow_up" | "policy_follow_up"))
+    {
+        labels.insert("check_config_after_edit".to_string());
+    }
+    if verification_labels
+        .iter()
+        .any(|label| label == "dependency_validation")
+    {
+        labels.insert("check_dependencies_after_edit".to_string());
+    }
+    labels.into_iter().collect()
+}
+
+fn build_task_group_shape_labels(
+    files: &BTreeSet<String>,
+    review_labels: &[String],
+    verification_labels: &[String],
+    widening_labels: &[String],
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    let category_count = files
+        .iter()
+        .map(|path| path_category_label(path).to_string())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let has_context_widening = widening_labels.iter().any(|label| label != "patch_only");
+    if category_count > 1 || has_context_widening {
+        labels.insert("cross_cutting".to_string());
+    } else {
+        labels.insert("single_area".to_string());
+    }
+    if review_labels.len() >= 2
+        || review_labels.iter().any(|label| {
+            matches!(
+                label.as_str(),
+                "behavioral_change_like" | "repo_policy_touch" | "verification_surface_touch"
+            )
+        })
+    {
+        labels.insert("review_heavy".to_string());
+    }
+    if verification_labels.len() >= 2
+        || verification_labels
+            .iter()
+            .any(|label| label != "sanity_check_first")
+    {
+        labels.insert("verification_heavy".to_string());
+    }
+    labels.into_iter().collect()
+}
+
+fn enrich_project_context_with_task_groups(
+    manifest: &mut ProjectContextManifest,
+    task_groups: &[TaskGroupComputed],
+) {
+    let mut refs = BTreeMap::<String, BTreeSet<String>>::new();
+    for group in task_groups {
+        for path in group
+            .all_files
+            .iter()
+            .chain(group.related_project_files.iter())
+        {
+            refs.entry(path.clone())
+                .or_default()
+                .insert(group.manifest.task_id.clone());
+        }
+    }
+
+    for file in &mut manifest.files {
+        file.task_group_refs = refs
+            .remove(&file.path)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        file.edit_scope_role = build_project_context_edit_scope_role(file, task_groups);
+    }
+    manifest.summary = build_project_context_summary(
+        &manifest.files,
+        &manifest.relationships,
+        manifest.summary.total_snapshot_bytes,
+    );
+}
+
+fn build_project_context_edit_scope_role(
+    file: &ProjectContextFile,
+    task_groups: &[TaskGroupComputed],
+) -> String {
+    let is_edit_target = task_groups.iter().any(|group| {
+        group
+            .manifest
+            .edit_targets
+            .iter()
+            .any(|path| path == &file.path)
+    });
+    if is_edit_target || file.changed {
+        return "write_target".to_string();
+    }
+
+    let is_context_only = task_groups.iter().any(|group| {
+        group
+            .manifest
+            .context_only_files
+            .iter()
+            .any(|path| path == &file.path)
+    });
+    if is_context_only {
+        if file.usage_role == "repo_rule" {
+            return "read_only_rule".to_string();
+        }
+        if file.verification_relevance != "background" || file.usage_role == "test_reference" {
+            return "read_only_verification".to_string();
+        }
+    }
+
+    "read_only_context".to_string()
 }
 
 fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, ExitError> {
@@ -3385,11 +5503,21 @@ fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, Ex
             handoff_md: "HANDOFF.md".to_string(),
             manifest_json: "handoff.manifest.json".to_string(),
             context_xml: handoff_context_xml_path().to_string(),
+            ai_requests_md: ai_requests_md_path().to_string(),
             part_paths: inp
                 .parts
                 .iter()
                 .map(|part| format!("parts/{}", part.name))
                 .collect(),
+            project_context_json: inp
+                .project_context
+                .map(|_| project_context_json_path().to_string()),
+            project_context_md: inp
+                .project_context
+                .map(|_| project_context_md_path().to_string()),
+            project_context_snapshot_root: inp
+                .project_context
+                .map(|_| project_context_snapshot_root().to_string()),
             attachments_zip: (!inp.attachments.is_empty()).then(|| "attachments.zip".to_string()),
             excluded_md: (!inp.exclusions.is_empty()).then(|| "excluded.md".to_string()),
             secrets_md: (!inp.secret_hits.is_empty()).then(|| "secrets.md".to_string()),
@@ -3426,6 +5554,11 @@ fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, Ex
                 }
             })
             .collect(),
+        task_groups: inp
+            .task_groups
+            .iter()
+            .map(|group| group.manifest.clone())
+            .collect(),
         files: inp
             .rows
             .iter()
@@ -3439,6 +5572,8 @@ fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, Ex
                 bytes: row.bytes,
                 part: row_part_name(row),
                 note: nonempty(row.note.trim()),
+                change_hints: build_manifest_file_change_hints(row),
+                semantic: file_semantic_for_row(inp.file_semantics, row),
             })
             .collect(),
         commit_views: inp
@@ -3558,6 +5693,24 @@ fn render_handoff_context_xml(inp: &HandoffManifestInputs<'_>) -> String {
         "    <artifact path=\"{}\" kind=\"rendered-context-xml\" />\n",
         xml_escape(handoff_context_xml_path())
     ));
+    s.push_str(&format!(
+        "    <artifact path=\"{}\" kind=\"ai-requests\" />\n",
+        xml_escape(ai_requests_md_path())
+    ));
+    if inp.project_context.is_some() {
+        s.push_str(&format!(
+            "    <artifact path=\"{}\" kind=\"project-context-json\" />\n",
+            xml_escape(project_context_json_path())
+        ));
+        s.push_str(&format!(
+            "    <artifact path=\"{}\" kind=\"project-context-md\" />\n",
+            xml_escape(project_context_md_path())
+        ));
+        s.push_str(&format!(
+            "    <artifact path=\"{}\" kind=\"project-context-snapshots\" />\n",
+            xml_escape(project_context_snapshot_root())
+        ));
+    }
     for part in inp.parts {
         s.push_str(&format!(
             "    <artifact path=\"parts/{}\" kind=\"patch\" />\n",
@@ -3781,6 +5934,8 @@ fn render_part_contexts(
     attachments: &[AttachmentEntry],
     exclusions: &[ExclusionEntry],
     secret_hits: &[SecretHit],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+    task_groups: &[TaskGroupComputed],
 ) -> Result<Vec<(String, String)>, ExitError> {
     let mut rendered = Vec::with_capacity(parts.len());
     for part in parts {
@@ -3802,15 +5957,37 @@ fn render_part_contexts(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        let task_group = task_groups
+            .iter()
+            .find(|group| {
+                group
+                    .manifest
+                    .part_ids
+                    .iter()
+                    .any(|part_id| part_id == &part.name)
+            })
+            .ok_or_else(|| {
+                ExitError::new(
+                    EXIT_GENERAL,
+                    format!("failed to find task group for part {}", part.name),
+                )
+            })?;
+        let scoped_context = build_part_scoped_context(part, &part_rows, file_semantics);
         let context = PartContext {
             schema_version: 1,
             patch_canonical: true,
             part_id: part.name.clone(),
             patch_path: format!("parts/{}", part.name),
             context_path: part_context_path(&part.name),
+            task_group_ref: task_group.manifest.task_id.clone(),
+            task_shape_labels: task_group.manifest.task_shape_labels.clone(),
+            task_edit_targets: task_group.manifest.edit_targets.clone(),
+            task_context_only_files: task_group.manifest.context_only_files.clone(),
             title: part_context_title(part, &file_paths, &category_counts),
             summary: part_context_summary(&part.segments, &category_counts, file_paths.len()),
             intent: part_context_intent(&category_counts),
+            intent_labels: build_part_intent_labels(&part_rows, file_semantics),
+            review_labels: build_review_labels_for_rows(&part_rows, file_semantics),
             segments: part.segments.clone(),
             files: part_rows
                 .iter()
@@ -3824,8 +6001,11 @@ fn render_part_contexts(
                     bytes: row.bytes,
                     part: row_part_name(row),
                     note: nonempty(row.note.trim()),
+                    change_hints: build_manifest_file_change_hints(row),
+                    semantic: file_semantic_for_row(file_semantics, row),
                 })
                 .collect(),
+            scoped_context,
             diff_stats: PartContextDiffStats {
                 file_count: file_paths.len(),
                 additions: sum_opt(part_rows.iter().map(|row| row.ins)),
@@ -3879,6 +6059,832 @@ fn handoff_context_xml_path() -> &'static str {
     "handoff.context.xml"
 }
 
+fn file_semantic_for_row(
+    semantics: &BTreeMap<String, ManifestFileSemantic>,
+    row: &FileRow,
+) -> ManifestFileSemantic {
+    semantics.get(&row.path).cloned().unwrap_or_else(|| {
+        build_manifest_file_semantic(&row.path, &BTreeSet::new(), FilePatchClues::default())
+    })
+}
+
+fn build_manifest_file_change_hints(row: &FileRow) -> ManifestFileChangeHints {
+    let previous_path = row.note.trim().strip_prefix("from ").map(ToOwned::to_owned);
+    ManifestFileChangeHints {
+        new_file: row.status == "A" && previous_path.is_none(),
+        deleted_file: row.status == "D",
+        rename_or_copy: previous_path.is_some(),
+        previous_path,
+        stored_as_attachment: row.part == "attachments.zip"
+            || row.note.contains("stored in attachments.zip"),
+        excluded: row.part == "-" || row.note.contains("see excluded.md"),
+        reduced_context: row_has_reduced_context(row),
+    }
+}
+
+fn build_file_semantics(
+    git_root: &Path,
+    rows: &[FileRow],
+    parts: &[PartOutput],
+) -> Result<BTreeMap<String, ManifestFileSemantic>, ExitError> {
+    let candidate_paths = related_test_candidate_pool(git_root, rows)?;
+    let patch_clues = collect_file_patch_clues(parts);
+    let unique_paths = rows
+        .iter()
+        .map(|row| row.path.clone())
+        .collect::<BTreeSet<_>>();
+    Ok(unique_paths
+        .into_iter()
+        .map(|path| {
+            let semantic = build_manifest_file_semantic(
+                &path,
+                &candidate_paths,
+                patch_clues.get(&path).copied().unwrap_or_default(),
+            );
+            (path, semantic)
+        })
+        .collect())
+}
+
+fn related_test_candidate_pool(
+    git_root: &Path,
+    rows: &[FileRow],
+) -> Result<BTreeSet<String>, ExitError> {
+    let tracked = git::run_git(git_root, ["ls-files"])?;
+    let mut paths = tracked
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<BTreeSet<_>>();
+    for row in rows {
+        paths.insert(row.path.clone());
+    }
+    Ok(paths)
+}
+
+fn build_manifest_file_semantic(
+    path: &str,
+    candidate_paths: &BTreeSet<String>,
+    patch_clues: FilePatchClues,
+) -> ManifestFileSemantic {
+    let generated_like = is_generated_like_path(path);
+    let lockfile = is_lockfile_path(path);
+    let ci_or_tooling = is_ci_or_tooling_path(path);
+    let repo_rule = is_repo_rule_path(path);
+    let dependency_policy = is_dependency_policy_path(path);
+    let build_graph = is_build_graph_path(path);
+    let test_infrastructure = is_test_infrastructure_path(path);
+    let category = path_category_label(path);
+    let mut coarse_labels = BTreeSet::new();
+    if category == "docs" {
+        coarse_labels.insert("docs_only".to_string());
+    }
+    if category == "config" {
+        coarse_labels.insert("config_only".to_string());
+    }
+    if category == "tests" {
+        coarse_labels.insert("test_only".to_string());
+    }
+    if generated_like {
+        coarse_labels.insert("generated_output_touch".to_string());
+    }
+    if lockfile {
+        coarse_labels.insert("lockfile_touch".to_string());
+    }
+    if ci_or_tooling {
+        coarse_labels.insert("ci_or_tooling_touch".to_string());
+    }
+    if repo_rule {
+        coarse_labels.insert("repo_rule_touch".to_string());
+    }
+    if dependency_policy {
+        coarse_labels.insert("dependency_policy_touch".to_string());
+    }
+    if build_graph {
+        coarse_labels.insert("build_graph_touch".to_string());
+    }
+    if test_infrastructure {
+        coarse_labels.insert("test_infrastructure_touch".to_string());
+    }
+    if patch_clues.has_import_churn {
+        coarse_labels.insert("import_churn".to_string());
+    }
+    if patch_clues.has_signature_change_like {
+        coarse_labels.insert("signature_change_like".to_string());
+    }
+    if patch_clues.has_api_surface_like {
+        coarse_labels.insert("api_surface_like".to_string());
+    }
+
+    ManifestFileSemantic {
+        language: language_label(path).to_string(),
+        generated_like,
+        lockfile,
+        ci_or_tooling,
+        coarse_labels: coarse_labels.into_iter().collect(),
+        related_test_candidates: infer_related_test_candidates(path, candidate_paths),
+        related_source_candidates: infer_related_source_candidates(path, candidate_paths),
+        related_doc_candidates: infer_related_doc_candidates(path, candidate_paths),
+        related_config_candidates: infer_related_config_candidates(path, candidate_paths),
+    }
+}
+
+fn language_label(path: &str) -> &'static str {
+    let file_name = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    match Path::new(path).extension().and_then(|ext| ext.to_str()) {
+        Some("rs") => "rust",
+        Some("py") => "python",
+        Some("ts") => "typescript",
+        Some("tsx") => "tsx",
+        Some("js") => "javascript",
+        Some("jsx") => "jsx",
+        Some("go") => "go",
+        Some("java") => "java",
+        Some("kt") => "kotlin",
+        Some("swift") => "swift",
+        Some("c") | Some("h") => "c",
+        Some("cc") | Some("cpp") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
+        Some("json") => "json",
+        Some("yaml") | Some("yml") => "yaml",
+        Some("toml") => "toml",
+        Some("md") => "markdown",
+        Some("sh") | Some("bash") | Some("zsh") => "shell",
+        _ if matches!(file_name, "Makefile" | "justfile" | "Justfile") => "build-script",
+        _ => "unknown",
+    }
+}
+
+fn is_generated_like_path(path: &str) -> bool {
+    let file_name = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    path.starts_with("dist/")
+        || path.starts_with("build/")
+        || path.starts_with("target/")
+        || path.starts_with("coverage/")
+        || file_name.contains(".generated.")
+        || file_name.contains("_generated.")
+        || file_name.ends_with(".min.js")
+}
+
+fn is_lockfile_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).file_name().and_then(|name| name.to_str()),
+        Some(
+            "Cargo.lock"
+                | "package-lock.json"
+                | "pnpm-lock.yaml"
+                | "yarn.lock"
+                | "poetry.lock"
+                | "Gemfile.lock"
+                | "composer.lock"
+                | "Podfile.lock"
+        )
+    )
+}
+
+fn is_ci_or_tooling_path(path: &str) -> bool {
+    let file_name = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    path.starts_with(".github/")
+        || path.starts_with(".gitlab/")
+        || matches!(
+            file_name,
+            "Makefile" | "justfile" | "Justfile" | "mise.toml" | "lefthook.yml" | "lefthook.yaml"
+        )
+}
+
+fn is_repo_rule_path(path: &str) -> bool {
+    matches!(
+        path,
+        "AGENTS.md"
+            | "docs/AI_WORKFLOW.md"
+            | "docs/PROJECT_KIT_TEMPLATE.md"
+            | "docs/HANDOFF_TEMPLATE.md"
+            | ".diffship/PROJECT_RULES.md"
+            | ".diffship/AI_GUIDE.md"
+            | ".diffship/PROJECT_KIT.md"
+    )
+}
+
+fn is_dependency_policy_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).file_name().and_then(|name| name.to_str()),
+        Some(
+            "Cargo.toml"
+                | "package.json"
+                | "pyproject.toml"
+                | "requirements.txt"
+                | "requirements-dev.txt"
+                | "constraints.txt"
+                | "Gemfile"
+                | "go.mod"
+                | "go.sum"
+                | "Package.swift"
+        )
+    ) || is_lockfile_path(path)
+}
+
+fn is_build_graph_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).file_name().and_then(|name| name.to_str()),
+        Some(
+            "Cargo.toml"
+                | "package.json"
+                | "pyproject.toml"
+                | "tsconfig.json"
+                | "Makefile"
+                | "justfile"
+                | "Justfile"
+                | "CMakeLists.txt"
+                | "build.gradle"
+                | "build.gradle.kts"
+                | "settings.gradle"
+                | "settings.gradle.kts"
+                | "Package.swift"
+                | "Dockerfile"
+        )
+    ) || path.ends_with("docker-compose.yml")
+}
+
+fn is_test_infrastructure_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.contains("/fixtures/")
+        || lower.contains("/fixture/")
+        || lower.contains("/mocks/")
+        || lower.contains("/mock/")
+        || lower.contains("/snapshots/")
+        || lower.contains("/snapshot/")
+        || lower.contains("/harness/")
+        || lower.starts_with("tests/fixtures/")
+        || lower.starts_with("test/fixtures/")
+}
+
+fn infer_related_test_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
+    if is_test_like_path(path) {
+        return Vec::new();
+    }
+
+    let p = Path::new(path);
+    let file_name = p
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let stem = p
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let ext = p
+        .extension()
+        .and_then(|name| name.to_str())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_default();
+    let rel_no_src = path.strip_prefix("src/").unwrap_or(path);
+    let parent = Path::new(rel_no_src)
+        .parent()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut explicit = BTreeSet::new();
+    for root in ["tests", "test", "__tests__"] {
+        explicit.insert(join_rel(root, rel_no_src));
+        if !file_name.is_empty() {
+            explicit.insert(join_rel(root, file_name));
+        }
+        if !stem.is_empty() {
+            for candidate in [
+                format!("{stem}_test{ext}"),
+                format!("test_{stem}{ext}"),
+                format!("{stem}.test{ext}"),
+                format!("{stem}.spec{ext}"),
+            ] {
+                let rel = if parent.is_empty() {
+                    candidate
+                } else {
+                    format!("{parent}/{candidate}")
+                };
+                explicit.insert(join_rel(root, &rel));
+            }
+        }
+    }
+
+    explicit
+        .into_iter()
+        .filter(|candidate| candidate_paths.contains(candidate) && is_test_like_path(candidate))
+        .collect()
+}
+
+fn infer_related_source_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
+    if !is_test_like_path(path) {
+        return Vec::new();
+    }
+
+    let stripped = strip_test_root(path).unwrap_or(path);
+    let normalized = normalize_test_path_to_source_like(stripped);
+    let file_name = Path::new(&normalized)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let mut explicit = BTreeSet::new();
+    explicit.insert(join_rel("src", &normalized));
+    if !file_name.is_empty() {
+        explicit.insert(join_rel("src", &file_name));
+    }
+
+    explicit
+        .into_iter()
+        .filter(|candidate| candidate_paths.contains(candidate) && candidate.starts_with("src/"))
+        .collect()
+}
+
+fn infer_related_doc_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
+    if path.starts_with("docs/") || path == "README.md" {
+        return Vec::new();
+    }
+
+    let normalized = normalize_path_for_related_docs(path);
+    let p = Path::new(&normalized);
+    let stem = p
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let parent = p
+        .parent()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut explicit = BTreeSet::new();
+    explicit.insert("README.md".to_string());
+    explicit.insert(join_rel("docs", &replace_extension(&normalized, "md")));
+    if !stem.is_empty() {
+        explicit.insert(join_rel("docs", &format!("{stem}.md")));
+        if !parent.is_empty() {
+            explicit.insert(join_rel("docs", &format!("{parent}/{stem}.md")));
+        }
+    }
+
+    explicit
+        .into_iter()
+        .filter(|candidate| {
+            candidate_paths.contains(candidate)
+                && (candidate == "README.md" || candidate.starts_with("docs/"))
+        })
+        .collect()
+}
+
+fn infer_related_config_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
+    let mut explicit = BTreeSet::new();
+    if candidate_paths.contains("Cargo.toml") && matches!(language_label(path), "rust") {
+        explicit.insert("Cargo.toml".to_string());
+    }
+    if matches!(
+        language_label(path),
+        "typescript" | "tsx" | "javascript" | "jsx"
+    ) {
+        for candidate in ["package.json", "tsconfig.json"] {
+            if candidate_paths.contains(candidate) {
+                explicit.insert(candidate.to_string());
+            }
+        }
+    }
+    if matches!(language_label(path), "python") {
+        for candidate in ["pyproject.toml", "requirements.txt"] {
+            if candidate_paths.contains(candidate) {
+                explicit.insert(candidate.to_string());
+            }
+        }
+    }
+    if matches!(language_label(path), "go") && candidate_paths.contains("go.mod") {
+        explicit.insert("go.mod".to_string());
+    }
+    if matches!(language_label(path), "java" | "kotlin") {
+        for candidate in [
+            "build.gradle",
+            "settings.gradle",
+            "gradle.properties",
+            "pom.xml",
+        ] {
+            if candidate_paths.contains(candidate) {
+                explicit.insert(candidate.to_string());
+            }
+        }
+    }
+    if matches!(language_label(path), "swift") && candidate_paths.contains("Package.swift") {
+        explicit.insert("Package.swift".to_string());
+    }
+    if path.starts_with(".github/") {
+        for candidate in ["README.md", "docs/ci.md"] {
+            if candidate_paths.contains(candidate) {
+                explicit.insert(candidate.to_string());
+            }
+        }
+    }
+    explicit.into_iter().collect()
+}
+
+fn normalize_path_for_related_docs(path: &str) -> String {
+    if is_test_like_path(path) {
+        normalize_test_path_to_source_like(strip_test_root(path).unwrap_or(path))
+    } else {
+        path.strip_prefix("src/").unwrap_or(path).to_string()
+    }
+}
+
+fn strip_test_root(path: &str) -> Option<&str> {
+    for root in ["tests/", "test/", "__tests__/"] {
+        if let Some(stripped) = path.strip_prefix(root) {
+            return Some(stripped);
+        }
+    }
+    None
+}
+
+fn normalize_test_path_to_source_like(path: &str) -> String {
+    let p = Path::new(path);
+    let parent = p
+        .parent()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let file_name = p
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let normalized = normalize_test_file_name(file_name);
+    if parent.is_empty() {
+        normalized
+    } else {
+        format!("{parent}/{normalized}")
+    }
+}
+
+fn normalize_test_file_name(file_name: &str) -> String {
+    let name = file_name.strip_prefix("test_").unwrap_or(file_name);
+    for needle in ["_test.", ".test.", "_spec.", ".spec."] {
+        if let Some((prefix, suffix)) = name.split_once(needle) {
+            return format!("{prefix}.{suffix}");
+        }
+    }
+    name.to_string()
+}
+
+fn replace_extension(path: &str, new_ext: &str) -> String {
+    let p = Path::new(path);
+    let stem = p.file_stem().and_then(|name| name.to_str()).unwrap_or(path);
+    let parent = p
+        .parent()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let file_name = format!("{stem}.{new_ext}");
+    if parent.is_empty() {
+        file_name
+    } else {
+        format!("{parent}/{file_name}")
+    }
+}
+
+fn join_rel(root: &str, rel: &str) -> String {
+    let trimmed = rel.trim_start_matches('/');
+    if trimmed.is_empty() {
+        root.to_string()
+    } else {
+        format!("{root}/{trimmed}")
+    }
+}
+
+fn is_test_like_path(path: &str) -> bool {
+    let file_name = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    path.starts_with("tests/")
+        || path.starts_with("test/")
+        || path.starts_with("__tests__/")
+        || file_name.starts_with("test_")
+        || file_name.contains("_test.")
+        || file_name.contains(".test.")
+        || file_name.contains("_spec.")
+        || file_name.contains(".spec.")
+}
+
+fn build_part_scoped_context(
+    part: &PartOutput,
+    part_rows: &[&FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> PartScopedContext {
+    let hunk_headers = extract_hunk_headers(&part.patch);
+    let changed_lines = collect_changed_patch_lines(&part.patch);
+    let symbol_like_names = extract_symbol_like_names(&hunk_headers, &changed_lines);
+    let import_like_refs = extract_import_like_refs(&changed_lines);
+    let related_test_candidates = part_rows
+        .iter()
+        .filter_map(|row| file_semantics.get(&row.path))
+        .flat_map(|semantic| semantic.related_test_candidates.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let files = build_part_scoped_file_contexts(part, part_rows);
+
+    PartScopedContext {
+        hunk_headers,
+        symbol_like_names,
+        import_like_refs,
+        related_test_candidates,
+        files,
+    }
+}
+
+fn build_part_scoped_file_contexts(
+    part: &PartOutput,
+    part_rows: &[&FileRow],
+) -> Vec<PartScopedFileContext> {
+    let mut by_path = unique_part_paths(part_rows)
+        .into_iter()
+        .map(|path| {
+            (
+                path.clone(),
+                PartScopedFileContext {
+                    path,
+                    hunk_headers: Vec::new(),
+                    symbol_like_names: Vec::new(),
+                    import_like_refs: Vec::new(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for (path, chunk) in collect_patch_chunks(&part.patch) {
+        let Some(entry) = by_path.get_mut(&path) else {
+            continue;
+        };
+        let headers = extract_hunk_headers(&chunk);
+        let changed_lines = collect_changed_patch_lines(&chunk);
+        entry.hunk_headers = merge_unique_sorted(&entry.hunk_headers, &headers);
+        entry.symbol_like_names = merge_unique_sorted(
+            &entry.symbol_like_names,
+            &extract_symbol_like_names(&headers, &changed_lines),
+        );
+        entry.import_like_refs = merge_unique_sorted(
+            &entry.import_like_refs,
+            &extract_import_like_refs(&changed_lines),
+        );
+    }
+
+    by_path.into_values().collect()
+}
+
+fn collect_file_patch_clues(parts: &[PartOutput]) -> BTreeMap<String, FilePatchClues> {
+    let mut clues = BTreeMap::<String, FilePatchClues>::new();
+    for part in parts {
+        for (path, chunk) in collect_patch_chunks(&part.patch) {
+            let changed_lines = collect_changed_patch_lines(&chunk);
+            if changed_lines.is_empty() {
+                continue;
+            }
+            let entry = clues.entry(path).or_default();
+            entry.has_import_churn |= !extract_import_like_refs(&changed_lines).is_empty();
+            entry.has_signature_change_like |= changed_lines
+                .iter()
+                .any(|line| is_signature_change_like_line(line));
+            entry.has_api_surface_like |= changed_lines
+                .iter()
+                .any(|line| is_api_surface_like_line(line));
+        }
+    }
+    clues
+}
+
+fn unique_part_paths(part_rows: &[&FileRow]) -> Vec<String> {
+    part_rows
+        .iter()
+        .map(|row| row.path.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn collect_patch_chunks(patch: &str) -> Vec<(String, String)> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for line in patch.lines() {
+        if line.starts_with("diff --git ") {
+            if !current.is_empty() {
+                if let Some(path) = patch_chunk_path(&current) {
+                    chunks.push((path, current.clone()));
+                }
+                current.clear();
+            }
+            current.push_str(line);
+            continue;
+        }
+
+        if current.is_empty() {
+            continue;
+        }
+        current.push('\n');
+        current.push_str(line);
+    }
+
+    if !current.is_empty()
+        && let Some(path) = patch_chunk_path(&current)
+    {
+        chunks.push((path, current));
+    }
+
+    chunks
+}
+
+fn merge_unique_sorted(existing: &[String], incoming: &[String]) -> Vec<String> {
+    existing
+        .iter()
+        .chain(incoming.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn extract_hunk_headers(patch: &str) -> Vec<String> {
+    patch
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("@@ ")?;
+            let (_, suffix) = rest.split_once(" @@")?;
+            let suffix = suffix.trim();
+            if suffix.is_empty() {
+                None
+            } else {
+                Some(suffix.to_string())
+            }
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn collect_changed_patch_lines(patch: &str) -> Vec<String> {
+    patch
+        .lines()
+        .filter(|line| {
+            (line.starts_with('+') || line.starts_with('-'))
+                && !line.starts_with("+++")
+                && !line.starts_with("---")
+        })
+        .map(|line| line[1..].trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
+fn extract_symbol_like_names(hunk_headers: &[String], changed_lines: &[String]) -> Vec<String> {
+    hunk_headers
+        .iter()
+        .chain(changed_lines.iter())
+        .flat_map(|line| extract_symbol_like_names_from_line(line))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn extract_symbol_like_names_from_line(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    let mut symbols = BTreeSet::new();
+
+    for keyword in [
+        "fn ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "impl ",
+        "mod ",
+        "function ",
+        "class ",
+        "interface ",
+        "type ",
+        "def ",
+        "func ",
+    ] {
+        if let Some(name) = identifier_after_keyword(trimmed, keyword) {
+            symbols.insert(name);
+        }
+    }
+
+    if trimmed.contains("=>")
+        && let Some(name) = identifier_after_keyword(trimmed, "const ")
+            .or_else(|| identifier_after_keyword(trimmed, "let "))
+            .or_else(|| identifier_after_keyword(trimmed, "var "))
+    {
+        symbols.insert(name);
+    }
+
+    symbols.into_iter().collect()
+}
+
+fn identifier_after_keyword(line: &str, keyword: &str) -> Option<String> {
+    let idx = line.find(keyword)?;
+    let rest = &line[idx + keyword.len()..];
+    let candidate = rest
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '(' || c == '<')
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':' || *c == '.')
+        .collect::<String>();
+    normalize_symbol_candidate(&candidate)
+}
+
+fn normalize_symbol_candidate(candidate: &str) -> Option<String> {
+    let trimmed =
+        candidate.trim_matches(|c: char| c == ':' || c == '.' || c == '<' || c == '>' || c == '(');
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == "if" || trimmed == "for" || trimmed == "while" || trimmed == "match" {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+fn extract_import_like_refs(changed_lines: &[String]) -> Vec<String> {
+    changed_lines
+        .iter()
+        .filter_map(|line| normalize_import_like_ref(line))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn normalize_import_like_ref(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let is_import_like = trimmed.starts_with("use ")
+        || trimmed.starts_with("import ")
+        || trimmed.starts_with("from ")
+        || trimmed.starts_with("mod ")
+        || trimmed.starts_with("#include")
+        || trimmed.contains("require(");
+    if !is_import_like {
+        return None;
+    }
+
+    Some(
+        trimmed
+            .trim_end_matches(';')
+            .trim_end_matches('{')
+            .trim()
+            .to_string(),
+    )
+}
+
+fn is_signature_change_like_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    [
+        "pub fn ",
+        "fn ",
+        "pub struct ",
+        "struct ",
+        "pub enum ",
+        "enum ",
+        "pub trait ",
+        "trait ",
+        "impl ",
+        "function ",
+        "export function ",
+        "class ",
+        "export class ",
+        "interface ",
+        "type ",
+        "export type ",
+        "def ",
+        "async def ",
+        "func ",
+    ]
+    .iter()
+    .any(|needle| trimmed.starts_with(needle))
+}
+
+fn is_api_surface_like_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.starts_with("pub ")
+        || trimmed.starts_with("export ")
+        || trimmed.starts_with("interface ")
+        || trimmed.starts_with("type ")
+        || trimmed.starts_with("class ")
+        || trimmed.starts_with("trait ")
+    {
+        return true;
+    }
+    trimmed.starts_with("def ") && !trimmed.starts_with("def _")
+}
+
 fn count_part_categories(rows: &[&FileRow]) -> PartContextCategoryCounts {
     let mut counts = PartContextCategoryCounts::default();
     let unique_paths = rows
@@ -3907,6 +6913,142 @@ where
         *counts.entry(key_fn(row)).or_insert(0) += 1;
     }
     counts
+}
+
+fn build_part_intent_labels(
+    rows: &[&FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    let counts = count_part_categories(rows);
+
+    if counts.docs > 0 {
+        labels.insert("docs_update".to_string());
+    }
+    if counts.config > 0 {
+        labels.insert("config_update".to_string());
+    }
+    if counts.source > 0 {
+        labels.insert("source_update".to_string());
+    }
+    if counts.tests > 0 {
+        labels.insert("test_update".to_string());
+    }
+    if counts.other > 0 {
+        labels.insert("other_update".to_string());
+    }
+
+    let active_categories = [
+        counts.docs > 0,
+        counts.config > 0,
+        counts.source > 0,
+        counts.tests > 0,
+        counts.other > 0,
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    if active_categories > 1 {
+        labels.insert("cross_area_change".to_string());
+    }
+
+    for row in rows {
+        if row_has_reduced_context(row) {
+            labels.insert("reduced_context".to_string());
+        }
+        let hints = build_manifest_file_change_hints(row);
+        if hints.rename_or_copy {
+            labels.insert("rename_or_copy".to_string());
+        }
+        if let Some(semantic) = file_semantics.get(&row.path) {
+            if semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "api_surface_like")
+            {
+                labels.insert("api_surface_touch".to_string());
+            }
+            if semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "import_churn")
+            {
+                labels.insert("import_churn".to_string());
+            }
+            if semantic.generated_like {
+                labels.insert("generated_output_touch".to_string());
+            }
+        }
+    }
+
+    labels.into_iter().collect()
+}
+
+fn build_review_labels_for_rows(
+    rows: &[&FileRow],
+    file_semantics: &BTreeMap<String, ManifestFileSemantic>,
+) -> Vec<String> {
+    let mut labels = BTreeSet::new();
+    let counts = count_part_categories(rows);
+    let has_source = counts.source > 0;
+    let has_tests = counts.tests > 0;
+    let has_docs = counts.docs > 0;
+    let has_config = counts.config > 0;
+    let has_other = counts.other > 0;
+
+    let mut has_api_surface = false;
+    let mut has_signature_change = false;
+    let mut has_import_churn = false;
+    let mut has_ci_or_tooling = false;
+    let mut has_lockfile = false;
+    let mut has_generated = false;
+    let mut has_related_tests = false;
+
+    for row in rows {
+        if let Some(semantic) = file_semantics.get(&row.path) {
+            has_api_surface |= semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "api_surface_like");
+            has_signature_change |= semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "signature_change_like");
+            has_import_churn |= semantic
+                .coarse_labels
+                .iter()
+                .any(|label| label == "import_churn");
+            has_ci_or_tooling |= semantic.ci_or_tooling;
+            has_lockfile |= semantic.lockfile;
+            has_generated |= semantic.generated_like;
+            has_related_tests |= !semantic.related_test_candidates.is_empty();
+        }
+    }
+
+    if has_source && (has_api_surface || has_signature_change) {
+        labels.insert("behavioral_change_like".to_string());
+    }
+    if !has_source && (has_docs || has_config || has_other || has_generated) {
+        labels.insert("mechanical_update_like".to_string());
+    }
+    if has_source || has_tests || has_config || has_ci_or_tooling || has_lockfile || has_api_surface
+    {
+        labels.insert("verification_surface_touch".to_string());
+    }
+    if has_source && !has_tests && has_related_tests {
+        labels.insert("needs_related_test_review".to_string());
+    }
+    if has_config || has_ci_or_tooling || has_lockfile {
+        labels.insert("repo_policy_touch".to_string());
+    }
+    if has_source && has_docs {
+        labels.insert("documentation_alignment_needed".to_string());
+    }
+    if has_import_churn {
+        labels.insert("dependency_or_import_review".to_string());
+    }
+
+    labels.into_iter().collect()
 }
 
 fn part_context_title(
@@ -4098,6 +7240,7 @@ fn add_dir_recursive<W: Write + io::Seek>(
 mod tests {
     use super::*;
     use std::fs;
+    use std::iter::FromIterator;
     use time::{Date, Month, PrimitiveDateTime, Time, UtcOffset};
 
     #[test]
@@ -4139,5 +7282,375 @@ mod tests {
         let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118", "abcdef1");
 
         assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_abcdef1_3"));
+    }
+
+    #[test]
+    fn language_label_classifies_common_extensions() {
+        assert_eq!(language_label("src/lib.rs"), "rust");
+        assert_eq!(language_label("web/app.ts"), "typescript");
+        assert_eq!(language_label("web/App.tsx"), "tsx");
+        assert_eq!(language_label("scripts/build.sh"), "shell");
+        assert_eq!(language_label("justfile"), "build-script");
+        assert_eq!(language_label("docs/spec.md"), "markdown");
+        assert_eq!(language_label("unknown/file.xyz"), "unknown");
+    }
+
+    #[test]
+    fn semantic_flags_classify_generated_lockfile_and_tooling_paths() {
+        assert!(is_generated_like_path("target/debug/app"));
+        assert!(is_generated_like_path("web/dist/app.min.js"));
+        assert!(is_generated_like_path("src/foo_generated.rs"));
+        assert!(!is_generated_like_path("src/lib.rs"));
+
+        assert!(is_lockfile_path("Cargo.lock"));
+        assert!(is_lockfile_path("frontend/pnpm-lock.yaml"));
+        assert!(!is_lockfile_path("Cargo.toml"));
+
+        assert!(is_ci_or_tooling_path(".github/workflows/ci.yml"));
+        assert!(is_ci_or_tooling_path("justfile"));
+        assert!(is_ci_or_tooling_path("tooling/mise.toml"));
+        assert!(!is_ci_or_tooling_path("src/lib.rs"));
+
+        assert!(is_repo_rule_path("AGENTS.md"));
+        assert!(is_repo_rule_path(".diffship/PROJECT_RULES.md"));
+        assert!(!is_repo_rule_path("docs/lib.md"));
+
+        assert!(is_dependency_policy_path("Cargo.toml"));
+        assert!(is_dependency_policy_path("package.json"));
+        assert!(!is_dependency_policy_path("src/lib.rs"));
+
+        assert!(is_build_graph_path("tsconfig.json"));
+        assert!(is_build_graph_path("Dockerfile"));
+        assert!(!is_build_graph_path("docs/lib.md"));
+
+        assert!(is_test_infrastructure_path("tests/fixtures/api.json"));
+        assert!(is_test_infrastructure_path("tests/mocks/client.rs"));
+        assert!(!is_test_infrastructure_path("tests/lib_test.rs"));
+    }
+
+    #[test]
+    fn build_manifest_file_semantic_adds_coarse_labels_from_path_flags() {
+        let semantic = build_manifest_file_semantic(
+            ".github/workflows/ci.yml",
+            &BTreeSet::new(),
+            FilePatchClues::default(),
+        );
+        assert!(semantic.coarse_labels.contains(&"config_only".to_string()));
+        assert!(
+            semantic
+                .coarse_labels
+                .contains(&"ci_or_tooling_touch".to_string())
+        );
+
+        let generated = build_manifest_file_semantic(
+            "target/generated/schema.generated.json",
+            &BTreeSet::new(),
+            FilePatchClues::default(),
+        );
+        assert!(
+            generated
+                .coarse_labels
+                .contains(&"generated_output_touch".to_string())
+        );
+
+        let test_file = build_manifest_file_semantic(
+            "tests/lib_test.rs",
+            &BTreeSet::new(),
+            FilePatchClues::default(),
+        );
+        assert!(test_file.coarse_labels.contains(&"test_only".to_string()));
+
+        let repo_rule =
+            build_manifest_file_semantic("AGENTS.md", &BTreeSet::new(), FilePatchClues::default());
+        assert!(
+            repo_rule
+                .coarse_labels
+                .contains(&"repo_rule_touch".to_string())
+        );
+
+        let dependency =
+            build_manifest_file_semantic("Cargo.toml", &BTreeSet::new(), FilePatchClues::default());
+        assert!(
+            dependency
+                .coarse_labels
+                .contains(&"dependency_policy_touch".to_string())
+        );
+        assert!(
+            dependency
+                .coarse_labels
+                .contains(&"build_graph_touch".to_string())
+        );
+
+        let fixture = build_manifest_file_semantic(
+            "tests/fixtures/api.json",
+            &BTreeSet::new(),
+            FilePatchClues::default(),
+        );
+        assert!(
+            fixture
+                .coarse_labels
+                .contains(&"test_infrastructure_touch".to_string())
+        );
+    }
+
+    #[test]
+    fn infer_related_test_candidates_returns_existing_stable_matches() {
+        let candidates = BTreeSet::from_iter(
+            [
+                "src/lib.rs",
+                "tests/lib.rs",
+                "tests/lib_test.rs",
+                "tests/nested/foo_test.py",
+                "tests/nested/foo.spec.py",
+                "tests/ignored.md",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        );
+
+        assert_eq!(
+            infer_related_test_candidates("src/lib.rs", &candidates),
+            vec!["tests/lib.rs".to_string(), "tests/lib_test.rs".to_string()]
+        );
+        assert_eq!(
+            infer_related_test_candidates("src/nested/foo.py", &candidates),
+            vec![
+                "tests/nested/foo.spec.py".to_string(),
+                "tests/nested/foo_test.py".to_string(),
+            ]
+        );
+        assert!(infer_related_test_candidates("tests/lib_test.rs", &candidates).is_empty());
+    }
+
+    #[test]
+    fn infer_related_source_candidates_returns_existing_stable_matches() {
+        let candidates = BTreeSet::from_iter(
+            [
+                "src/lib.rs",
+                "src/nested/foo.py",
+                "tests/lib_test.rs",
+                "tests/nested/test_foo.py",
+                "tests/nested/foo.spec.py",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        );
+
+        assert_eq!(
+            infer_related_source_candidates("tests/lib_test.rs", &candidates),
+            vec!["src/lib.rs".to_string()]
+        );
+        assert_eq!(
+            infer_related_source_candidates("tests/nested/test_foo.py", &candidates),
+            vec!["src/nested/foo.py".to_string()]
+        );
+        assert_eq!(
+            infer_related_source_candidates("tests/nested/foo.spec.py", &candidates),
+            vec!["src/nested/foo.py".to_string()]
+        );
+        assert!(infer_related_source_candidates("src/lib.rs", &candidates).is_empty());
+    }
+
+    #[test]
+    fn infer_related_doc_and_config_candidates_return_existing_stable_matches() {
+        let candidates = BTreeSet::from_iter(
+            [
+                "src/lib.rs",
+                "tests/lib_test.rs",
+                "Cargo.toml",
+                "README.md",
+                "docs/lib.md",
+                "docs/nested/foo.md",
+                "src/nested/foo.py",
+                "tests/nested/test_foo.py",
+                "pyproject.toml",
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned),
+        );
+
+        assert_eq!(
+            infer_related_doc_candidates("src/lib.rs", &candidates),
+            vec!["README.md".to_string(), "docs/lib.md".to_string()]
+        );
+        assert_eq!(
+            infer_related_doc_candidates("tests/nested/test_foo.py", &candidates),
+            vec!["README.md".to_string(), "docs/nested/foo.md".to_string()]
+        );
+        assert_eq!(
+            infer_related_config_candidates("src/lib.rs", &candidates),
+            vec!["Cargo.toml".to_string()]
+        );
+        assert_eq!(
+            infer_related_config_candidates("tests/nested/test_foo.py", &candidates),
+            vec!["pyproject.toml".to_string()]
+        );
+    }
+
+    #[test]
+    fn patch_clues_detect_import_signature_and_api_surface_lines() {
+        assert!(is_signature_change_like_line(
+            "pub fn value(input: i32) -> i32 {"
+        ));
+        assert!(is_signature_change_like_line("interface ResultShape {"));
+        assert!(!is_signature_change_like_line("let value = 1;"));
+
+        assert!(is_api_surface_like_line("pub struct Value {"));
+        assert!(is_api_surface_like_line("export function buildThing() {"));
+        assert!(is_api_surface_like_line("def render(request):"));
+        assert!(!is_api_surface_like_line("def _helper(request):"));
+
+        let parts = vec![PartOutput {
+            name: "part_01.patch".to_string(),
+            patch: r#"diff --git a/src/lib.rs b/src/lib.rs
+index 1111111..2222222 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,6 @@
+-use crate::old_dep;
++use crate::new_dep;
++pub fn value(input: i32) -> i32 {
++export function buildThing() {
+  1
+ }
+"#
+            .to_string(),
+            segments: vec!["committed".to_string()],
+        }];
+
+        let clues = collect_file_patch_clues(&parts);
+        let src = clues.get("src/lib.rs").expect("src/lib.rs clues");
+        assert!(src.has_import_churn);
+        assert!(src.has_signature_change_like);
+        assert!(src.has_api_surface_like);
+    }
+
+    #[test]
+    fn change_hints_classify_rename_attachment_exclusion_and_reduced_context() {
+        let renamed = FileRow {
+            segment: "committed".to_string(),
+            status: "R".to_string(),
+            path: "new.txt".to_string(),
+            note: "from old.txt".to_string(),
+            ins: Some(0),
+            del: Some(0),
+            bytes: Some(3),
+            part: "part_01.patch".to_string(),
+        };
+        let attachment = FileRow {
+            segment: "untracked".to_string(),
+            status: "A".to_string(),
+            path: "bin.dat".to_string(),
+            note: "stored in attachments.zip".to_string(),
+            ins: None,
+            del: None,
+            bytes: Some(4),
+            part: "attachments.zip".to_string(),
+        };
+        let excluded = FileRow {
+            segment: "committed".to_string(),
+            status: "A".to_string(),
+            path: "notes.txt".to_string(),
+            note: "excluded (meta only; see excluded.md)".to_string(),
+            ins: None,
+            del: None,
+            bytes: Some(2),
+            part: "-".to_string(),
+        };
+        let reduced = FileRow {
+            segment: "committed".to_string(),
+            status: "M".to_string(),
+            path: "src/lib.rs".to_string(),
+            note: "packing fallback reduced diff context to U0".to_string(),
+            ins: Some(1),
+            del: Some(1),
+            bytes: Some(10),
+            part: "part_01.patch".to_string(),
+        };
+
+        let renamed_hints = build_manifest_file_change_hints(&renamed);
+        assert!(renamed_hints.rename_or_copy);
+        assert_eq!(renamed_hints.previous_path.as_deref(), Some("old.txt"));
+        assert!(!renamed_hints.new_file);
+
+        let attachment_hints = build_manifest_file_change_hints(&attachment);
+        assert!(attachment_hints.stored_as_attachment);
+        assert!(attachment_hints.new_file);
+
+        let excluded_hints = build_manifest_file_change_hints(&excluded);
+        assert!(excluded_hints.excluded);
+        assert!(excluded_hints.new_file);
+
+        let reduced_hints = build_manifest_file_change_hints(&reduced);
+        assert!(reduced_hints.reduced_context);
+        assert!(!reduced_hints.excluded);
+    }
+
+    #[test]
+    fn scoped_context_extracts_hunk_headers_symbols_and_imports() {
+        let patch = r#"diff --git a/src/lib.rs b/src/lib.rs
+index 1111111..2222222 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,6 @@ pub fn old_name() -> i32 {
+-use crate::old_dep;
++use crate::new_dep;
++import { helper } from "./helper";
++const makeValue = () => helper();
++fn new_name() -> i32 {
+  1
+ }
+"#;
+
+        let headers = extract_hunk_headers(patch);
+        assert_eq!(headers, vec!["pub fn old_name() -> i32 {".to_string()]);
+
+        let changed_lines = collect_changed_patch_lines(patch);
+        assert!(changed_lines.contains(&"use crate::new_dep;".to_string()));
+        assert!(changed_lines.contains(&"const makeValue = () => helper();".to_string()));
+
+        let symbols = extract_symbol_like_names(&headers, &changed_lines);
+        assert!(symbols.contains(&"old_name".to_string()));
+        assert!(symbols.contains(&"new_name".to_string()));
+        assert!(symbols.contains(&"makeValue".to_string()));
+
+        let imports = extract_import_like_refs(&changed_lines);
+        assert_eq!(
+            imports,
+            vec![
+                "import { helper } from \"./helper\"".to_string(),
+                "use crate::new_dep".to_string(),
+                "use crate::old_dep".to_string(),
+            ]
+        );
+
+        let part = PartOutput {
+            name: "part_01.patch".to_string(),
+            patch: patch.to_string(),
+            segments: vec!["committed".to_string()],
+        };
+        let rows = [FileRow {
+            segment: "committed".to_string(),
+            status: "M".to_string(),
+            path: "src/lib.rs".to_string(),
+            note: String::new(),
+            ins: Some(4),
+            del: Some(1),
+            bytes: Some(42),
+            part: "part_01.patch".to_string(),
+        }];
+        let file_contexts = build_part_scoped_file_contexts(&part, &[&rows[0]]);
+        assert_eq!(file_contexts.len(), 1);
+        assert_eq!(file_contexts[0].path, "src/lib.rs");
+        assert!(
+            file_contexts[0]
+                .symbol_like_names
+                .contains(&"new_name".to_string())
+        );
+        assert!(
+            file_contexts[0]
+                .import_like_refs
+                .contains(&"use crate::new_dep".to_string())
+        );
     }
 }

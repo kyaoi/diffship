@@ -71,12 +71,27 @@ fn preview_can_show_list_and_part_from_directory_bundle() {
         .success()
         .stdout(
             contains("HANDOFF.md      : yes")
+                .and(contains("AI_REQUESTS.md  : yes"))
                 .and(contains("parts/part_01.patch"))
                 .and(contains("handoff.manifest.json : yes"))
                 .and(contains("handoff.context.xml  : yes"))
                 .and(contains("summary              : files=1, parts=1"))
                 .and(contains("reading order:"))
                 .and(contains("Docs changes: `part_01.patch` (1 files)"))
+                .and(contains("task groups:"))
+                .and(contains(
+                    "task_01: intents=docs_update parts=part_01.patch files=README.md",
+                ))
+                .and(contains(
+                    "semantic facts       : manifest-files=yes, part-contexts=1/1",
+                ))
+                .and(contains(
+                    "coarse labels        : manifest-files=yes, part-contexts=1/1",
+                ))
+                .and(contains(
+                    "change hints         : manifest-files=yes, part-contexts=1/1",
+                ))
+                .and(contains("scoped part hints    : 1/1"))
                 .and(contains("segments             : committed=1"))
                 .and(contains("statuses             : M=1")),
         );
@@ -153,6 +168,10 @@ fn preview_json_outputs_summary_and_entry_text() {
     assert_eq!(v.get("mode").and_then(|x| x.as_str()), Some("list"));
     assert_eq!(v.get("handoff_md").and_then(|x| x.as_bool()), Some(true));
     assert_eq!(
+        v.get("ai_requests_md").and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
         v.get("parts").and_then(|x| x.as_array()).map(|x| x.len()),
         Some(1)
     );
@@ -197,6 +216,72 @@ fn preview_json_outputs_summary_and_entry_text() {
             .and_then(|x| x.get(0))
             .and_then(|x| x.as_str()),
         Some("Docs changes: `part_01.patch` (1 files)")
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("task_groups"))
+            .and_then(|x| x.get(0))
+            .and_then(|x| x.get("task_id"))
+            .and_then(|x| x.as_str()),
+        Some("task_01")
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("task_groups"))
+            .and_then(|x| x.get(0))
+            .and_then(|x| x.get("intent_labels"))
+            .and_then(|x| x.get(0))
+            .and_then(|x| x.as_str()),
+        Some("docs_update")
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("semantic_facts"))
+            .and_then(|x| x.get("manifest_file_entries"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("semantic_facts"))
+            .and_then(|x| x.get("part_context_entries"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("coarse_labels"))
+            .and_then(|x| x.get("manifest_file_entries"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("coarse_labels"))
+            .and_then(|x| x.get("part_context_entries"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("change_hints"))
+            .and_then(|x| x.get("manifest_file_entries"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("change_hints"))
+            .and_then(|x| x.get("part_context_entries"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("scoped_context"))
+            .and_then(|x| x.get("part_context_entries"))
+            .and_then(|x| x.as_u64()),
+        Some(1)
     );
 
     let mut entry_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
@@ -254,4 +339,78 @@ fn preview_accepts_tilde_bundle_path() {
         .assert()
         .success()
         .stdout(contains("README.md"));
+}
+
+#[test]
+fn preview_surfaces_project_context_pack() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::create_dir_all(root.join(".diffship")).unwrap();
+
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    fs::write(root.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn value() -> i32 { 1 }\n").unwrap();
+    fs::write(root.join("tests/lib_test.rs"), "#[test]\nfn smoke() {}\n").unwrap();
+    fs::write(
+        root.join(".diffship/PROJECT_RULES.md"),
+        "Keep changes scoped.\n",
+    )
+    .unwrap();
+    commit_all(root, "base");
+    fs::write(root.join("src/lib.rs"), "pub fn value() -> i32 { 2 }\n").unwrap();
+    commit_all(root, "next");
+
+    let out = root.join("bundle_preview_project_context");
+    let mut build = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    build
+        .current_dir(root)
+        .args(["build", "--project-context", "focused", "--out"])
+        .arg(&out)
+        .assert()
+        .success();
+
+    let mut list = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    list.current_dir(root)
+        .args(["preview"])
+        .arg(&out)
+        .arg("--list")
+        .assert()
+        .success()
+        .stdout(
+            contains("project.context.json : yes")
+                .and(contains("PROJECT_CONTEXT.md   : yes"))
+                .and(contains("project snapshots    : 5"))
+                .and(contains(
+                    "project context      : selected=5, snapshots=5, omitted=0",
+                )),
+        );
+
+    let mut summary_cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    let summary = summary_cmd
+        .current_dir(root)
+        .args(["preview"])
+        .arg(&out)
+        .args(["--list", "--json"])
+        .output()
+        .unwrap();
+    assert!(summary.status.success());
+    let v: Value = serde_json::from_slice(&summary.stdout).expect("preview summary json");
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("project_context"))
+            .and_then(|x| x.get("manifest_json"))
+            .and_then(|x| x.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("structured_context")
+            .and_then(|x| x.get("project_context"))
+            .and_then(|x| x.get("summary"))
+            .and_then(|x| x.get("selected_files"))
+            .and_then(|x| x.as_u64()),
+        Some(5)
+    );
 }

@@ -93,6 +93,15 @@ Notes:
 - command order follows `cmd1`, `cmd2`, `cmd3`, ...
 - failures are recorded under the run directory and make `apply` / `loop` fail
 - commands are loaded only from local config sources (global/project), not from the patch bundle
+- treat these as local normalizers (formatters, docs/spec sync, deterministic fixups), not as a way to repair invalid AI output
+
+Suggested starting points:
+
+- Rust-oriented repo: `cargo fmt --all`, `just docs-check`, `just trace-check`
+- Node/TS-oriented repo: `pnpm exec prettier -w .`, `pnpm exec eslint . --fix`
+- Docs/spec-oriented repo: `just docs-check`, `just trace-check`
+
+`diffship init` now comments these presets into the generated project config stub so repositories can keep one or two narrow local normalization commands without turning `post_apply` into a hidden second verify phase.
 
 #### 1.1.3 Extra forbidden patch targets (implemented)
 

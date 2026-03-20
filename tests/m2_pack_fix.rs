@@ -50,6 +50,12 @@ fn head(root: &Path) -> String {
     String::from_utf8_lossy(&out).trim().to_string()
 }
 
+fn write_project_config(root: &Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("config.toml"), body).unwrap();
+}
+
 fn make_patch_by_editing_readme(repo_root: &Path, new_line: &str) -> String {
     let readme = repo_root.join("README.md");
     let mut s = fs::read_to_string(&readme).unwrap();
@@ -265,4 +271,80 @@ fn pack_fix_accepts_tilde_out_path() {
         .success();
 
     assert!(home.join("fixes").join("out.zip").exists());
+}
+
+#[test]
+fn pack_fix_includes_post_apply_artifacts_when_present() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[verify]
+default_profile = "custom"
+
+[verify.profiles.custom]
+cmd1 = "exit 9"
+
+[ops.post_apply]
+cmd1 = "printf post-apply >> README.md"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let apply_out = Command::new(assert_cmd::cargo::cargo_bin!("diffship"))
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .output()
+        .expect("apply");
+    assert!(apply_out.status.success(), "apply failed");
+    let run_id = extract_run_id(&apply_out.stdout);
+
+    Command::new(assert_cmd::cargo::cargo_bin!("diffship"))
+        .args(["verify", "--run-id", &run_id])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(9);
+
+    let run_dir = root.join(".diffship").join("runs").join(&run_id);
+    let zip_path = find_default_pack_fix_zip(&run_dir);
+    let entries = zip_entries(&zip_path);
+    assert!(entries.contains(&"run/post_apply.json".to_string()));
+    assert!(entries.contains(&"run/post-apply/01_cmd1.stdout".to_string()));
+
+    let file = fs::File::open(&zip_path).expect("zip file");
+    let mut zip = ZipArchive::new(file).expect("zip archive");
+    let prompt = {
+        let mut entry = zip.by_name("PROMPT.md").expect("prompt entry");
+        let mut s = String::new();
+        use std::io::Read;
+        entry.read_to_string(&mut s).expect("prompt text");
+        s
+    };
+    assert!(prompt.contains("run/post_apply.json"));
+    assert!(prompt.contains("run/post-apply/"));
+    assert!(prompt.contains("post_apply_changed_paths: `1`"));
+    assert!(prompt.contains("post_apply_change_categories: `docs_touch`"));
+    assert!(prompt.contains("changed paths: `README.md`"));
+    assert!(prompt.contains("change categories: `docs_touch`"));
+
+    let post_apply = {
+        let mut entry = zip
+            .by_name("run/post_apply.json")
+            .expect("post_apply entry");
+        let mut s = String::new();
+        use std::io::Read;
+        entry.read_to_string(&mut s).expect("post_apply text");
+        s
+    };
+    assert!(post_apply.contains("\"changed_paths\": ["));
+    assert!(post_apply.contains("\"README.md\""));
+    assert!(post_apply.contains("\"change_categories\": ["));
+    assert!(post_apply.contains("\"docs_touch\""));
 }
