@@ -1,0 +1,4 @@
+interface:
+  display_name: "Define Options"
+  short_description: "Add or change CLI, TUI, and plan options"
+  default_prompt: "Use $define-options to add or refine an option without breaking replayability or parity."

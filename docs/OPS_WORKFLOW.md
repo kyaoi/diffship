@@ -36,9 +36,11 @@ diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 
 ```bash
 diffship loop ./patch-bundle.zip
+diffship loop ./patch-bundle.zip --delete-input-zip
 ```
 
 If ops.post_apply commands are configured, diffship runs them automatically in the sandbox immediately after apply succeeds and before verify starts.
+When `--delete-input-zip` is set, diffship removes the original input `.zip` after copying it into the run directory; directory inputs are left untouched.
 
 5) If you need reproducibility checks across two handoff outputs:
 
@@ -117,6 +119,10 @@ You can also create or re-create it explicitly:
 ```bash
 diffship pack-fix --run-id <run-id>
 ```
+
+### Post-apply failed → create a reprompt bundle
+
+When a local `ops.post_apply` command fails after the patch step succeeded, diffship also writes the default reprompt zip under the same run directory so you can send the failure context back to the AI immediately.
 
 ### Reclaim disk from finished/orphaned workspaces and artifacts
 

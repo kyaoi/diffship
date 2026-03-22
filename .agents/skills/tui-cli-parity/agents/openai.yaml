@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI / CLI Parity"
+  short_description: "Keep TUI and CLI handoff behavior aligned"
+  default_prompt: "Use $tui-cli-parity to keep TUI screens, CLI flags, and replayed plans equivalent."

@@ -66,6 +66,7 @@ fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
     // argv: [bin, "apply", <bundle>, ...flags]
     let mut session: Option<String> = None;
     let mut base_commit: Option<String> = None;
+    let mut delete_input_zip = false;
     let mut keep_sandbox: Option<bool> = None;
     let mut bundle: Option<String> = None;
 
@@ -88,6 +89,8 @@ fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
             base_commit = Some(argv[i].clone());
         } else if let Some(v) = a.strip_prefix("--base-commit=") {
             base_commit = Some(v.to_string());
+        } else if a == "--delete-input-zip" {
+            delete_input_zip = true;
         } else if a == "--keep-sandbox" {
             keep_sandbox = Some(true);
         } else if a == "--no-keep-sandbox" {
@@ -111,6 +114,7 @@ fn parse_apply(argv: &[String]) -> Option<cli::Cli> {
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
         base_commit,
+        delete_input_zip,
         keep_sandbox: keep_sandbox.unwrap_or(true),
     };
 
@@ -220,6 +224,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
     let mut bundle: Option<String> = None;
     let mut session: Option<String> = None;
     let mut base_commit: Option<String> = None;
+    let mut delete_input_zip = false;
     let mut profile: Option<String> = None;
     let mut target_branch: Option<String> = None;
     let mut ack_secrets = false;
@@ -244,6 +249,8 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
             base_commit = Some(argv[i].clone());
         } else if let Some(v) = a.strip_prefix("--base-commit=") {
             base_commit = Some(v.to_string());
+        } else if a == "--delete-input-zip" {
+            delete_input_zip = true;
         } else if a == "--profile" {
             i += 1;
             if i >= argv.len() {
@@ -281,6 +288,7 @@ fn parse_loop(argv: &[String]) -> Option<cli::Cli> {
         bundle,
         session: session.unwrap_or_else(|| "default".to_string()),
         base_commit,
+        delete_input_zip,
         profile,
         target_branch,
         ack_secrets,

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Structured Handoff"
+  short_description: "Maintain manifest, context, and AI request files"
+  default_prompt: "Use $structured-handoff to evolve AI-facing bundle artifacts without breaking patch-canonical rules."

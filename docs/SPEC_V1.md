@@ -240,6 +240,8 @@ Applies a patch bundle safely.
 - **S-APPLY-008**: Must write run logs under `.diffship/runs/<run-id>/` including apply result and errors.
 - **S-APPLY-009**: If locally configured post-apply commands exist, apply MUST run them in the sandbox after the patch is applied, record logs under the run directory, and fail the apply/loop flow if any configured command fails. These commands are local config only and MUST NOT be loaded from the patch bundle.
 - **S-APPLY-011**: When post-apply commands run, `post_apply.json` SHOULD also record deterministic `changed_paths`, coarse `change_categories`, and a machine-readable normalization summary derived from sandbox worktree state before and after the local normalization step.
+- **S-APPLY-012**: `diffship apply --delete-input-zip` MAY delete the original input bundle only when the user supplied a `.zip` path, and only after diffship has copied the bundle into the run directory. Directory inputs MUST NOT be deleted by this option.
+- **S-APPLY-013**: When post-apply commands fail after the patch step succeeded, apply MUST generate a default pack-fix zip from the run directory before returning failure so the user can reprompt the AI without rerunning pack-fix manually.
 
 ### 4.6 Commit policy (manual / auto)
 
@@ -273,6 +275,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 
 - **S-LOOP-001**: Must run apply then verify; if verify fails, must run pack-fix automatically.
 - **S-LOOP-002**: Must keep the same lock for the full loop.
+- **S-LOOP-003**: `diffship loop --delete-input-zip` MUST pass through the same input-zip deletion semantics as `diffship apply --delete-input-zip`.
 
 ### 4.9 `diffship status`
 

@@ -2,6 +2,8 @@ use assert_cmd::prelude::*;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
+use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 fn init_repo() -> TempDir {
     let td = tempfile::tempdir().expect("tempdir");
@@ -132,6 +134,30 @@ fn make_bundle_dir_with_patch(
         .success();
 
     td
+}
+
+fn write_patch_bundle_zip(bundle_root: &std::path::Path, zip_path: &std::path::Path) {
+    let file = fs::File::create(zip_path).unwrap();
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+
+    for rel in ["manifest.yaml", "changes/0001.patch"] {
+        zip.start_file(format!("patchship_test/{rel}"), options)
+            .unwrap();
+        use std::io::Write as _;
+        zip.write_all(&fs::read(bundle_root.join(rel)).unwrap())
+            .unwrap();
+    }
+
+    if bundle_root.join("commit_message.txt").exists() {
+        zip.start_file("patchship_test/commit_message.txt", options)
+            .unwrap();
+        use std::io::Write as _;
+        zip.write_all(&fs::read(bundle_root.join("commit_message.txt")).unwrap())
+            .unwrap();
+    }
+
+    zip.finish().unwrap();
 }
 
 fn extract_run_id(stdout: &[u8]) -> String {
@@ -308,6 +334,77 @@ fn m2_loop_happy_path_promotes_commit() {
             .join("sandboxes")
             .join(&run_id)
             .exists()
+    );
+}
+
+#[test]
+fn m2_loop_can_delete_input_zip_after_copying_bundle() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], None);
+    let bundle_root = bundle_td.path().join("patchship_test");
+    let bundle_zip = bundle_td.path().join("patchship_test.zip");
+    write_patch_bundle_zip(&bundle_root, &bundle_zip);
+
+    diffship_cmd()
+        .args(["loop", "--delete-input-zip"])
+        .arg(&bundle_zip)
+        .current_dir(root)
+        .assert()
+        .success();
+
+    assert!(!bundle_zip.exists());
+}
+
+#[test]
+fn m2_loop_writes_pack_fix_when_post_apply_fails() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_config(
+        root,
+        r#"
+[ops.post_apply]
+cmd1 = "exit 7"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], None);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .arg("loop")
+        .arg(&bundle_root)
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(8)
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8_lossy(&out);
+
+    assert!(stderr.contains("post-apply commands failed"));
+    assert!(stderr.contains("pack-fix saved to"));
+
+    let runs_dir = root.join(".diffship").join("runs");
+    let latest = fs::read_dir(&runs_dir)
+        .unwrap()
+        .filter_map(|ent| ent.ok().map(|e| e.path()))
+        .filter(|path| path.is_dir())
+        .max()
+        .unwrap();
+    assert!(
+        latest
+            .read_dir()
+            .unwrap()
+            .filter_map(|ent| ent.ok().map(|e| e.path()))
+            .any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("zip"))
     );
 }
 

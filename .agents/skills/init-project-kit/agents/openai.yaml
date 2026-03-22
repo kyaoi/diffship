@@ -1,0 +1,4 @@
+interface:
+  display_name: "Init Project Kit"
+  short_description: "Maintain diffship init templates and kit outputs"
+  default_prompt: "Use $init-project-kit to change diffship init templates or generated .diffship guides safely."

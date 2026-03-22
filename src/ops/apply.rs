@@ -5,6 +5,7 @@ use crate::exit::{
 use crate::git;
 use crate::ops::command_log;
 use crate::ops::lock;
+use crate::ops::pack_fix;
 use crate::ops::patch_bundle;
 use crate::ops::post_apply;
 use crate::ops::run;
@@ -25,6 +26,9 @@ struct ApplySummary {
     declared_base_commit: String,
     effective_base_commit: String,
     bundle_path: String,
+    delete_input_zip_requested: bool,
+    deleted_input_zip_path: Option<String>,
+    input_zip_deleted: Option<bool>,
     bundle_root: String,
     run_bundle_dir: String,
     apply_mode: String,
@@ -33,6 +37,7 @@ struct ApplySummary {
     post_apply_commands: usize,
     post_apply_ok: Option<bool>,
     post_apply_logs_path: Option<String>,
+    pack_fix_path: Option<String>,
     ok: bool,
     error: Option<String>,
 }
@@ -53,6 +58,7 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
                 "--base-commit={}",
                 args.base_commit.as_deref().unwrap_or("")
             ),
+            format!("--delete-input-zip={}", args.delete_input_zip),
             format!("--keep-sandbox={}", args.keep_sandbox),
         ],
     );
@@ -65,6 +71,18 @@ pub fn cmd(git_root: &Path, args: ApplyArgs) -> Result<(), ExitError> {
     println!("  session : {}", out.session);
     println!("  sandbox : {}", out.sandbox_path);
     println!("  bundle  : {}", out.run_bundle_dir);
+    if out.input_zip_deleted == Some(true) {
+        if let Some(p) = &out.deleted_input_zip_path {
+            println!("  deleted : {}", p);
+        }
+    } else if out.input_zip_deleted == Some(false)
+        && let Some(p) = &out.deleted_input_zip_path
+    {
+        eprintln!(
+            "diffship apply: warning: failed to delete input zip {} after copying it into the run directory",
+            p
+        );
+    }
     if let Some(p) = &out.user_tasks_path {
         println!("  tasks   : {}", p);
         println!(
@@ -89,6 +107,8 @@ pub struct ApplyOut {
     pub session: String,
     pub sandbox_path: String,
     pub run_bundle_dir: String,
+    pub deleted_input_zip_path: Option<String>,
+    pub input_zip_deleted: Option<bool>,
     pub user_tasks_path: Option<String>,
     pub post_apply_logs_path: Option<String>,
     pub keep_sandbox: bool,
@@ -128,6 +148,8 @@ pub fn apply_locked(
     let forbid_patterns = cfg.forbid_patterns();
     let mut bundle =
         patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir, &forbid_patterns)?;
+    let (deleted_input_zip_path, input_zip_deleted) =
+        maybe_delete_input_zip(&bundle_path, args.delete_input_zip);
     let declared_base_commit = bundle.manifest.base_commit.clone();
     let effective_base_commit = args
         .base_commit
@@ -165,6 +187,9 @@ pub fn apply_locked(
             declared_base_commit,
             effective_base_commit: declared.clone(),
             bundle_path: args.bundle.clone(),
+            delete_input_zip_requested: args.delete_input_zip,
+            deleted_input_zip_path: deleted_input_zip_path.clone(),
+            input_zip_deleted,
             bundle_root: bundle.root.display().to_string(),
             run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
             apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
@@ -173,6 +198,7 @@ pub fn apply_locked(
             post_apply_commands: 0,
             post_apply_ok: None,
             post_apply_logs_path: None,
+            pack_fix_path: None,
             ok: false,
             error: Some(format!(
                 "base_commit mismatch: manifest={} session_head={}",
@@ -219,6 +245,19 @@ pub fn apply_locked(
     } else {
         None
     };
+    let pack_fix_path = if apply_res.is_ok && post_apply_ok == Some(false) {
+        pack_fix::try_write_default_pack_fix_zip(
+            git_root,
+            &run_meta.run_id,
+            &run_dir,
+            sandbox_path,
+            &created_at,
+        )
+        .ok()
+        .map(|p| p.display().to_string())
+    } else {
+        None
+    };
     let summary = ApplySummary {
         run_id: run_meta.run_id.clone(),
         created_at: created_at.clone(),
@@ -227,6 +266,9 @@ pub fn apply_locked(
         declared_base_commit,
         effective_base_commit: declared,
         bundle_path: args.bundle.clone(),
+        delete_input_zip_requested: args.delete_input_zip,
+        deleted_input_zip_path: deleted_input_zip_path.clone(),
+        input_zip_deleted,
         bundle_root: bundle.root.display().to_string(),
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
         apply_mode: bundle.manifest.apply_mode.as_str().to_string(),
@@ -235,6 +277,7 @@ pub fn apply_locked(
         post_apply_commands: post_apply_commands.len(),
         post_apply_ok,
         post_apply_logs_path: post_apply_out.as_ref().map(|out| out.logs_path.clone()),
+        pack_fix_path: pack_fix_path.clone(),
         ok,
         error: error.clone(),
     };
@@ -248,10 +291,17 @@ pub fn apply_locked(
         if !args.keep_sandbox {
             worktree::remove_worktree_best_effort(git_root, sandbox_path);
         }
-        return Err(ExitError::new(
-            EXIT_APPLY_FAILED,
-            error.unwrap_or_else(|| "apply failed".to_string()),
-        ));
+        let failure_message = if let Some(path) = pack_fix_path {
+            format!(
+                "{} (run_id={}). pack-fix saved to {}.",
+                error.unwrap_or_else(|| "apply failed".to_string()),
+                run_meta.run_id,
+                path
+            )
+        } else {
+            error.unwrap_or_else(|| "apply failed".to_string())
+        };
+        return Err(ExitError::new(EXIT_APPLY_FAILED, failure_message));
     }
 
     Ok(ApplyOut {
@@ -259,6 +309,8 @@ pub fn apply_locked(
         session: args.session,
         sandbox_path: sandbox.path,
         run_bundle_dir: bundle.run_bundle_dir.display().to_string(),
+        deleted_input_zip_path,
+        input_zip_deleted,
         user_tasks_path: user_tasks,
         post_apply_logs_path: post_apply_out.map(|out| out.logs_path),
         keep_sandbox: args.keep_sandbox,
@@ -305,6 +357,28 @@ fn write_apply_summary(run_dir: &Path, summary: &ApplySummary) -> Result<(), Exi
     fs::write(run_dir.join("apply.json"), bytes)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to write apply.json: {e}")))?;
     Ok(())
+}
+
+fn maybe_delete_input_zip(
+    bundle_path: &Path,
+    delete_requested: bool,
+) -> (Option<String>, Option<bool>) {
+    if !delete_requested || !is_zip_input(bundle_path) {
+        return (None, None);
+    }
+
+    let path = bundle_path.display().to_string();
+    let deleted = fs::remove_file(bundle_path).is_ok();
+    (Some(path), Some(deleted))
+}
+
+fn is_zip_input(bundle_path: &Path) -> bool {
+    bundle_path.is_file()
+        && bundle_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.eq_ignore_ascii_case("zip"))
+            .unwrap_or(false)
 }
 
 struct ApplyResult {

@@ -5,6 +5,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use tempfile::TempDir;
+use zip::write::FileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 fn init_repo() -> TempDir {
     let td = tempfile::tempdir().expect("tempdir");
@@ -126,6 +128,22 @@ fn make_bundle_dir_with_patch_impl(
     }
 
     td
+}
+
+fn write_patch_bundle_zip(bundle_root: &std::path::Path, zip_path: &std::path::Path) {
+    let file = fs::File::create(zip_path).unwrap();
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+
+    for rel in ["manifest.yaml", "changes/0001.patch"] {
+        zip.start_file(format!("patchship_test/{rel}"), options)
+            .unwrap();
+        use std::io::Write as _;
+        zip.write_all(&fs::read(bundle_root.join(rel)).unwrap())
+            .unwrap();
+    }
+
+    zip.finish().unwrap();
 }
 
 fn make_patch_by_editing_readme(repo_root: &std::path::Path, new_line: &str) -> String {
@@ -591,6 +609,7 @@ cmd1 = "exit 7"
         .clone();
     let stderr = String::from_utf8_lossy(&out);
     assert!(stderr.contains("post-apply commands failed"));
+    assert!(stderr.contains("pack-fix saved to"));
 
     let runs_dir = root.join(".diffship").join("runs");
     let latest = fs::read_dir(&runs_dir)
@@ -600,6 +619,15 @@ cmd1 = "exit 7"
         .max()
         .unwrap();
     assert!(latest.join("post_apply.json").exists());
+    assert!(
+        latest
+            .read_dir()
+            .unwrap()
+            .filter_map(|ent| ent.ok().map(|e| e.path()))
+            .any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("zip"))
+    );
+    let apply_json = fs::read_to_string(latest.join("apply.json")).unwrap();
+    assert!(apply_json.contains("\"pack_fix_path\":"));
 }
 
 #[test]
@@ -633,6 +661,41 @@ fn m2_apply_accepts_tilde_bundle_path() {
         .current_dir(root)
         .assert()
         .success();
+}
+
+#[test]
+fn m2_apply_can_delete_input_zip_after_copying_bundle() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_by_editing_readme(root, "world\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+    let bundle_zip = bundle_td.path().join("patchship_test.zip");
+    write_patch_bundle_zip(&bundle_root, &bundle_zip);
+
+    let out = diffship_cmd()
+        .args(["apply", "--delete-input-zip"])
+        .arg(&bundle_zip)
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+
+    assert!(!bundle_zip.exists());
+    let apply_json = fs::read_to_string(
+        root.join(".diffship")
+            .join("runs")
+            .join(run_id)
+            .join("apply.json"),
+    )
+    .unwrap();
+    assert!(apply_json.contains("\"delete_input_zip_requested\": true"));
+    assert!(apply_json.contains("\"input_zip_deleted\": true"));
 }
 
 #[test]

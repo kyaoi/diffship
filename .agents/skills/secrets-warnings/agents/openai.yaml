@@ -1,0 +1,4 @@
+interface:
+  display_name: "Secrets and Warnings"
+  short_description: "Handle secret warnings and ack gates safely"
+  default_prompt: "Use $secrets-warnings to adjust secret detection or acknowledgement flows without leaking values."

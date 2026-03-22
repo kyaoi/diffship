@@ -76,7 +76,7 @@ For reproducible installs from Git, pin to a specific tag, branch, or commit.
 Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.0
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.1
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or
@@ -127,6 +127,7 @@ It creates files under `.diffship/` (generated):
 
 ```bash
 diffship loop path/to/patch-bundle.zip
+diffship loop path/to/patch-bundle.zip --delete-input-zip
 ```
 
 If promotion is blocked:
@@ -137,6 +138,7 @@ If promotion is blocked:
 If verification fails, diffship writes a default reprompt zip under the run directory inside `.diffship/`.
 You can also run `diffship pack-fix --run-id <run-id>` manually.
 If ops.post_apply commands are configured, diffship runs them in the sandbox right after apply succeeds.
+If a post-apply command fails after the patch step, diffship also writes the reprompt zip automatically.
 The post-apply summary JSON now also records deterministic changed paths, coarse categories, and a machine-readable normalization summary, and reprompt bundles surface that evidence before verify logs.
 
 ---
@@ -154,14 +156,14 @@ All commands below are implemented.
 - `diffship status` — show lock state and recent runs, including direct run/log artifact paths when present (`--json` available)
 - `diffship runs` — list recent runs, including direct run/log artifact paths when present (`--json` available)
 - `diffship cleanup` — remove unused diffship-owned workspaces, eligible runs, and build artifacts (`--dry-run`, `--include-runs`, `--include-builds`, `--all`, `--json`)
-- `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`)
+- `diffship apply <bundle>` — apply a patch bundle in an isolated sandbox (`--session`, `--keep-sandbox`, `--delete-input-zip` for zip inputs)
 - `diffship verify` — run verification in the latest sandbox (`--profile`, `--run-id`)
 - `diffship pack-fix` — create a reprompt zip for a run (`--run-id`, `--out`)
 - `diffship promote` — promote a verified run into a target branch
 - `diffship build` — generate a handoff bundle (`--profile`, HANDOFF.md, handoff manifest JSON, rendered XML view, per-part context JSON, parts/, optional attachments.zip, excluded.md, secrets.md, optional plan.toml via `--plan-out`)
 - `diffship preview <bundle>` — show HANDOFF.md / parts from a bundle (`--list`, `--part`, `--json`); `--list` also surfaces structured-context summary counts when available
 - `diffship compare <bundle-a> <bundle-b>` — compare bundles (`--strict` = extracted entry bytes without normalization, `--json`), classify differences by area/kind, and surface manifest-summary deltas when available
-- `diffship loop <bundle>` — apply → verify → promote
+- `diffship loop <bundle>` — apply → verify → promote (`--delete-input-zip` for zip inputs)
 
 Filesystem path arguments accept leading tilde-slash and resolve it against the current user's `HOME`. Tilde-user shorthand is rejected.
 

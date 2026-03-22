@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Here"
+  short_description: "Read order and core rules for diffship work"
+  default_prompt: "Use $start-here to load the right spec, workflow, and traceability context before editing diffship."

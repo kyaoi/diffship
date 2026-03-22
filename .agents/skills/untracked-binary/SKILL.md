@@ -1,24 +1,33 @@
 ---
 name: untracked-binary
-description: Untracked/binary handling modes: auto/patch/raw/meta and how to keep output sane.
+description: Evolve untracked and binary inclusion, attachments, and exclusions without breaking packing limits or determinism.
 ---
 
-# Untracked & binary handling
+# Untracked and binary handling
 
-## Defaults
-- Untracked: OFF by default
-- Binary: excluded by default
+Use this when changing inclusion modes, attachment routing, or exclusion behavior.
 
-## Untracked modes
-- auto: text/small → patch, binary/large → raw
-- patch: represent as add-diff when possible
-- raw: store in attachments.zip
-- meta: record only in HANDOFF.md
+## Read first
+1) `docs/SPEC_V1.md` for `S-UNTRACKED-*`, `S-BINARY-*`, and `S-PACK-*`
+2) `docs/BUNDLE_FORMAT.md`
+3) `docs/TRACEABILITY.md`
 
-## Binary modes (when --include-binary)
-- raw (default): attachments.zip
-- patch: only if explicitly requested; warn about size/readability
-- meta: record only
+## Defaults to preserve
+- Untracked is off by default.
+- Binary content is excluded by default.
 
-## `.diffshipignore`
-Use it to exclude patterns (e.g., `*.png`) to avoid shipping irrelevant binaries.
+## Mode rules
+- `untracked-mode`: `auto | patch | raw | meta`
+- `binary-mode`: `raw | patch | meta` when `--include-binary`
+- `auto` should route small text to patches and large/binary content to deterministic attachment or exclusion handling.
+
+## Output rules
+- Raw payloads go into `attachments.zip` under stable prefixes.
+- Exclusions must be recorded in `excluded.md` with reasons and guidance.
+- `HANDOFF.md` and manifest/context outputs must explain attachment or exclusion decisions.
+- Packing fallback and context reduction must remain deterministic.
+
+## Tests
+- `tests/m6_handoff_build.rs`
+- `tests/m6_handoff_determinism.rs`
+- `tests/m6_preview.rs` when preview-visible summary changes

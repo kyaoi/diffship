@@ -1,0 +1,4 @@
+interface:
+  display_name: "Untracked and Binary"
+  short_description: "Handle untracked and binary bundle decisions"
+  default_prompt: "Use $untracked-binary to change attachment, exclusion, or mode handling for untracked and binary files."

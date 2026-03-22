@@ -48,6 +48,7 @@ pub fn cmd(git_root: &Path, args: LoopArgs) -> Result<(), ExitError> {
         bundle: args.bundle.clone(),
         session: args.session.clone(),
         base_commit: args.base_commit.clone(),
+        delete_input_zip: args.delete_input_zip,
         keep_sandbox: true,
     };
     let applied = apply::apply_locked(git_root, apply_args, created_at.clone())?;

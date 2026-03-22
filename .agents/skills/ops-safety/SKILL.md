@@ -1,56 +1,43 @@
 ---
 name: ops-safety
-description: How to evolve apply/verify/loop safely (locks, rollback, path guards, and deterministic logs).
+description: Change apply, verify, promote, loop, or cleanup behavior without weakening safety defaults, isolation, or run logs.
 ---
 
 # Ops safety
 
-diffship ops commands (`apply`, `verify`, `loop`, `pack-fix`, `status`) are designed to be **boringly safe**.
+Use this when touching `src/ops/*`, patch-bundle handling, or promotion flow.
+
+## Read first
+1) `docs/SPEC_V1.md` sections for `S-APPLY-*`, `S-VERIFY-*`, `S-COMMIT-*`, `S-OPS-*`, `S-CLEANUP-*`
+2) `docs/PATCH_BUNDLE_FORMAT.md`
+3) `docs/OPS_WORKFLOW.md`
+4) `docs/CONFIG.md`
 
 ## Non-negotiables
+- Acquire the lock before mutating (`.diffship/lock`).
+- Apply in isolated sandbox worktrees; do not mutate the user's main working tree during apply/verify.
+- Require base-commit match by default; any CLI override must still resolve to the session head.
+- Enforce strict repo-relative path guards plus project/local forbid rules.
+- Run preflight before mutation and rollback automatically on failure.
+- Run only locally configured post-apply or verify commands.
+- Keep machine-readable run artifacts under `.diffship/runs/<run-id>/`.
+- Secrets and required user tasks block promotion by default.
+- Promotion mode and commit policy must remain coherent.
 
-### 1) Clean worktree by default (OS mode)
-- In OS mode, ops runs MUST use isolated worktrees (session + sandbox).
-- Default behavior MUST keep the session/sandbox worktree clean; the user’s main working tree should not be mutated during apply/verify.
-- Only allow bypassing isolation via an explicit escape hatch flag (discouraged).
+## Files commonly involved
+- `src/ops/apply.rs`, `verify.rs`, `promote.rs`, `loop_cmd.rs`
+- `src/ops/patch_bundle.rs`, `post_apply.rs`, `config.rs`
+- `src/ops/run.rs`, `lock.rs`, `cleanup.rs`, `session.rs`, `worktree.rs`
 
-### 2) Base commit match by default
-- Patch bundles MUST declare `base_commit`.
-- Default behavior MUST require `base_commit` to match the session HEAD (or the sandbox base) before applying.
+## Tests to keep green
+- `tests/m2_apply_verify.rs`
+- `tests/m2_promotion_loop.rs`
+- `tests/m2_pack_fix.rs`
+- `tests/m3_tasks.rs`
+- `tests/m4_config_precedence.rs`
+- `tests/m4_verify_profiles.rs`
+- `tests/m7_cleanup.rs`
 
-### 3) Locking
-- Prevent concurrent ops runs using `.diffship/lock`.
-- `status` must surface lock state and how to recover from stale locks.
-
-### 4) Preflight before mutating
-- Always run `git apply --check` (or equivalent) before applying.
-
-### 5) Automatic rollback
-- If apply fails after any mutation, rollback automatically:
-  - `git apply` flow → `git reset --hard HEAD`
-  - `git am` flow → `git am --abort`
-
-### 6) Strict path guards
-- Refuse paths that are absolute, contain `..`, or target forbidden prefixes (e.g., `.git/`, `.diffship/`).
-- Do not follow symlinks when enforcing allowed/forbidden rules.
-
-## MVP: refuse tricky patch features
-Refuse by default unless/until explicitly supported:
-- `GIT binary patch`
-- submodule changes
-- file mode changes
-- rename/copy metadata
-
-## Logging contract
-- Every ops command writes a run directory under `.diffship/runs/<run-id>/`.
-- `pack-fix` should bundle logs + diff + context into a single zip ready to send back to an AI.
-
-
-## Promotion
-- Promotion (reflecting results back to `develop` etc.) should be policy-driven: `none`, `working-tree`, or `commit`.
-- Promotion MUST be blocked by default when secrets are suspected or required user tasks are present (unless explicitly acknowledged).
-
-
-## Secrets & user tasks
-- Ops MUST scan for likely secrets and MUST never print secret values (only paths + reasons).
-- If the patch bundle includes `tasks/USER_TASKS.md`, diffship must surface it prominently and may block promotion until acknowledged.
+## Related skills
+- Use `secrets-warnings` for secret/task acknowledgement flow.
+- Use `init-project-kit` when the change is about generated `.diffship/forbid.toml` or init-time config scaffolding.

@@ -366,6 +366,10 @@ pub struct ApplyArgs {
     #[arg(long)]
     pub base_commit: Option<String>,
 
+    /// Delete the original input .zip after diffship copies it into the run directory
+    #[arg(long, default_value_t = false)]
+    pub delete_input_zip: bool,
+
     /// Keep the sandbox worktree for later verification/promotion (default: true)
     #[arg(long, default_value_t = true)]
     pub keep_sandbox: bool,
@@ -435,6 +439,10 @@ pub struct LoopArgs {
     /// Override manifest base_commit for this run only (must still match the session HEAD)
     #[arg(long)]
     pub base_commit: Option<String>,
+
+    /// Delete the original input .zip after diffship copies it into the run directory
+    #[arg(long, default_value_t = false)]
+    pub delete_input_zip: bool,
 
     /// Verification profile (fast|standard|full)
     #[arg(long)]

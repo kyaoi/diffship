@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ops Safety"
+  short_description: "Protect ops safety, isolation, and run logs"
+  default_prompt: "Use $ops-safety to change apply, verify, loop, or promotion behavior without weakening safety defaults."

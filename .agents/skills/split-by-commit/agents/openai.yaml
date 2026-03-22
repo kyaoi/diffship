@@ -1,0 +1,4 @@
+interface:
+  display_name: "Split by Commit"
+  short_description: "Keep commit-based bundle splitting deterministic"
+  default_prompt: "Use $split-by-commit to change committed-range splitting while preserving stable commit-to-part mapping."

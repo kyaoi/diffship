@@ -240,6 +240,8 @@ Conventions:
 - **S-APPLY-008** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-APPLY-009** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/config.rs` — Status: Implemented
 - **S-APPLY-011** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/post_apply.rs` — Status: Implemented
+- **S-APPLY-012** — Tests: `tests/m2_apply_verify.rs` — Code: `src/cli.rs`, `src/main.rs`, `src/ops/apply.rs` — Status: Implemented
+- **S-APPLY-013** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/apply.rs`, `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -275,6 +277,7 @@ Conventions:
 
 - **S-LOOP-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
 - **S-LOOP-002** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
+- **S-LOOP-003** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/cli.rs`, `src/main.rs`, `src/ops/loop_cmd.rs`, `src/ops/apply.rs` — Status: Implemented
 
 ---
 

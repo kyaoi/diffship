@@ -1,0 +1,4 @@
+interface:
+  display_name: "Handoff Structure"
+  short_description: "Keep HANDOFF.md clear, stable, and deterministic"
+  default_prompt: "Use $handoff-structure to update HANDOFF.md while preserving its map-like and patch-centric contract."

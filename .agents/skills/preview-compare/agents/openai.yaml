@@ -1,0 +1,4 @@
+interface:
+  display_name: "Preview and Compare"
+  short_description: "Maintain preview, compare, and compare UI flows"
+  default_prompt: "Use $preview-compare to change preview or compare behavior while keeping JSON and TUI consumers aligned."
