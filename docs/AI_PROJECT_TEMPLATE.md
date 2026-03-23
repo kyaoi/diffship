@@ -290,7 +290,7 @@ Required contract details:
 - `base_commit` must be the real target repo SHA supplied by the user or otherwise known from the environment; never use placeholders such as `REPLACE_WITH_REPO_HEAD`
 - if the exact `base_commit` is not known, do **not** fabricate it and do **not** emit an ops-compatible patch bundle
 - patch files must be repo-relative and deterministic
-- do not touch `.git/` or `.diffship/`
+- do not touch `.git/` or non-allowlisted `.diffship/` paths
 - respect any repository-local `[ops.forbid]` patterns the user provides (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
 - do not include binary patches, rename/copy metadata, file mode metadata for existing files (`old mode`, `new mode`), or submodule changes

@@ -76,7 +76,7 @@ For reproducible installs from Git, pin to a specific tag, branch, or commit.
 Use `--tag` for released versions; `--version` does not select Git tags.
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.1
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.2
 # or
 cargo install --git https://github.com/kyaoi/diffship.git --branch main
 # or
@@ -119,7 +119,10 @@ It creates files under `.diffship/` (generated):
 ```text
 .diffship/.gitignore
 .diffship/PROJECT_KIT.md
+.diffship/PROJECT_RULES.md
 .diffship/AI_GUIDE.md
+.diffship/forbid.toml
+.diffship/ai_generated_config.toml
 .diffship/config.toml
 ```
 
@@ -243,7 +246,7 @@ diffship build --zip-only
 # output_dir = "~/ghq/github.com/kyaoi/diffship/.diffship/handoffs"
 
 # share named profiles via config, not via plan.toml
-# project: .diffship/config.toml or repo-root .diffship.toml
+# project: .diffship/ai_generated_config.toml, .diffship/config.toml, or repo-root .diffship.toml
 # global:  ~/.config/diffship/config.toml
 ```
 

@@ -199,6 +199,9 @@ fn global_config_path() -> Option<PathBuf> {
 fn project_config_paths(git_root: &Path) -> Vec<PathBuf> {
     vec![
         git_root.join(".diffship.toml"),
+        git_root
+            .join(".diffship")
+            .join(crate::ops::config::AI_GENERATED_CONFIG_FILE_NAME),
         git_root.join(".diffship").join("config.toml"),
     ]
 }

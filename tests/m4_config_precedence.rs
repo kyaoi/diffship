@@ -164,6 +164,12 @@ fn write_project_config(repo_root: &std::path::Path, body: &str) {
     fs::write(p.join("config.toml"), body).unwrap();
 }
 
+fn write_project_ai_generated_config(repo_root: &std::path::Path, body: &str) {
+    let p = repo_root.join(".diffship");
+    fs::create_dir_all(&p).unwrap();
+    fs::write(p.join("ai_generated_config.toml"), body).unwrap();
+}
+
 fn read_verify_profile(repo_root: &std::path::Path, run_id: &str) -> String {
     let p = repo_root
         .join(".diffship")
@@ -361,5 +367,54 @@ target_branch = "project_branch"
 
     assert_eq!(read_verify_profile(root, &run_id), "full");
     assert_eq!(read_promotion_target(root, &run_id), "project_branch");
+    assert_ne!(head(root), base);
+}
+
+#[test]
+fn m4_config_precedence_user_project_config_overrides_ai_generated_layer() {
+    let home_td = tempfile::tempdir().expect("home");
+    let home = home_td.path();
+
+    let td = init_repo_with_branches(&["develop", "ai_branch", "user_branch"]);
+    let root = td.path();
+    let base = head(root);
+
+    write_project_ai_generated_config(
+        root,
+        r#"
+[verify]
+default_profile = "fast"
+
+[ops.promote]
+target_branch = "ai_branch"
+"#,
+    );
+    write_project_config(
+        root,
+        r#"
+[verify]
+default_profile = "full"
+
+[ops.promote]
+target_branch = "user_branch"
+"#,
+    );
+
+    let patch = make_patch_by_editing_readme(root, "from-user-layer\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"], "");
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd(home)
+        .args(["loop", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run_id = extract_run_id(&out);
+
+    assert_eq!(read_verify_profile(root, &run_id), "full");
+    assert_eq!(read_promotion_target(root, &run_id), "user_branch");
     assert_ne!(head(root), base);
 }

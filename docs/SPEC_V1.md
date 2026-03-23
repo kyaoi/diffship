@@ -328,12 +328,13 @@ Orchestrates apply → verify → (on failure) pack-fix.
 
 - **S-OPS-001**: Lock path is `.diffship/lock` (configurable) and must prevent concurrent ops runs.
 - **S-OPS-002**: Lock must include enough metadata to diagnose stale locks (PID, start time, command).
-- **S-OPS-003**: Forbidden prefixes must include `.git/` and `.diffship/` by default.
+- **S-OPS-003**: Forbidden prefixes must include `.git/` and `.diffship/` by default. Any `.diffship/` exception MUST stay opt-in and narrow.
 - **S-OPS-004**: Path checks must not allow absolute paths or `..` traversal, and must not rely on following symlinks.
 - **S-OPS-005**: MVP must refuse by default: binary patches, submodule changes, existing-file mode changes, unsupported new-file modes, and rename/copy metadata.
 - **S-OPS-006**: Configuration values MUST be resolved with precedence: CLI > patch bundle manifest > project config > global config > built-in defaults.
 - **S-OPS-007**: Project/global config MAY define additional forbidden repo-relative path/glob patterns, and apply/loop MUST enforce them against both manifest paths and patch headers.
 - **S-OPS-008**: Project-local forbid rules MAY live in a dedicated `.diffship/forbid.toml` file in addition to the main project config, and `diffship init` SHOULD generate that file as a starter template without overwriting existing content unless `--force`.
+- **S-OPS-009**: Project/global config MAY opt specific generated `.diffship/` files into editability, but only from a fixed built-in allowlist (`.diffship/.gitignore`, `.diffship/AI_GUIDE.md`, `.diffship/config.toml`, `.diffship/forbid.toml`, `.diffship/PROJECT_KIT.md`, `.diffship/PROJECT_RULES.md`, `.diffship/ai_generated_config.toml`). All other `.diffship/` paths MUST remain forbidden.
 
 ### 7.1 OS mode sessions & worktrees
 
@@ -404,3 +405,4 @@ Ops-specific codes:
 - **S-INIT-009**: `diffship init --lang <en|ja>` MUST select the language of the generated `PROJECT_RULES.md` snippet and record the resolved language in the rules-kit metadata. The default language is `en`.
 - **S-INIT-010**: `diffship init --refresh-forbid` MUST allow rewriting only `.diffship/forbid.toml` from current repo detections without requiring `--force` for unrelated generated files.
 - **S-INIT-011**: Generated `.diffship/config.toml` stubs SHOULD include commented `ops.post_apply` preset guidance that frames post-apply as a local normalization step (not an AI-output repair mechanism) and shows a few stack-oriented starting points.
+- **S-INIT-012**: `diffship init` MUST write `.diffship/ai_generated_config.toml` as an AI-editable local config layer without overwriting existing content unless `--force`, and diffship MUST merge that file before `.diffship/config.toml` so repositories can keep user-owned defaults separate from AI-owned defaults.

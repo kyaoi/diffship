@@ -149,7 +149,7 @@ Do not include:
 - rename / copy metadata
 - file mode metadata for existing files (`old mode`, `new mode`)
 - submodule changes
-- writes into `.git/` or `.diffship/`
+- writes into `.git/` or non-allowlisted `.diffship/` paths
 - secrets
 
 Allowed exception:

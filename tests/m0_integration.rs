@@ -87,6 +87,11 @@ fn m0_init_status_runs_happy_path() {
     assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
     assert!(root.join(".diffship").join("forbid.toml").exists());
     assert!(root.join(".diffship").join(".gitignore").exists());
+    assert!(
+        root.join(".diffship")
+            .join("ai_generated_config.toml")
+            .exists()
+    );
     assert!(root.join(".diffship").join("config.toml").exists());
     let kit = fs::read_to_string(root.join(".diffship").join("PROJECT_KIT.md")).unwrap();
     assert!(kit.contains("# DiffshipOS Project Kit"));
@@ -123,6 +128,12 @@ fn m0_init_status_runs_happy_path() {
         gitignore,
         "artifacts/handoffs/\nartifacts/rules/\nruns/\nworktrees/\nsessions/\nlock\n"
     );
+    let ai_cfg =
+        fs::read_to_string(root.join(".diffship").join("ai_generated_config.toml")).unwrap();
+    assert!(ai_cfg.contains("# diffship AI-generated local configuration"));
+    assert!(ai_cfg.contains("[ops.editable_diffship]"));
+    assert!(ai_cfg.contains("path6 = \".diffship/ai_generated_config.toml\""));
+    assert!(ai_cfg.contains("# path7 = \".diffship/config.toml\""));
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
     let branch = current_branch(root);
     assert!(cfg.contains("# Repository snapshot:"));
@@ -130,6 +141,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains(&format!("# - current branch: {}", branch)));
     assert!(cfg.contains("# - preferred promote target: main"));
     assert!(cfg.contains("Use this file in two layers"));
+    assert!(cfg.contains("Put AI-editable defaults and `.diffship/*` edit allowlist entries"));
     assert!(cfg.contains("Customize this section: choose default verify behavior"));
     assert!(cfg.contains("Customize this section: choose default handoff packing behavior"));
     assert!(cfg.contains(

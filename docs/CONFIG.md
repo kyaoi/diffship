@@ -4,7 +4,7 @@ This document describes **how configuration is resolved** and which keys are **a
 
 > diffship is developed with spec-driven development.
 > Ops verify profile commands under `[verify.profiles.*]` and handoff settings under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
-> The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt.
+> The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt, while `.diffship/ai_generated_config.toml` keeps AI-owned defaults separate when a repo wants that split.
 
 ---
 
@@ -15,15 +15,19 @@ diffship resolves configuration by **merging multiple sources** (later overrides
 1. built-in defaults
 2. `~/.config/diffship/config.toml` (global)
 3. `./.diffship.toml` (project, legacy)
-4. `./.diffship/config.toml` (project; written by `diffship init`)
-5. patch bundle `manifest.yaml` (when available)
-6. CLI flags
+4. `./.diffship/ai_generated_config.toml` (project, AI-owned layer; optional)
+5. `./.diffship/config.toml` (project, user-owned layer; written by `diffship init`)
+6. `./.diffship/forbid.toml` (project, ops-only forbid layer)
+7. patch bundle `manifest.yaml` (when available)
+8. CLI flags
 
 Precedence summary: **CLI > manifest > project > global > default**.
 
 Notes:
 
 - Ops commands that need the manifest (verify/promote/loop) resolve manifest-level settings by reading the run copy at `.diffship/runs/<run-id>/bundle/manifest.yaml`.
+- `.diffship/ai_generated_config.toml` is merged before `.diffship/config.toml`, so user-owned scalar defaults can still override AI-owned defaults.
+- `.diffship/forbid.toml` contributes only ops forbid patterns; handoff settings stop at `.diffship/config.toml`.
 - Unknown keys are ignored.
 - Current config parsing is intentionally minimal (scalar values only).
 
@@ -118,11 +122,33 @@ Notes:
 
 - these rules are local-only config values; patch bundles cannot loosen them
 - apply/loop enforce them against both `manifest.touched_files` and patch diff headers
-- built-in forbidden prefixes such as `.git/` and `.diffship/` still apply regardless of config
+- built-in forbidden prefixes such as `.git/` and `.diffship/` still apply regardless of config, except for the narrow opt-in `.diffship/*` allowlist described below
 
 You can keep these entries either in `.diffship/config.toml` or in a dedicated `.diffship/forbid.toml` file.
 `diffship init` now generates the dedicated file as a starter template, and diffship merges it as project-local config automatically.
 If the repo gains new lockfiles or similar fragile targets later, `diffship init --refresh-forbid` rewrites only `.diffship/forbid.toml` from current detections without forcing unrelated generated files.
+
+#### 1.1.4 Editable `.diffship/` project-kit files (implemented)
+
+You can opt a narrow set of generated `.diffship/*` files into editability for local ops runs.
+
+```toml
+[ops.editable_diffship]
+path1 = ".diffship/.gitignore"
+path2 = ".diffship/AI_GUIDE.md"
+path3 = ".diffship/forbid.toml"
+path4 = ".diffship/PROJECT_KIT.md"
+path5 = ".diffship/PROJECT_RULES.md"
+path6 = ".diffship/ai_generated_config.toml"
+# path7 = ".diffship/config.toml" # opt in only if you explicitly want AI to edit the user-owned config
+```
+
+Notes:
+
+- only exact repo-relative paths from the built-in allowlist are honored; unsupported `.diffship/*` paths remain forbidden
+- apply/loop enforce this against both `manifest.touched_files` and patch diff headers
+- `.git/` always remains forbidden
+- the generated `.diffship/ai_generated_config.toml` is the intended home for these entries when you want AI-editable local defaults without rewriting `.diffship/config.toml`
 
 ### 1.2 Promotion mode + target branch
 

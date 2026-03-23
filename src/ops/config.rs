@@ -1,8 +1,34 @@
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::patch_bundle::PatchBundleManifest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+pub const AI_GENERATED_CONFIG_FILE_NAME: &str = "ai_generated_config.toml";
+pub const AI_GENERATED_CONFIG_RELATIVE_PATH: &str = ".diffship/ai_generated_config.toml";
+
+pub const SUPPORTED_EDITABLE_DIFFSHIP_PATHS: &[&str] = &[
+    ".diffship/.gitignore",
+    ".diffship/AI_GUIDE.md",
+    ".diffship/config.toml",
+    ".diffship/forbid.toml",
+    ".diffship/PROJECT_KIT.md",
+    ".diffship/PROJECT_RULES.md",
+    AI_GENERATED_CONFIG_RELATIVE_PATH,
+];
+
+pub fn normalize_repo_relative_path(path: &str) -> String {
+    let normalized = path.trim().replace('\\', "/");
+    normalized.trim_start_matches("./").to_string()
+}
+
+pub fn normalize_supported_editable_diffship_path(path: &str) -> Option<String> {
+    let normalized = normalize_repo_relative_path(path);
+    SUPPORTED_EDITABLE_DIFFSHIP_PATHS
+        .iter()
+        .find(|candidate| **candidate == normalized)
+        .map(|_| normalized)
+}
 
 /// A partial ops configuration where every field is optional.
 /// Later sources override earlier sources.
@@ -12,6 +38,7 @@ pub struct OpsConfigOverrides {
     pub verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     pub post_apply_commands: BTreeMap<String, String>,
     pub forbid_patterns: BTreeMap<String, String>,
+    pub editable_diffship_files: BTreeMap<String, String>,
     pub target_branch: Option<String>,
     pub promotion_mode: Option<String>,
     pub commit_policy: Option<String>,
@@ -26,6 +53,7 @@ pub struct OpsConfig {
     verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     post_apply_commands: BTreeMap<String, String>,
     forbid_patterns: BTreeMap<String, String>,
+    editable_diffship_files: BTreeMap<String, String>,
 }
 
 impl OpsConfig {
@@ -38,6 +66,7 @@ impl OpsConfig {
             verify_profiles: BTreeMap::new(),
             post_apply_commands: BTreeMap::new(),
             forbid_patterns: BTreeMap::new(),
+            editable_diffship_files: BTreeMap::new(),
         }
     }
 
@@ -62,6 +91,9 @@ impl OpsConfig {
         }
         for (key, pattern) in o.forbid_patterns {
             self.forbid_patterns.insert(key, pattern);
+        }
+        for (key, path) in o.editable_diffship_files {
+            self.editable_diffship_files.insert(key, path);
         }
     }
 
@@ -101,6 +133,16 @@ impl OpsConfig {
             .filter(|v| !v.trim().is_empty())
             .cloned()
             .collect()
+    }
+
+    pub fn editable_diffship_files(&self) -> Vec<String> {
+        let mut out = BTreeSet::new();
+        for value in self.editable_diffship_files.values() {
+            if let Some(path) = normalize_supported_editable_diffship_path(value) {
+                out.insert(path);
+            }
+        }
+        out.into_iter().collect()
     }
 }
 
@@ -204,6 +246,10 @@ fn project_config_paths(git_root: &Path) -> Vec<PathBuf> {
     vec![
         // legacy (docs/CONFIG.md v0): repo-local root file
         git_root.join(".diffship.toml"),
+        // AI-owned local config layer (loaded before the user-owned project config)
+        git_root
+            .join(".diffship")
+            .join(AI_GENERATED_CONFIG_FILE_NAME),
         // current: stored under the diffship directory (written by `diffship init`)
         git_root.join(".diffship").join("config.toml"),
         // dedicated local forbid patterns file
@@ -267,6 +313,7 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
         // - [ops.promote] target_branch / mode
         // - [ops.post_apply] cmd1 = "just fmt-fix"
         // - [ops.forbid] path1 = "pnpm-lock.yaml"
+        // - [ops.editable_diffship] path1 = ".diffship/AI_GUIDE.md"
         // - [ops.commit] policy
         let section_str: Vec<&str> = section.iter().map(|s| s.as_str()).collect();
         match section_str.as_slice() {
@@ -309,6 +356,9 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
             }
             ["ops", "forbid"] => {
                 out.forbid_patterns.insert(key.to_string(), val);
+            }
+            ["ops", "editable_diffship"] => {
+                out.editable_diffship_files.insert(key.to_string(), val);
             }
             _ => {}
         }

@@ -321,6 +321,7 @@ Conventions:
 
 - **S-OPS-007** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
 - **S-OPS-008** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/config.rs`, `src/ops/init.rs` — Status: Implemented
+- **S-OPS-009** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
 
 ## Sessions
 
@@ -382,6 +383,7 @@ Conventions:
 - **S-INIT-009** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-011** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
+- **S-INIT-012** — Tests: `tests/m0_integration.rs`, `tests/m4_config_precedence.rs`, `tests/m6_handoff_build.rs` — Code: `src/ops/init.rs`, `src/ops/config.rs`, `src/handoff_config.rs` — Status: Implemented
 
 ---
 

@@ -146,8 +146,14 @@ pub fn apply_locked(
     let bundle_path = resolve_user_path(&cwd, &args.bundle)?;
     let cfg = crate::ops::config::resolve_ops_config(git_root, None, Default::default())?;
     let forbid_patterns = cfg.forbid_patterns();
-    let mut bundle =
-        patch_bundle::load_and_copy_into_run(git_root, &bundle_path, &run_dir, &forbid_patterns)?;
+    let editable_diffship_files = cfg.editable_diffship_files();
+    let mut bundle = patch_bundle::load_and_copy_into_run(
+        git_root,
+        &bundle_path,
+        &run_dir,
+        &forbid_patterns,
+        &editable_diffship_files,
+    )?;
     let (deleted_input_zip_path, input_zip_deleted) =
         maybe_delete_input_zip(&bundle_path, args.delete_input_zip);
     let declared_base_commit = bundle.manifest.base_commit.clone();

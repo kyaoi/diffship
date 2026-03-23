@@ -55,6 +55,12 @@ fn write_project_config(root: &std::path::Path, body: &str) {
     fs::write(path.join("config.toml"), body).unwrap();
 }
 
+fn write_project_ai_generated_config(root: &std::path::Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("ai_generated_config.toml"), body).unwrap();
+}
+
 fn write_project_forbid(root: &std::path::Path, body: &str) {
     let path = root.join(".diffship");
     fs::create_dir_all(&path).unwrap();
@@ -266,6 +272,16 @@ fn extract_run_id(stdout: &[u8]) -> String {
     panic!("run_id not found in output: {s}");
 }
 
+fn extract_sandbox_path(stdout: &[u8]) -> String {
+    let s = String::from_utf8_lossy(stdout);
+    for line in s.lines() {
+        if let Some(rest) = line.strip_prefix("  sandbox : ") {
+            return rest.trim().to_string();
+        }
+    }
+    panic!("sandbox path not found in output: {s}");
+}
+
 #[test]
 fn m2_apply_and_verify_happy_path_generic_repo() {
     let td = init_repo();
@@ -388,6 +404,90 @@ path1 = "README.md"
 
     let patch = make_patch_by_editing_readme(root, "world\n");
     let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &["README.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
+}
+
+#[test]
+fn m2_apply_rejects_diffship_project_kit_paths_by_default() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    let patch = make_patch_adding_file(root, ".diffship/AI_GUIDE.md", "guide\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &[".diffship/AI_GUIDE.md"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    diffship_cmd()
+        .args(["apply", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .failure()
+        .code(7);
+}
+
+#[test]
+fn m2_apply_allows_opted_in_diffship_config_path_via_ai_generated_config() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_ai_generated_config(
+        root,
+        r#"
+[ops.editable_diffship]
+path1 = ".diffship/config.toml"
+"#,
+    );
+
+    let patch = make_patch_adding_file(
+        root,
+        ".diffship/config.toml",
+        "[verify]\ndefault_profile = \"fast\"\n",
+    );
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &[".diffship/config.toml"]);
+    let bundle_root = bundle_td.path().join("patchship_test");
+
+    let out = diffship_cmd()
+        .args(["apply", "--keep-sandbox", bundle_root.to_str().unwrap()])
+        .current_dir(root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let sandbox = extract_sandbox_path(&out);
+    let sandbox_cfg = std::path::Path::new(&sandbox)
+        .join(".diffship")
+        .join("config.toml");
+    assert_eq!(
+        fs::read_to_string(sandbox_cfg).unwrap(),
+        "[verify]\ndefault_profile = \"fast\"\n"
+    );
+}
+
+#[test]
+fn m2_apply_rejects_non_allowlisted_diffship_paths_even_if_configured() {
+    let td = init_repo();
+    let root = td.path();
+    let base = head(root);
+
+    write_project_ai_generated_config(
+        root,
+        r#"
+[ops.editable_diffship]
+path1 = ".diffship/runs/escape.txt"
+"#,
+    );
+
+    let patch = make_patch_adding_file(root, ".diffship/runs/escape.txt", "nope\n");
+    let bundle_td = make_bundle_dir_with_patch(root, &base, &patch, &[".diffship/runs/escape.txt"]);
     let bundle_root = bundle_td.path().join("patchship_test");
 
     diffship_cmd()

@@ -1,7 +1,7 @@
 mod apply;
 mod cleanup;
 pub(crate) mod command_log;
-mod config;
+pub(crate) mod config;
 mod doctor;
 mod init;
 pub(crate) mod lock;

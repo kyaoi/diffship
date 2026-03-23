@@ -65,6 +65,12 @@ fn write_project_config(root: &Path, body: &str) {
     fs::write(path.join("config.toml"), body).unwrap();
 }
 
+fn write_project_ai_generated_config(root: &Path, body: &str) {
+    let path = root.join(".diffship");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("ai_generated_config.toml"), body).unwrap();
+}
+
 fn only_generated_bundle(root: &Path) -> std::path::PathBuf {
     let mut bundles = fs::read_dir(root)
         .unwrap()
@@ -1925,6 +1931,48 @@ output_dir = "artifacts/from-config"
     cmd.assert().success();
 
     let out_dir = root.join("artifacts").join("from-config");
+    let bundles = fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(|ent| {
+            let ent = ent.ok()?;
+            if !ent.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let name = ent.file_name().to_string_lossy().to_string();
+            if !name.starts_with("diffship_") {
+                return None;
+            }
+            Some(ent.path())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(bundles.len(), 1);
+    assert!(bundles[0].join("HANDOFF.md").exists());
+}
+
+#[test]
+fn build_ai_generated_config_can_set_default_out_dir() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    write_project_ai_generated_config(
+        root,
+        r#"
+[handoff]
+output_dir = "artifacts/from-ai-generated"
+"#,
+    );
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let out_dir = root.join("artifacts").join("from-ai-generated");
     let bundles = fs::read_dir(&out_dir)
         .unwrap()
         .filter_map(|ent| {

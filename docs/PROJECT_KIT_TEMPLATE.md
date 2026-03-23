@@ -214,7 +214,7 @@ Key rules:
 - do not use provider-specific `From:` identities such as `OpenAI <assistant@example.com>` as the default contract
 - if the exact `base_commit` is unavailable and you asked for loop-ready output, the AI should request the SHA or return `MODE: ANALYSIS_ONLY` instead of fabricating a fallback zip
 - paths must be repo-relative only
-- do not touch `.git/` or `.diffship/`
+- do not touch `.git/` or non-allowlisted `.diffship/` paths
 - respect any repository-local `[ops.forbid]` patterns (for example lockfiles such as `pnpm-lock.yaml`) in addition to the built-in forbidden paths
 - do not include secrets
 - keep file ordering and output deterministic
