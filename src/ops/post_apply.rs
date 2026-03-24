@@ -40,6 +40,7 @@ pub struct PostApplyOut {
 }
 
 pub fn run(
+    git_root: &Path,
     run_dir: &Path,
     sandbox_path: &Path,
     commands: &[String],
@@ -61,8 +62,15 @@ pub fn run(
         let name = format!("cmd{}", idx + 1);
         let file_stem = format!("{:02}_{}", idx + 1, sanitize_name(&name));
         let argv = vec!["sh".to_string(), "-lc".to_string(), cmd.to_string()];
-        let logged =
-            command_log::run_and_log(run_dir, "post-apply", &file_stem, sandbox_path, &argv, None)?;
+        let logged = command_log::run_and_log(
+            run_dir,
+            git_root,
+            "post-apply",
+            &file_stem,
+            sandbox_path,
+            &argv,
+            None,
+        )?;
         if logged.record.status != 0 {
             ok = false;
         }

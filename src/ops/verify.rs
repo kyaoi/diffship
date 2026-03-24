@@ -140,8 +140,15 @@ pub fn verify_locked(
 
     for (idx, cmd) in plan.iter().enumerate() {
         let name = format!("{:02}_{}", idx + 1, sanitize_name(&cmd.name));
-        let logged =
-            command_log::run_and_log(&run_dir, "verify", &name, &sandbox_path, &cmd.argv, None)?;
+        let logged = command_log::run_and_log(
+            &run_dir,
+            git_root,
+            "verify",
+            &name,
+            &sandbox_path,
+            &cmd.argv,
+            None,
+        )?;
         if logged.record.status != 0 {
             ok = false;
         }

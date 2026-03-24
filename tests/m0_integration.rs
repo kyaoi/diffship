@@ -132,7 +132,7 @@ fn m0_init_status_runs_happy_path() {
     let gitignore = fs::read_to_string(root.join(".diffship").join(".gitignore")).unwrap();
     assert_eq!(
         gitignore,
-        "artifacts/handoffs/\nartifacts/rules/\nruns/\nworktrees/\nsessions/\nlock\n"
+        "artifacts/handoffs/\nartifacts/rules/\ntmp/\nruns/\nworktrees/\nsessions/\nlock\n"
     );
     let ai_cfg =
         fs::read_to_string(root.join(".diffship").join("ai_generated_config.toml")).unwrap();

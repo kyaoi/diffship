@@ -494,6 +494,7 @@ path6 = "{ai_generated_config}"
 fn default_gitignore() -> String {
     r#"artifacts/handoffs/
 artifacts/rules/
+tmp/
 runs/
 worktrees/
 sessions/

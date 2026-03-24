@@ -159,8 +159,9 @@ fn verify_uses_configured_profile_commands_by_default() {
 default_profile = "custom"
 
 [verify.profiles.custom]
-cmd1 = "printf ok > .verify_marker"
-cmd2 = "git diff --check"
+cmd1 = "printf '%s' \"$TMPDIR\" > .verify_tmpdir"
+cmd2 = "printf ok > .verify_marker"
+cmd3 = "git diff --check"
 "#,
     )
     .unwrap();
@@ -185,7 +186,20 @@ cmd2 = "git diff --check"
 
     assert_eq!(read_verify_profile(root, &run_id), "custom");
     let sandbox = read_sandbox_path(root, &run_id);
+    let tmpdir = fs::read_to_string(sandbox.join(".verify_tmpdir")).unwrap();
+    let tmpdir = PathBuf::from(tmpdir.trim());
+    assert!(tmpdir.to_string_lossy().contains(".diffship/tmp/commands/"));
+    assert!(tmpdir.to_string_lossy().contains(&run_id));
+    assert!(!tmpdir.exists());
     assert!(sandbox.join(".verify_marker").exists());
+    assert!(
+        !root
+            .join(".diffship")
+            .join("tmp")
+            .join("commands")
+            .join(&run_id)
+            .exists()
+    );
 }
 
 #[test]

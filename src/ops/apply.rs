@@ -229,10 +229,11 @@ pub fn apply_locked(
 
     let sandbox_path = Path::new(&sandbox.path);
 
-    let apply_res = apply_patches_in_sandbox(&run_dir, sandbox_path, &bundle)?;
+    let apply_res = apply_patches_in_sandbox(git_root, &run_dir, sandbox_path, &bundle)?;
     let post_apply_commands = cfg.post_apply_commands().unwrap_or_default();
     let post_apply_out = if apply_res.is_ok && !post_apply_commands.is_empty() {
         Some(post_apply::run(
+            git_root,
             &run_dir,
             sandbox_path,
             &post_apply_commands,
@@ -403,6 +404,7 @@ struct ApplyResult {
 }
 
 fn apply_patches_in_sandbox(
+    git_root: &Path,
     run_dir: &Path,
     sandbox_path: &Path,
     bundle: &patch_bundle::PatchBundle,
@@ -418,7 +420,9 @@ fn apply_patches_in_sandbox(
             // Preflight
             let mut check_args = vec!["apply".to_string(), "--check".to_string()];
             check_args.extend(patch_args.clone());
-            if let Err(e) = run_git_capture(run_dir, sandbox_path, "01_preflight", &check_args) {
+            if let Err(e) =
+                run_git_capture(git_root, run_dir, sandbox_path, "01_preflight", &check_args)
+            {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("preflight failed: {}", e)),
@@ -427,7 +431,9 @@ fn apply_patches_in_sandbox(
 
             let mut apply_args = vec!["apply".to_string()];
             apply_args.extend(patch_args);
-            if let Err(e) = run_git_capture(run_dir, sandbox_path, "02_apply", &apply_args) {
+            if let Err(e) =
+                run_git_capture(git_root, run_dir, sandbox_path, "02_apply", &apply_args)
+            {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("apply failed: {}", e)),
@@ -443,7 +449,9 @@ fn apply_patches_in_sandbox(
             // Best-effort preflight using git apply --check (mail patches should still be handled).
             let mut check_args = vec!["apply".to_string(), "--check".to_string()];
             check_args.extend(patch_args.clone());
-            if let Err(e) = run_git_capture(run_dir, sandbox_path, "01_preflight", &check_args) {
+            if let Err(e) =
+                run_git_capture(git_root, run_dir, sandbox_path, "01_preflight", &check_args)
+            {
                 return Ok(ApplyResult {
                     is_ok: false,
                     error: Some(format!("preflight failed: {}", e)),
@@ -452,9 +460,11 @@ fn apply_patches_in_sandbox(
 
             let mut am_args = vec!["am".to_string()];
             am_args.extend(patch_args);
-            if let Err(e) = run_git_capture(run_dir, sandbox_path, "02_git_am", &am_args) {
+            if let Err(e) = run_git_capture(git_root, run_dir, sandbox_path, "02_git_am", &am_args)
+            {
                 // Abort best-effort.
                 let _ = run_git_capture(
+                    git_root,
                     run_dir,
                     sandbox_path,
                     "03_git_am_abort",
@@ -479,10 +489,16 @@ fn rollback_sandbox(sandbox_path: &Path, base_commit: &str) {
     let _ = git::run_git_in(sandbox_path, ["clean", "-fdx"]);
 }
 
-fn run_git_capture(run_dir: &Path, dir: &Path, name: &str, args: &[String]) -> Result<(), String> {
+fn run_git_capture(
+    git_root: &Path,
+    run_dir: &Path,
+    dir: &Path,
+    name: &str,
+    args: &[String],
+) -> Result<(), String> {
     let mut argv = vec!["git".to_string()];
     argv.extend(args.iter().cloned());
-    let output = command_log::run_and_log(run_dir, "apply", name, dir, &argv, None)
+    let output = command_log::run_and_log(run_dir, git_root, "apply", name, dir, &argv, None)
         .map_err(|e| e.message)?;
 
     if output.record.status == 0 {

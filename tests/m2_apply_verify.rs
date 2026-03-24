@@ -636,7 +636,7 @@ fn m2_apply_runs_configured_post_apply_commands_in_sandbox() {
         root,
         r#"
 [ops.post_apply]
-cmd1 = "printf hook >> README.md"
+cmd1 = "printf '%s\\n' \"$TMPDIR\" && printf hook >> README.md"
 "#,
     );
 
@@ -661,9 +661,14 @@ cmd1 = "printf hook >> README.md"
         .join(&run_id)
         .join("README.md");
     let readme = fs::read_to_string(sandbox_readme).unwrap();
+    let tmpdir = fs::read_to_string(run_dir.join("post-apply").join("01_cmd1.stdout")).unwrap();
+    let tmpdir = std::path::PathBuf::from(tmpdir.trim());
 
     assert!(readme.contains("world\n"));
     assert!(readme.contains("hook"));
+    assert!(tmpdir.to_string_lossy().contains(".diffship/tmp/commands/"));
+    assert!(tmpdir.to_string_lossy().contains(&run_id));
+    assert!(!tmpdir.exists());
     assert!(run_dir.join("post_apply.json").exists());
     assert!(run_dir.join("post-apply").join("01_cmd1.stdout").exists());
     let post_apply: Value =
@@ -692,6 +697,14 @@ cmd1 = "printf hook >> README.md"
     );
     let commands = fs::read_to_string(run_dir.join("commands.json")).unwrap();
     assert!(commands.contains("\"phase\": \"post-apply\""));
+    assert!(
+        !root
+            .join(".diffship")
+            .join("tmp")
+            .join("commands")
+            .join(&run_id)
+            .exists()
+    );
 }
 
 #[test]

@@ -350,3 +350,29 @@ fn cleanup_include_builds_removes_diffship_artifacts_only() {
     assert!(!rules_zip.exists());
     assert!(external_zip.exists());
 }
+
+#[test]
+fn cleanup_removes_diffship_temp_artifacts() {
+    let td = init_repo();
+    let root = td.path();
+    let tmp_dir = root
+        .join(".diffship")
+        .join("tmp")
+        .join("commands")
+        .join("stale-run")
+        .join("verify")
+        .join("cmd1");
+
+    fs::create_dir_all(&tmp_dir).unwrap();
+    fs::write(tmp_dir.join("probe.txt"), "stale\n").unwrap();
+
+    diffship_cmd()
+        .args(["cleanup"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("temp_artifact"))
+        .stdout(predicate::str::contains("action=removed"));
+
+    assert!(!root.join(".diffship").join("tmp").exists());
+}

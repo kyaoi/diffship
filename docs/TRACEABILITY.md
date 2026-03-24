@@ -312,6 +312,7 @@ Conventions:
 - **S-CLEANUP-003** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/cli.rs` — Status: Implemented
 - **S-CLEANUP-004** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/ops/run.rs`, `src/ops/session.rs`, `src/ops/worktree.rs` — Status: Implemented
 - **S-CLEANUP-005** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/cli.rs` — Status: Implemented
+- **S-CLEANUP-006** — Tests: `tests/m7_cleanup.rs` — Code: `src/ops/cleanup.rs`, `src/ops/run.rs` — Status: Implemented
 
 ---
 
@@ -328,6 +329,7 @@ Conventions:
 - **S-OPS-007** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
 - **S-OPS-008** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/config.rs`, `src/ops/init.rs` — Status: Implemented
 - **S-OPS-009** — Tests: `tests/m2_apply_verify.rs`, `tests/m0_integration.rs` — Code: `src/ops/config.rs`, `src/ops/patch_bundle.rs`, `src/ops/init.rs` — Status: Implemented
+- **S-OPS-010** — Tests: `tests/m2_apply_verify.rs`, `tests/m4_verify_profiles.rs` — Code: `src/ops/command_log.rs`, `src/ops/run.rs`, `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs` — Status: Implemented
 
 ## Sessions
 

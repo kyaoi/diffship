@@ -39,6 +39,7 @@ enum CleanupKind {
     OrphanRun,
     BuildArtifact,
     RulesArtifact,
+    TempArtifact,
 }
 
 impl CleanupKind {
@@ -51,6 +52,7 @@ impl CleanupKind {
             Self::OrphanRun => "orphan_run",
             Self::BuildArtifact => "build_artifact",
             Self::RulesArtifact => "rules_artifact",
+            Self::TempArtifact => "temp_artifact",
         }
     }
 }
@@ -227,6 +229,7 @@ fn collect_candidates(
     if scopes.include_builds {
         collect_build_artifacts(git_root, &mut out)?;
     }
+    collect_temp_artifacts(git_root, &mut out);
     collect_orphan_session_worktrees(git_root, &mut out)?;
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
@@ -411,6 +414,24 @@ fn collect_build_artifacts(
         out,
     )?;
     Ok(())
+}
+
+fn collect_temp_artifacts(git_root: &Path, out: &mut Vec<CleanupCandidate>) {
+    let path = run::tmp_dir(git_root);
+    let size_bytes = dir_size_bytes(&path);
+    if !path.exists() || size_bytes == 0 {
+        return;
+    }
+
+    out.push(CleanupCandidate {
+        kind: CleanupKind::TempArtifact,
+        name: "tmp".to_string(),
+        path,
+        reason: "diffship-owned temporary command artifacts".to_string(),
+        size_bytes,
+        extra_paths: Vec::new(),
+        extra_files: Vec::new(),
+    });
 }
 
 fn collect_artifact_entries(

@@ -303,7 +303,7 @@ pub fn promote_locked(
     let sandbox_head = match manifest.apply_mode {
         patch_bundle::ApplyMode::GitApply => {
             if commit_policy == "auto" {
-                ensure_commit_in_sandbox(&sandbox_path, &run_dir, &commit_msg)?;
+                ensure_commit_in_sandbox(git_root, &sandbox_path, &run_dir, &commit_msg)?;
             }
             git::run_git_in(&sandbox_path, ["rev-parse", "HEAD"])?
                 .trim()
@@ -388,6 +388,7 @@ pub fn promote_locked(
         // Abort best-effort to restore a clean state.
         let _ = run_git_logged(
             &run_dir,
+            git_root,
             "06_cherry_pick_abort",
             git_root,
             ["cherry-pick", "--abort"],
@@ -565,16 +566,26 @@ fn ensure_trailing_newline(s: &str) -> String {
 }
 
 fn ensure_commit_in_sandbox(
+    git_root: &Path,
     sandbox_path: &Path,
     run_dir: &Path,
     commit_msg: &str,
 ) -> Result<(), ExitError> {
     // Stage everything and create a single commit.
-    run_git_logged(run_dir, "01_git_add", sandbox_path, ["add", "-A"], None).map(|_| ())?;
+    run_git_logged(
+        run_dir,
+        git_root,
+        "01_git_add",
+        sandbox_path,
+        ["add", "-A"],
+        None,
+    )
+    .map(|_| ())?;
 
     // If nothing is staged, refuse: we expect apply to have produced a diff.
     let status = run_git_logged(
         run_dir,
+        git_root,
         "02_git_diff_cached",
         sandbox_path,
         ["diff", "--cached", "--quiet"],
@@ -601,6 +612,7 @@ fn ensure_commit_in_sandbox(
     let msg_path_s = msg_path.to_string_lossy().to_string();
     let commit = run_git_logged(
         run_dir,
+        git_root,
         "03_git_commit",
         sandbox_path,
         ["commit", "--no-gpg-sign", "--file", msg_path_s.as_str()],
@@ -692,6 +704,7 @@ fn checkout_branch(run_dir: &Path, git_root: &Path, branch: &str) -> Result<(), 
     }
     let out = run_git_logged(
         run_dir,
+        git_root,
         "04_git_checkout",
         git_root,
         ["checkout", branch],
@@ -714,6 +727,7 @@ fn cherry_pick_commits(run_dir: &Path, git_root: &Path, commits: &[String]) -> R
 
     let output = run_git_logged(
         run_dir,
+        git_root,
         "05_git_cherry_pick",
         git_root,
         argv.iter().map(|s| s.as_str()),
@@ -755,6 +769,7 @@ fn apply_patch_to_working_tree(
 ) -> Result<(), ExitError> {
     let out = run_git_logged(
         run_dir,
+        git_root,
         "01_git_apply",
         git_root,
         ["apply", "--whitespace=nowarn"],
@@ -774,6 +789,7 @@ fn apply_patch_to_working_tree(
 
 fn run_git_logged<I, S>(
     run_dir: &Path,
+    git_root: &Path,
     name: &str,
     cwd: &Path,
     args: I,
@@ -785,7 +801,7 @@ where
 {
     let mut argv = vec!["git".to_string()];
     argv.extend(args.into_iter().map(|arg| arg.as_ref().to_string()));
-    command_log::run_and_log(run_dir, "promote", name, cwd, &argv, stdin_bytes)
+    command_log::run_and_log(run_dir, git_root, "promote", name, cwd, &argv, stdin_bytes)
 }
 
 fn command_output_message(stdout: &[u8], stderr: &[u8], fallback: &str) -> String {

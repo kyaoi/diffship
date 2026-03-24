@@ -67,6 +67,7 @@ diffship compare ./bundle_a ./bundle_b.zip --json
 Runtime artifacts are stored under:
 
 - `.diffship/runs/<run-id>/...`
+- `.diffship/tmp/...` (repo-local temp dirs for diffship-spawned commands and previews)
 - `.diffship/worktrees/...` (worktrees for sessions/sandboxes)
 
 Inside each run directory, external command logs are grouped by phase:
@@ -139,6 +140,8 @@ diffship cleanup --include-runs
 diffship cleanup --include-builds
 diffship cleanup --all
 ```
+
+`cleanup` also removes leftover diffship-owned temp artifacts under `.diffship/tmp/`.
 
 ### Promotion blocked: secrets
 

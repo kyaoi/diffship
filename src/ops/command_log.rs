@@ -2,7 +2,7 @@ use crate::exit::{EXIT_GENERAL, ExitError};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -31,6 +31,7 @@ pub struct CommandOutput {
 
 pub fn run_and_log(
     run_dir: &Path,
+    git_root: &Path,
     phase: &str,
     name: &str,
     cwd: &Path,
@@ -55,16 +56,20 @@ pub fn run_and_log(
             b"failed to spawn command: empty argv\n".to_vec(),
         )
     } else {
+        let temp_dir = prepare_command_tmp_dir(git_root, run_dir, phase, &stem)?;
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..])
             .current_dir(cwd)
+            .env("TMPDIR", &temp_dir)
+            .env("TMP", &temp_dir)
+            .env("TEMP", &temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if stdin_bytes.is_some() {
             cmd.stdin(Stdio::piped());
         }
 
-        match cmd.spawn() {
+        let output = match cmd.spawn() {
             Ok(mut child) => {
                 if let Some(bytes) = stdin_bytes
                     && let Some(stdin) = child.stdin.as_mut()
@@ -92,7 +97,9 @@ pub fn run_and_log(
                 Vec::new(),
                 format!("failed to spawn command: {e}\n").into_bytes(),
             ),
-        }
+        };
+        cleanup_command_tmp_dir(git_root, &temp_dir);
+        output
     };
 
     let duration_ms = start.elapsed().as_millis();
@@ -184,4 +191,55 @@ pub fn sanitize_name(s: &str) -> String {
             }
         })
         .collect()
+}
+
+fn prepare_command_tmp_dir(
+    git_root: &Path,
+    run_dir: &Path,
+    phase: &str,
+    stem: &str,
+) -> Result<PathBuf, ExitError> {
+    let run_id = run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("run");
+    let dir = crate::ops::run::tmp_dir(git_root)
+        .join("commands")
+        .join(run_id)
+        .join(phase)
+        .join(stem);
+    if dir.exists() {
+        let _ = fs::remove_dir_all(&dir);
+    }
+    fs::create_dir_all(&dir).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to create command tmp dir {}: {e}", dir.display()),
+        )
+    })?;
+    Ok(dir)
+}
+
+fn cleanup_command_tmp_dir(git_root: &Path, temp_dir: &Path) {
+    let _ = fs::remove_dir_all(temp_dir);
+    prune_empty_parents(temp_dir.parent(), &crate::ops::run::tmp_dir(git_root));
+}
+
+fn prune_empty_parents(mut current: Option<&Path>, stop_at: &Path) {
+    while let Some(dir) = current {
+        if !dir.starts_with(stop_at) || dir == stop_at {
+            break;
+        }
+        match fs::read_dir(dir) {
+            Ok(mut entries) => {
+                if entries.next().is_some() {
+                    break;
+                }
+                let parent = dir.parent();
+                let _ = fs::remove_dir(dir);
+                current = parent;
+            }
+            Err(_) => break,
+        }
+    }
 }

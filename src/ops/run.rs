@@ -40,6 +40,10 @@ pub fn run_dir(git_root: &Path, run_id: &str) -> PathBuf {
     runs_dir(git_root).join(run_id)
 }
 
+pub fn tmp_dir(git_root: &Path) -> PathBuf {
+    git_root.join(".diffship").join("tmp")
+}
+
 pub fn create_run(
     git_root: &Path,
     command: &str,

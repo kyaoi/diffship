@@ -307,6 +307,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-CLEANUP-003**: cleanup MUST support `--dry-run` preview mode and `--json` machine-readable output.
 - **S-CLEANUP-004**: cleanup MUST support an opt-in mode that removes eligible run logs under `.diffship/runs/` when those runs are already promoted or orphaned. Removing such runs MUST NOT update the repository `HEAD` or diffship session refs.
 - **S-CLEANUP-005**: cleanup MUST support an opt-in mode that removes diffship-owned build artifacts under `.diffship/artifacts/` while leaving user-selected outputs outside `.diffship/` untouched.
+- **S-CLEANUP-006**: cleanup MUST remove diffship-owned temporary artifacts under `.diffship/tmp/` when they remain after completed or interrupted runs.
 
 ---
 
@@ -341,6 +342,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-007**: Project/global config MAY define additional forbidden repo-relative path/glob patterns, and apply/loop MUST enforce them against both manifest paths and patch headers.
 - **S-OPS-008**: Project-local forbid rules MAY live in a dedicated `.diffship/forbid.toml` file in addition to the main project config, and `diffship init` SHOULD generate that file as a starter template without overwriting existing content unless `--force`.
 - **S-OPS-009**: Project/global config MAY opt specific generated `.diffship/` files into editability, but only from a fixed built-in allowlist (`.diffship/.gitignore`, `.diffship/AI_GUIDE.md`, `.diffship/config.toml`, `.diffship/forbid.toml`, `.diffship/PROJECT_KIT.md`, `.diffship/PROJECT_RULES.md`, `.diffship/ai_generated_config.toml`). All other `.diffship/` paths MUST remain forbidden.
+- **S-OPS-010**: diffship-spawned local commands (apply/post-apply/verify/promote helpers) MUST use repo-local temporary directories under `.diffship/tmp/` instead of leaking temp artifacts into system-wide temp locations.
 
 ### 7.1 OS mode sessions & worktrees
 
@@ -414,7 +416,7 @@ Ops-specific codes:
 - **S-INIT-003**: It MUST write a project config stub (e.g., `.diffship/config.toml`) without overwriting existing files unless `--force`.
 - **S-INIT-004**: It MUST write an AI-targeted guide derived from `docs/AI_PROJECT_TEMPLATE.md` that explains diffship's workflow, expected artifacts, input file meanings, and non-file deliverables such as commit messages and user-task files, and it MUST append current repo metadata such as branch, HEAD, and active local forbid patterns.
 - **S-INIT-005**: `diffship init --template-dir <dir>` MAY override template sources by reading `PROJECT_KIT_TEMPLATE.md` and `AI_PROJECT_TEMPLATE.md` from the specified directory before falling back to repository templates or built-in defaults.
-- **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.
+- **S-INIT-006**: It MUST write `.diffship/.gitignore` so diffship-managed local state (such as handoffs, temp artifacts, runs, worktrees, sessions, and lock files) stays under `.diffship/` without being committed by default, unless the user edits that ignore file explicitly.
 - **S-INIT-007**: `diffship init --zip` MUST export a minimal rules kit zip containing `PROJECT_KIT.md`, `PROJECT_RULES.md`, `AI_GUIDE.md`, and machine-readable metadata. The default output path MUST be under `.diffship/artifacts/rules/`, based on the current `HEAD` when available and falling back to the current `run_id` otherwise. `--out <path>` MAY override that destination.
 - **S-INIT-008**: Generated guides and config stub MUST include an immediately usable repository snapshot when discoverable, including repository identity, preferred promotion target, suggested read-first files, and starter commands.
 - **S-INIT-009**: `diffship init --lang <en|ja>` MUST select the language of the generated `PROJECT_RULES.md` snippet and record the resolved language in the rules-kit metadata. The default language is `en`.
