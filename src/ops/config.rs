@@ -42,6 +42,10 @@ pub struct OpsConfigOverrides {
     pub target_branch: Option<String>,
     pub promotion_mode: Option<String>,
     pub commit_policy: Option<String>,
+    pub workflow_profile: Option<String>,
+    pub workflow_strategy_mode: Option<String>,
+    pub workflow_strategy_default_profile: Option<String>,
+    pub workflow_strategy_error_overrides: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,10 +54,22 @@ pub struct OpsConfig {
     pub target_branch: String,
     pub promotion_mode: String,
     pub commit_policy: String,
+    pub workflow_profile: String,
+    pub workflow_strategy_mode: String,
     verify_profiles: BTreeMap<String, BTreeMap<String, String>>,
     post_apply_commands: BTreeMap<String, String>,
     forbid_patterns: BTreeMap<String, String>,
     editable_diffship_files: BTreeMap<String, String>,
+    workflow_strategy_default_profile: Option<String>,
+    workflow_strategy_error_overrides: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkflowConfig {
+    pub default_profile: String,
+    pub strategy_mode: String,
+    strategy_default_profile: Option<String>,
+    strategy_error_overrides: BTreeMap<String, String>,
 }
 
 impl OpsConfig {
@@ -63,10 +79,14 @@ impl OpsConfig {
             target_branch: "develop".to_string(),
             promotion_mode: "commit".to_string(),
             commit_policy: "auto".to_string(),
+            workflow_profile: "balanced".to_string(),
+            workflow_strategy_mode: "suggest".to_string(),
             verify_profiles: BTreeMap::new(),
             post_apply_commands: BTreeMap::new(),
             forbid_patterns: BTreeMap::new(),
             editable_diffship_files: BTreeMap::new(),
+            workflow_strategy_default_profile: None,
+            workflow_strategy_error_overrides: BTreeMap::new(),
         }
     }
 
@@ -83,6 +103,15 @@ impl OpsConfig {
         if let Some(v) = o.commit_policy {
             self.commit_policy = v;
         }
+        if let Some(v) = o.workflow_profile {
+            self.workflow_profile = v;
+        }
+        if let Some(v) = o.workflow_strategy_mode {
+            self.workflow_strategy_mode = v;
+        }
+        if let Some(v) = o.workflow_strategy_default_profile {
+            self.workflow_strategy_default_profile = Some(v);
+        }
         for (profile, commands) in o.verify_profiles {
             self.verify_profiles.insert(profile, commands);
         }
@@ -94,6 +123,9 @@ impl OpsConfig {
         }
         for (key, path) in o.editable_diffship_files {
             self.editable_diffship_files.insert(key, path);
+        }
+        for (key, profile) in o.workflow_strategy_error_overrides {
+            self.workflow_strategy_error_overrides.insert(key, profile);
         }
     }
 
@@ -146,6 +178,42 @@ impl OpsConfig {
     }
 }
 
+impl WorkflowConfig {
+    pub fn defaults() -> Self {
+        Self {
+            default_profile: "balanced".to_string(),
+            strategy_mode: "suggest".to_string(),
+            strategy_default_profile: None,
+            strategy_error_overrides: BTreeMap::new(),
+        }
+    }
+
+    fn apply_overrides(&mut self, o: OpsConfigOverrides) {
+        if let Some(v) = o.workflow_profile {
+            self.default_profile = v;
+        }
+        if let Some(v) = o.workflow_strategy_mode {
+            self.strategy_mode = v;
+        }
+        if let Some(v) = o.workflow_strategy_default_profile {
+            self.strategy_default_profile = Some(v);
+        }
+        for (key, profile) in o.workflow_strategy_error_overrides {
+            self.strategy_error_overrides.insert(key, profile);
+        }
+    }
+
+    pub fn strategy_default_profile(&self) -> &str {
+        self.strategy_default_profile
+            .as_deref()
+            .unwrap_or(&self.default_profile)
+    }
+
+    pub fn strategy_error_overrides(&self) -> &BTreeMap<String, String> {
+        &self.strategy_error_overrides
+    }
+}
+
 /// Resolve ops configuration with precedence:
 /// CLI > manifest > project > global > default.
 pub fn resolve_ops_config(
@@ -180,6 +248,28 @@ pub fn resolve_ops_config(
     cfg.apply_overrides(cli);
 
     validate(&cfg)?;
+
+    Ok(cfg)
+}
+
+pub fn resolve_workflow_config(git_root: &Path) -> Result<WorkflowConfig, ExitError> {
+    let mut cfg = WorkflowConfig::defaults();
+
+    if let Some(p) = global_config_path()
+        && p.is_file()
+    {
+        let o = load_config_file(&p)?;
+        cfg.apply_overrides(o);
+    }
+
+    for p in project_config_paths(git_root) {
+        if p.is_file() {
+            let o = load_config_file(&p)?;
+            cfg.apply_overrides(o);
+        }
+    }
+
+    validate_workflow_config(&cfg)?;
 
     Ok(cfg)
 }
@@ -222,6 +312,60 @@ fn validate(cfg: &OpsConfig) -> Result<(), ExitError> {
             EXIT_GENERAL,
             "target branch must not be empty",
         ));
+    }
+
+    validate_workflow_config(&WorkflowConfig {
+        default_profile: cfg.workflow_profile.clone(),
+        strategy_mode: cfg.workflow_strategy_mode.clone(),
+        strategy_default_profile: cfg.workflow_strategy_default_profile.clone(),
+        strategy_error_overrides: cfg.workflow_strategy_error_overrides.clone(),
+    })?;
+
+    Ok(())
+}
+
+fn validate_workflow_config(cfg: &WorkflowConfig) -> Result<(), ExitError> {
+    if cfg.default_profile.trim().is_empty() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "workflow default profile must not be empty",
+        ));
+    }
+
+    match cfg.strategy_mode.as_str() {
+        "suggest" | "prefer" | "force" | "off" => {}
+        other => {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!(
+                    "invalid workflow strategy mode: {other} (expected suggest|prefer|force|off)"
+                ),
+            ));
+        }
+    }
+
+    if cfg.strategy_default_profile().trim().is_empty() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            "workflow strategy default profile must not be empty",
+        ));
+    }
+
+    for (category, profile) in cfg.strategy_error_overrides() {
+        if category.trim().is_empty() {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                "workflow strategy error override category must not be empty",
+            ));
+        }
+        if profile.trim().is_empty() {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!(
+                    "workflow strategy error override profile must not be empty for category {category}"
+                ),
+            ));
+        }
     }
 
     Ok(())
@@ -315,6 +459,9 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
         // - [ops.forbid] path1 = "pnpm-lock.yaml"
         // - [ops.editable_diffship] path1 = ".diffship/AI_GUIDE.md"
         // - [ops.commit] policy
+        // - [workflow] default_profile = "balanced"
+        // - [workflow.strategy] mode / default_profile
+        // - [workflow.strategy.error_overrides] verify_test_failed = "regression-test-first"
         let section_str: Vec<&str> = section.iter().map(|s| s.as_str()).collect();
         match section_str.as_slice() {
             ["verify"] => {
@@ -360,6 +507,22 @@ fn parse_config_toml(s: &str) -> OpsConfigOverrides {
             ["ops", "editable_diffship"] => {
                 out.editable_diffship_files.insert(key.to_string(), val);
             }
+            ["workflow"] => {
+                if key == "default_profile" || key == "profile" {
+                    out.workflow_profile = Some(val);
+                }
+            }
+            ["workflow", "strategy"] => {
+                if key == "mode" {
+                    out.workflow_strategy_mode = Some(val);
+                } else if key == "default_profile" || key == "profile" {
+                    out.workflow_strategy_default_profile = Some(val);
+                }
+            }
+            ["workflow", "strategy", "error_overrides"] => {
+                out.workflow_strategy_error_overrides
+                    .insert(key.to_string(), val);
+            }
             _ => {}
         }
     }
@@ -384,4 +547,134 @@ fn profile_command_sort_key(key: &str) -> (u8, u32, String) {
         return (0, n, key.to_string());
     }
     (1, 0, key.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_config_toml, resolve_ops_config, resolve_workflow_config};
+    use tempfile::TempDir;
+
+    fn temp_git_root() -> TempDir {
+        tempfile::tempdir().expect("tempdir")
+    }
+
+    #[test]
+    fn parse_config_toml_reads_workflow_sections() {
+        let cfg = parse_config_toml(
+            r#"
+[workflow]
+default_profile = "bugfix-minimal"
+
+[workflow.strategy]
+mode = "prefer"
+default_profile = "no-test-fast"
+
+[workflow.strategy.error_overrides]
+verify_test_failed = "regression-test-first"
+verify_docs_failed = "docs-sync-minimal"
+"#,
+        );
+
+        assert_eq!(cfg.workflow_profile.as_deref(), Some("bugfix-minimal"));
+        assert_eq!(cfg.workflow_strategy_mode.as_deref(), Some("prefer"));
+        assert_eq!(
+            cfg.workflow_strategy_default_profile.as_deref(),
+            Some("no-test-fast")
+        );
+        assert_eq!(
+            cfg.workflow_strategy_error_overrides
+                .get("verify_test_failed")
+                .map(String::as_str),
+            Some("regression-test-first")
+        );
+        assert_eq!(
+            cfg.workflow_strategy_error_overrides
+                .get("verify_docs_failed")
+                .map(String::as_str),
+            Some("docs-sync-minimal")
+        );
+    }
+
+    #[test]
+    fn resolve_ops_config_uses_project_workflow_schema_and_fallback_default() {
+        let td = temp_git_root();
+        let git_root = td.path();
+        std::fs::create_dir_all(git_root.join(".diffship")).expect("create .diffship");
+        std::fs::write(
+            git_root.join(".diffship").join("ai_generated_config.toml"),
+            r#"
+[workflow]
+default_profile = "prototype-speed"
+
+[workflow.strategy]
+mode = "suggest"
+"#,
+        )
+        .expect("write ai config");
+        std::fs::write(
+            git_root.join(".diffship").join("config.toml"),
+            r#"
+[workflow]
+default_profile = "cautious-tdd"
+
+[workflow.strategy]
+mode = "force"
+
+[workflow.strategy.error_overrides]
+verify_test_failed = "regression-test-first"
+"#,
+        )
+        .expect("write project config");
+
+        let cfg = resolve_ops_config(git_root, None, Default::default()).expect("resolve config");
+
+        assert_eq!(cfg.workflow_profile, "cautious-tdd");
+        assert_eq!(cfg.workflow_strategy_mode, "force");
+        assert_eq!(
+            cfg.workflow_strategy_default_profile
+                .as_deref()
+                .unwrap_or(&cfg.workflow_profile),
+            "cautious-tdd"
+        );
+        assert_eq!(
+            cfg.workflow_strategy_error_overrides
+                .get("verify_test_failed")
+                .map(String::as_str),
+            Some("regression-test-first")
+        );
+    }
+
+    #[test]
+    fn resolve_workflow_config_reads_only_workflow_schema() {
+        let td = temp_git_root();
+        let git_root = td.path();
+        std::fs::create_dir_all(git_root.join(".diffship")).expect("create .diffship");
+        std::fs::write(
+            git_root.join(".diffship").join("config.toml"),
+            r#"
+[workflow]
+default_profile = "bugfix-minimal"
+
+[workflow.strategy]
+mode = "prefer"
+default_profile = "no-test-fast"
+
+[workflow.strategy.error_overrides]
+verify_docs_failed = "docs-sync-minimal"
+"#,
+        )
+        .expect("write project config");
+
+        let cfg = resolve_workflow_config(git_root).expect("resolve workflow config");
+
+        assert_eq!(cfg.default_profile, "bugfix-minimal");
+        assert_eq!(cfg.strategy_mode, "prefer");
+        assert_eq!(cfg.strategy_default_profile(), "no-test-fast");
+        assert_eq!(
+            cfg.strategy_error_overrides()
+                .get("verify_docs_failed")
+                .map(String::as_str),
+            Some("docs-sync-minimal")
+        );
+    }
 }

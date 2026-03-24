@@ -1,7 +1,9 @@
 use crate::cli::PackFixArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::run;
+use crate::ops::strategy;
 use crate::ops::worktree;
 use crate::pathing::resolve_user_path;
 use serde::Deserialize;
@@ -17,6 +19,7 @@ use zip::write::FileOptions;
 struct VerifyJson {
     ok: Option<bool>,
     profile: Option<String>,
+    failure_category: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +28,12 @@ struct PostApplyBrief {
     changed_paths: Vec<String>,
     #[serde(default)]
     change_categories: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PhaseSummaryBrief {
+    ok: Option<bool>,
+    failure_category: Option<String>,
 }
 
 /// Create a "reprompt zip" that contains run metadata, bundle, verify logs, and sandbox diffs.
@@ -137,6 +146,7 @@ fn write_pack_fix_zip(
     let post_apply_json_path = run_dir.join("post_apply.json");
     let has_post_apply = post_apply_json_path.exists();
     let post_apply_info = read_post_apply_brief(&post_apply_json_path);
+    let strategy_resolution = resolve_pack_fix_strategy(git_root, run_dir)?;
 
     let mut prompt = String::new();
     prompt.push_str("# diffship pack-fix (reprompt kit)\n\n");
@@ -149,6 +159,12 @@ fn write_pack_fix_zip(
     if let Some(ok) = verify_info.1 {
         prompt.push_str(&format!("- verify_ok: `{}`\n", ok));
     }
+    if let Some(failure_category) = verify_info.2.as_deref() {
+        prompt.push_str(&format!(
+            "- verify_failure_category: `{}`\n",
+            failure_category
+        ));
+    }
     if let Some(post_apply) = post_apply_info.as_ref() {
         prompt.push_str(&format!(
             "- post_apply_changed_paths: `{}`\n",
@@ -160,6 +176,41 @@ fn write_pack_fix_zip(
                 post_apply.change_categories.join(",")
             ));
         }
+    }
+    if let Some(strategy) = strategy_resolution.as_ref() {
+        prompt.push_str("\n## Suggested strategy\n\n");
+        prompt.push_str(
+            "Read `strategy.resolved.json` first so the failure-aware recommendation stays grounded before you inspect detailed logs.\n\n",
+        );
+        prompt.push_str(&format!(
+            "- failure_category: `{}`\n",
+            strategy.failure_category
+        ));
+        prompt.push_str(&format!("- strategy_mode: `{}`\n", strategy.strategy_mode));
+        prompt.push_str(&format!(
+            "- selected_profile: `{}`\n",
+            strategy.selected_profile
+        ));
+        prompt.push_str(&format!(
+            "- default_profile: `{}`\n",
+            strategy.default_profile
+        ));
+        if !strategy.alternatives.is_empty() {
+            prompt.push_str(&format!(
+                "- alternatives: `{}`\n",
+                strategy.alternatives.join("`, `")
+            ));
+        }
+        if let Some(tests_expected) = strategy.tests_expected {
+            prompt.push_str(&format!("- tests_expected: `{}`\n", tests_expected));
+        }
+        if let Some(profile) = strategy.preferred_verify_profile.as_deref() {
+            prompt.push_str(&format!("- preferred_verify_profile: `{}`\n", profile));
+        }
+        prompt.push_str(&format!("- reason: {}\n", strategy.reason));
+        prompt.push_str(
+            "\nTreat this strategy as guidance; use the run evidence below if it points to a narrower fix.\n",
+        );
     }
     prompt.push_str("\n## What you should do\n\n");
     if has_post_apply {
@@ -199,6 +250,15 @@ fn write_pack_fix_zip(
     safety.push_str("This zip may contain proprietary code or sensitive information.\n");
     safety.push_str("Review the contents before sharing it with any third party.\n");
     add_bytes(&mut zip, opts, "SAFETY.md", safety.as_bytes())?;
+    if let Some(strategy) = strategy_resolution.as_ref() {
+        let strategy_json = serde_json::to_vec_pretty(strategy).map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to encode strategy.resolved.json: {e}"),
+            )
+        })?;
+        add_bytes(&mut zip, opts, "strategy.resolved.json", &strategy_json)?;
+    }
 
     // 2) run dir essentials
     add_if_exists(&mut zip, opts, run_dir.join("run.json"), "run/run.json")?;
@@ -270,19 +330,54 @@ fn write_pack_fix_zip(
     Ok(())
 }
 
-fn read_verify_json_brief(path: &Path) -> (Option<String>, Option<bool>) {
+fn read_verify_json_brief(path: &Path) -> (Option<String>, Option<bool>, Option<String>) {
     let Ok(bytes) = fs::read(path) else {
-        return (None, None);
+        return (None, None, None);
     };
     let Ok(v) = serde_json::from_slice::<VerifyJson>(&bytes) else {
-        return (None, None);
+        return (None, None, None);
     };
-    (v.profile, v.ok)
+    (v.profile, v.ok, v.failure_category)
 }
 
 fn read_post_apply_brief(path: &Path) -> Option<PostApplyBrief> {
     let bytes = fs::read(path).ok()?;
     serde_json::from_slice::<PostApplyBrief>(&bytes).ok()
+}
+
+fn resolve_pack_fix_strategy(
+    git_root: &Path,
+    run_dir: &Path,
+) -> Result<Option<strategy::StrategyResolution>, ExitError> {
+    let failure_category = detect_failure_category(run_dir);
+    if failure_category.is_none() {
+        return Ok(None);
+    }
+    let cfg = config::resolve_workflow_config(git_root)?;
+    Ok(strategy::resolve_strategy_from_workflow(
+        &cfg,
+        failure_category.as_deref(),
+    ))
+}
+
+fn detect_failure_category(run_dir: &Path) -> Option<String> {
+    for name in ["promotion.json", "verify.json", "apply.json"] {
+        let Some(summary) = read_phase_summary(&run_dir.join(name)) else {
+            continue;
+        };
+        if summary.ok == Some(false)
+            && let Some(category) = summary.failure_category
+            && !category.trim().is_empty()
+        {
+            return Some(category);
+        }
+    }
+    None
+}
+
+fn read_phase_summary(path: &Path) -> Option<PhaseSummaryBrief> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice::<PhaseSummaryBrief>(&bytes).ok()
 }
 
 fn default_pack_fix_zip_name(run_dir: &Path, run_id: &str) -> String {

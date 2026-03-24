@@ -1,4 +1,5 @@
 use assert_cmd::prelude::*;
+use serde_json::Value;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -192,6 +193,12 @@ fn m3_tasks_are_copied_and_block_promotion_until_ack() {
         .assert()
         .failure()
         .code(12);
+    let promote: Value =
+        serde_json::from_str(&fs::read_to_string(run_dir.join("promotion.json")).unwrap()).unwrap();
+    assert_eq!(
+        promote.get("failure_category").and_then(|v| v.as_str()),
+        Some("promotion_blocked_tasks")
+    );
 
     diffship_cmd()
         .args([

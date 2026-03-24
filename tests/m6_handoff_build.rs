@@ -138,6 +138,8 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     let bundle = &bundles[0];
     assert!(bundle.join("HANDOFF.md").exists());
     assert!(bundle.join("AI_REQUESTS.md").exists());
+    assert!(bundle.join("WORKFLOW_CONTEXT.md").exists());
+    assert!(bundle.join("workflow.context.json").exists());
     assert!(bundle.join("handoff.manifest.json").exists());
     assert!(bundle.join("handoff.context.xml").exists());
     assert!(bundle.join("parts").join("part_01.patch").exists());
@@ -161,6 +163,12 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(ai_requests.contains("MODE: ANALYSIS_ONLY"));
     assert!(ai_requests.contains("MODE: OPS_PATCH_BUNDLE"));
     assert!(ai_requests.contains(&head));
+    assert!(ai_requests.contains("Read `WORKFLOW_CONTEXT.md` before choosing response mode"));
+    assert!(ai_requests.contains(
+        "`workflow.context.json` / `WORKFLOW_CONTEXT.md` provide the repo-standard workflow posture"
+    ));
+    assert!(ai_requests.contains("- workflow profile: `balanced`"));
+    assert!(ai_requests.contains("- strategy mode: `suggest`"));
     assert!(!ai_requests.contains("## Focused project-context guidance"));
     assert!(ai_requests.contains("## Task-group execution order"));
     assert!(ai_requests.contains("Treat `review_labels` as generation/review strategy hints"));
@@ -184,6 +192,28 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(ai_requests.contains("Reuse part `review_labels` before editing"));
     assert!(ai_requests.contains("Use `parts/part_XX.context.json` when you need machine-readable part-local facts such as `intent_labels`, `scoped_context`, and per-file semantic hints."));
     assert!(ai_requests.contains("`parts/part_01.patch` context=`parts/part_01.context.json` review=`mechanical_update_like` intents=`other_update` segments=`committed` files=`a.txt`"));
+
+    let workflow_md = fs::read_to_string(bundle.join("WORKFLOW_CONTEXT.md")).unwrap();
+    assert!(workflow_md.contains("# WORKFLOW CONTEXT"));
+    assert!(workflow_md.contains("- workflow profile: `balanced`"));
+    assert!(workflow_md.contains("- strategy mode: `suggest`"));
+    assert!(workflow_md.contains("## Verify cadence"));
+
+    let workflow_json: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("workflow.context.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        workflow_json.get("schema_version").and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        workflow_json.get("profile").and_then(|v| v.as_str()),
+        Some("balanced")
+    );
+    assert_eq!(
+        workflow_json.get("strategy_mode").and_then(|v| v.as_str()),
+        Some("suggest")
+    );
 
     let part = fs::read_to_string(bundle.join("parts").join("part_01.patch")).unwrap();
     assert!(part.contains("diffship segment: committed"));
@@ -222,6 +252,20 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
             .and_then(|v| v.get("ai_requests_md"))
             .and_then(|v| v.as_str()),
         Some("AI_REQUESTS.md")
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("workflow_context_md"))
+            .and_then(|v| v.as_str()),
+        Some("WORKFLOW_CONTEXT.md")
+    );
+    assert_eq!(
+        manifest
+            .get("artifacts")
+            .and_then(|v| v.get("workflow_context_json"))
+            .and_then(|v| v.as_str()),
+        Some("workflow.context.json")
     );
     assert_eq!(
         manifest
@@ -496,6 +540,62 @@ fn build_default_out_creates_bundle_dir_and_uses_last_range() {
     assert!(handoff_context.contains("<handoff-context"));
     assert!(handoff_context.contains("rendered-from=\"handoff.manifest.json\""));
     assert!(handoff_context.contains("path=\"parts/part_01.context.json\""));
+}
+
+#[test]
+fn build_exports_workflow_context_from_project_config() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    commit_all(root, "c1");
+    fs::write(root.join("a.txt"), "two\n").unwrap();
+    commit_all(root, "c2");
+
+    write_project_config(
+        root,
+        r#"
+[workflow]
+default_profile = "bugfix-minimal"
+
+[workflow.strategy]
+mode = "prefer"
+default_profile = "no-test-fast"
+
+[workflow.strategy.error_overrides]
+verify_test_failed = "regression-test-first"
+"#,
+    );
+
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root).arg("build");
+    cmd.assert().success();
+
+    let bundle = only_generated_bundle(root);
+    let workflow_json: Value =
+        serde_json::from_str(&fs::read_to_string(bundle.join("workflow.context.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        workflow_json.get("profile").and_then(|v| v.as_str()),
+        Some("bugfix-minimal")
+    );
+    assert_eq!(
+        workflow_json.get("strategy_mode").and_then(|v| v.as_str()),
+        Some("prefer")
+    );
+    assert_eq!(
+        workflow_json
+            .get("strategy_default_profile")
+            .and_then(|v| v.as_str()),
+        Some("no-test-fast")
+    );
+    assert_eq!(
+        workflow_json
+            .get("error_overrides")
+            .and_then(|v| v.get("verify_test_failed"))
+            .and_then(|v| v.as_str()),
+        Some("regression-test-first")
+    );
 }
 
 #[test]

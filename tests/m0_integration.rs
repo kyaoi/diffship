@@ -85,6 +85,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(root.join(".diffship").join("PROJECT_KIT.md").exists());
     assert!(root.join(".diffship").join("PROJECT_RULES.md").exists());
     assert!(root.join(".diffship").join("AI_GUIDE.md").exists());
+    assert!(root.join(".diffship").join("WORKFLOW_PROFILE.md").exists());
     assert!(root.join(".diffship").join("forbid.toml").exists());
     assert!(root.join(".diffship").join(".gitignore").exists());
     assert!(
@@ -120,6 +121,11 @@ fn m0_init_status_runs_happy_path() {
     assert!(rules.contains("# Diffship Project Rules"));
     assert!(rules.contains("Paste this into an external AI workspace"));
     assert!(rules.contains("Use `diffship loop` only with a valid `OPS_PATCH_BUNDLE`."));
+    let workflow = fs::read_to_string(root.join(".diffship").join("WORKFLOW_PROFILE.md")).unwrap();
+    assert!(workflow.contains("# Diffship Workflow Profile"));
+    assert!(workflow.contains("- Profile: `balanced`"));
+    assert!(workflow.contains("## Preferred verify cadence"));
+    assert!(workflow.contains("## Docs and traceability expectations"));
     let forbid = fs::read_to_string(root.join(".diffship").join("forbid.toml")).unwrap();
     assert!(forbid.contains("[ops.forbid]"));
     assert!(forbid.contains("pnpm-lock.yaml"));
@@ -140,6 +146,8 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains("# - repo:"));
     assert!(cfg.contains(&format!("# - current branch: {}", branch)));
     assert!(cfg.contains("# - preferred promote target: main"));
+    assert!(cfg.contains("# Bootstrap workflow profile selected during init: balanced"));
+    assert!(cfg.contains("# See `.diffship/WORKFLOW_PROFILE.md`"));
     assert!(cfg.contains("Use this file in two layers"));
     assert!(cfg.contains("Put AI-editable defaults and `.diffship/*` edit allowlist entries"));
     assert!(cfg.contains("Customize this section: choose default verify behavior"));
@@ -348,6 +356,26 @@ fn m0_init_can_generate_japanese_project_rules() {
         rules.contains("外部 AI の project rules / custom instructions に貼るための短縮版です。")
     );
     assert!(rules.contains("`base_commit` が無い、または不確実なら"));
+}
+
+#[test]
+fn m0_init_can_generate_selected_workflow_profile_guidance() {
+    let td = init_repo();
+    let root = td.path();
+
+    diffship_cmd()
+        .args(["init", "--workflow-profile", "cautious-tdd"])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let workflow = fs::read_to_string(root.join(".diffship").join("WORKFLOW_PROFILE.md")).unwrap();
+    assert!(workflow.contains("- Profile: `cautious-tdd`"));
+    assert!(workflow.contains("regression-resistant changes with a test-first bias"));
+    assert!(workflow.contains("Start from a failing or missing focused test whenever practical."));
+
+    let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
+    assert!(cfg.contains("# Bootstrap workflow profile selected during init: cautious-tdd"));
 }
 
 #[test]

@@ -2,6 +2,7 @@ use crate::cli::VerifyArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_VERIFY_FAILED, ExitError};
 use crate::ops::command_log;
 use crate::ops::config;
+use crate::ops::failure_category;
 use crate::ops::lock;
 use crate::ops::pack_fix;
 use crate::ops::patch_bundle;
@@ -18,6 +19,7 @@ struct VerifySummary {
     created_at: String,
     profile: String,
     ok: bool,
+    failure_category: Option<String>,
     commands: Vec<VerifyCommandResult>,
 }
 
@@ -159,6 +161,16 @@ pub fn verify_locked(
         created_at: created_at.clone(),
         profile: profile.to_string(),
         ok,
+        failure_category: failure_category::classify_verify_failure(
+            &results
+                .iter()
+                .map(|result| failure_category::VerifyCommandLike {
+                    name: &result.name,
+                    argv: &result.argv,
+                    status: result.status,
+                })
+                .collect::<Vec<_>>(),
+        ),
         commands: results,
     };
     let bytes = serde_json::to_vec_pretty(&summary).map_err(|e| {

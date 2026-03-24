@@ -7,6 +7,7 @@ use crate::git;
 use crate::ops::apply;
 use crate::ops::command_log;
 use crate::ops::config;
+use crate::ops::failure_category;
 use crate::ops::lock;
 use crate::ops::patch_bundle;
 use crate::ops::run;
@@ -33,6 +34,7 @@ struct PromoteSummary {
     promoted_head: Option<String>,
     commits: Vec<String>,
     ok: bool,
+    failure_category: Option<String>,
     error: Option<String>,
     secrets_hits: usize,
     tasks_present: bool,
@@ -144,6 +146,21 @@ pub fn promote_locked(
     let user_tasks_path = tasks::user_tasks_path_in_run(&run_dir);
     let tasks_present = user_tasks_path.is_file();
     if tasks_present && !ack_tasks {
+        let summary = PromoteSummary {
+            run_id: run_id.to_string(),
+            created_at: created_at.clone(),
+            target_branch: target_branch.to_string(),
+            base_commit: sb.base_commit.clone(),
+            promoted_head: None,
+            commits: vec![],
+            ok: false,
+            failure_category: Some(failure_category::PROMOTION_BLOCKED_TASKS.to_string()),
+            error: Some("required user tasks must be acknowledged before promotion".to_string()),
+            secrets_hits: 0,
+            tasks_present,
+            user_tasks_path: Some(user_tasks_path.display().to_string()),
+        };
+        write_promote_summary(&run_dir, &summary)?;
         return Err(ExitError::new(
             EXIT_TASKS_ACK_REQUIRED,
             format!(
@@ -158,6 +175,25 @@ pub fn promote_locked(
     if !hits.is_empty() {
         secrets::write_secrets_report(&run_dir, &hits)?;
         if !ack_secrets {
+            let summary = PromoteSummary {
+                run_id: run_id.to_string(),
+                created_at: created_at.clone(),
+                target_branch: target_branch.to_string(),
+                base_commit: sb.base_commit.clone(),
+                promoted_head: None,
+                commits: vec![],
+                ok: false,
+                failure_category: Some(failure_category::PROMOTION_BLOCKED_SECRETS.to_string()),
+                error: Some("secrets detected; acknowledgement required".to_string()),
+                secrets_hits: hits.len(),
+                tasks_present,
+                user_tasks_path: if tasks_present {
+                    Some(user_tasks_path.display().to_string())
+                } else {
+                    None
+                },
+            };
+            write_promote_summary(&run_dir, &summary)?;
             let first = hits
                 .iter()
                 .take(5)
@@ -193,6 +229,7 @@ pub fn promote_locked(
                 promoted_head: None,
                 commits: vec![],
                 ok: false,
+                failure_category: Some(failure_category::PROMOTION_FAILED.to_string()),
                 error: Some(format!(
                     "target branch head mismatch: target={} head={} expected_base={}",
                     effective_target, target_head, base_commit
@@ -239,6 +276,7 @@ pub fn promote_locked(
             promoted_head: Some(promoted_head),
             commits: vec![],
             ok: true,
+            failure_category: None,
             error: None,
             secrets_hits: hits.len(),
             tasks_present,
@@ -292,6 +330,7 @@ pub fn promote_locked(
             promoted_head: None,
             commits: vec![],
             ok: true,
+            failure_category: None,
             error: Some("promotion skipped by policy (promotion=none)".to_string()),
             secrets_hits: hits.len(),
             tasks_present,
@@ -319,6 +358,7 @@ pub fn promote_locked(
             promoted_head: None,
             commits: commits.clone(),
             ok: false,
+            failure_category: Some(failure_category::PROMOTION_FAILED.to_string()),
             error: Some(format!(
                 "target branch head mismatch: target={} head={} expected_base={}",
                 effective_target, target_head, base_commit
@@ -362,6 +402,7 @@ pub fn promote_locked(
             promoted_head: None,
             commits: commits.clone(),
             ok: false,
+            failure_category: Some(failure_category::PROMOTION_FAILED.to_string()),
             error: Some(e.clone()),
             secrets_hits: hits.len(),
             tasks_present,
@@ -397,6 +438,7 @@ pub fn promote_locked(
         promoted_head: Some(promoted_head),
         commits,
         ok: true,
+        failure_category: None,
         error: None,
         secrets_hits: hits.len(),
         tasks_present,

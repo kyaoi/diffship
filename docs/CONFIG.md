@@ -4,7 +4,7 @@ This document describes **how configuration is resolved** and which keys are **a
 
 > diffship is developed with spec-driven development.
 > Ops verify profile commands under `[verify.profiles.*]` and handoff settings under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
-> The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt, while `.diffship/ai_generated_config.toml` keeps AI-owned defaults separate when a repo wants that split.
+> The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt, records the bootstrap workflow profile selected during `diffship init`, and points at `.diffship/WORKFLOW_PROFILE.md` for the repo-local workflow guidance. `.diffship/ai_generated_config.toml` keeps AI-owned defaults separate when a repo wants that split.
 
 ---
 
@@ -37,7 +37,38 @@ Notes:
 
 These are the keys consumed by the current implementation.
 
-### 1.1 Verify profile
+### 1.1 Workflow / strategy defaults
+
+These keys are now parsed and resolved as stable project/global config schema.
+They drive repo-standard workflow guidance, build-side workflow export, and pack-fix strategy resolution.
+They do not change apply/verify command selection by themselves.
+
+```toml
+[workflow]
+default_profile = "balanced"
+
+[workflow.strategy]
+mode = "suggest"            # suggest|prefer|force|off
+# default_profile = "balanced"
+
+[workflow.strategy.error_overrides]
+verify_test_failed = "regression-test-first"
+verify_docs_failed = "docs-sync-minimal"
+```
+
+Notes:
+
+- `[workflow].default_profile` is the repo-standard workflow posture.
+- `[workflow.strategy].mode` controls how strongly `pack-fix` strategy resolution should bias toward configured defaults.
+- `[workflow.strategy].default_profile` is optional; when omitted, diffship falls back to `[workflow].default_profile`.
+- `[workflow.strategy.error_overrides]` is a deterministic string map keyed by normalized failure category names.
+- `suggest` starts from category-specific guidance when one exists and keeps the repo default as an alternative.
+- `prefer` and `force` bias toward the configured default profile, but structural/policy categories still keep category-specific handling.
+- `off` disables strategy guidance in `pack-fix`.
+- Profile names are treated as stable strings so repositories can adopt the schema before every built-in strategy is implemented.
+- Built-in strategy metadata now also reports `tests_expected` and `preferred_verify_profile` in `strategy.resolved.json` when the selected profile is known. The fast path `no-test-fast` resolves to `tests_expected = false` and `preferred_verify_profile = "fast"`.
+
+### 1.2 Verify profile
 
 Choose which verification profile runs by default.
 
@@ -58,7 +89,7 @@ Compatibility aliases (accepted, but not recommended for new configs):
 verify_profile = "standard"
 ```
 
-#### 1.1.1 Custom verify profile commands (implemented)
+#### 1.2.1 Custom verify profile commands (implemented)
 
 You can define profile-specific command sequences under `[verify.profiles.<name>]`.
 Each key value is executed as a local shell command (`sh -lc ...`) in the sandbox worktree.
@@ -79,7 +110,7 @@ Notes:
 - CLI `--profile` still has top precedence and can override to `fast|standard|full` or another configured custom profile.
 - Commands are loaded only from local config sources (global/project), not from the patch bundle.
 
-#### 1.1.2 Post-apply commands (implemented)
+#### 1.2.2 Post-apply commands (implemented)
 
 You can define commands that run automatically after a successful `diffship apply` patch step and before `diffship verify` in `diffship loop`.
 
@@ -107,7 +138,7 @@ Suggested starting points:
 
 `diffship init` now comments these presets into the generated project config stub so repositories can keep one or two narrow local normalization commands without turning `post_apply` into a hidden second verify phase.
 
-#### 1.1.3 Extra forbidden patch targets (implemented)
+#### 1.2.3 Extra forbidden patch targets (implemented)
 
 You can define additional repo-relative path or glob patterns that local ops runs must refuse.
 
@@ -128,7 +159,7 @@ You can keep these entries either in `.diffship/config.toml` or in a dedicated `
 `diffship init` now generates the dedicated file as a starter template, and diffship merges it as project-local config automatically.
 If the repo gains new lockfiles or similar fragile targets later, `diffship init --refresh-forbid` rewrites only `.diffship/forbid.toml` from current detections without forcing unrelated generated files.
 
-#### 1.1.4 Editable `.diffship/` project-kit files (implemented)
+#### 1.2.4 Editable `.diffship/` project-kit files (implemented)
 
 You can opt a narrow set of generated `.diffship/*` files into editability for local ops runs.
 

@@ -160,6 +160,8 @@ Conventions:
 - **S-OUT-044** — Tests: `tests/m6_handoff_build.rs`, `src/handoff.rs` unit tests — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-045** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-OUT-046** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-OUT-047** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/ops/config.rs` — Status: Implemented
+- **S-OUT-048** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -270,6 +272,10 @@ Conventions:
 - **S-PACKFIX-002** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 - **S-PACKFIX-003** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
 - **S-PACKFIX-004** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs` — Status: Implemented
+- **S-PACKFIX-005** — Tests: `tests/m2_pack_fix.rs`, `src/ops/strategy.rs` — Code: `src/ops/pack_fix.rs`, `src/ops/strategy.rs`, `src/ops/config.rs` — Status: Implemented
+- **S-PACKFIX-006** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs`, `src/ops/strategy.rs` — Status: Implemented
+- **S-PACKFIX-007** — Tests: `tests/m2_pack_fix.rs` — Code: `src/ops/pack_fix.rs`, `src/ops/strategy.rs` — Status: Implemented
+- **S-PACKFIX-008** — Tests: `tests/m2_pack_fix.rs`, `tests/m6_handoff_determinism.rs` — Code: `src/ops/pack_fix.rs`, `src/ops/strategy.rs`, `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -367,6 +373,17 @@ Conventions:
 - **S-RUN-005** — Tests: `tests/m0_integration.rs`, `src/ops/run.rs` — Code: `src/ops/run.rs` — Status: Implemented
 - **S-RUN-006** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_promotion_loop.rs` — Code: `src/ops/command_log.rs`, `src/ops/apply.rs`, `src/ops/post_apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs` — Status: Implemented
 - **S-RUN-007** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs` — Status: Implemented
+- **S-RUN-008** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_pack_fix.rs`, `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs` — Code: `src/ops/apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs`, `src/ops/failure_category.rs` — Status: Implemented
+- **S-RUN-009** — Tests: `tests/m2_pack_fix.rs`, `src/ops/failure_category.rs` — Code: `src/ops/verify.rs`, `src/ops/failure_category.rs` — Status: Implemented
+
+---
+
+## Workflow / strategy config
+
+- **S-WORKFLOW-001** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
+- **S-WORKFLOW-002** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
+- **S-WORKFLOW-003** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
+- **S-WORKFLOW-004** — Tests: `src/ops/strategy.rs`, `tests/m2_pack_fix.rs` — Code: `src/ops/strategy.rs`, `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 
@@ -384,6 +401,7 @@ Conventions:
 - **S-INIT-010** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 - **S-INIT-011** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs` — Status: Implemented
 - **S-INIT-012** — Tests: `tests/m0_integration.rs`, `tests/m4_config_precedence.rs`, `tests/m6_handoff_build.rs` — Code: `src/ops/init.rs`, `src/ops/config.rs`, `src/handoff_config.rs` — Status: Implemented
+- **S-INIT-013** — Tests: `tests/m0_integration.rs` — Code: `src/ops/init.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 

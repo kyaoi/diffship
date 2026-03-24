@@ -77,6 +77,8 @@ Inside each run directory, external command logs are grouped by phase:
 - `verify/`
 - `promote/`
 
+Phase summaries such as `apply.json`, `verify.json`, and `promotion.json` may also include a normalized `failure_category` when a phase stops early. These categories are intended for stable local follow-up logic and avoid depending on raw stderr wording.
+
 ---
 
 ## The main loop
@@ -104,6 +106,10 @@ What `loop` does:
 When verify fails, diffship writes a default reprompt zip at:
 
 - `.diffship/runs/<run-id>/pack-fix_YYYY-MM-DD_HHMMSS_<head7>[_N].zip`
+
+When workflow strategy mode is not `off`, the reprompt zip also includes `strategy.resolved.json`.
+`PROMPT.md` points the AI at that file first and also summarizes the detected normalized failure category plus a selected strategy profile and deterministic alternatives before the detailed run evidence.
+Known built-in strategy profiles may also expose machine-readable `tests_expected` and `preferred_verify_profile` hints there, including the fast path `no-test-fast`.
 
 When local post-apply hooks ran, that reprompt zip also includes:
 

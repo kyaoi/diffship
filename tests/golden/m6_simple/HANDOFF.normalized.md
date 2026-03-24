@@ -19,6 +19,7 @@
 - Current HEAD (workspace base): `<HEX40>`
 - Ignore rules: `.diffshipignore` = `no`
 - AI request kit: `AI_REQUESTS.md`
+- Workflow context: `WORKFLOW_CONTEXT.md` + `workflow.context.json`
 - Reading order:
   1. Docs changes: `part_01.patch` (1 files)
 
@@ -86,6 +87,7 @@ Use this section to decide reading order inside the patch bundle.
 
 Open this document first.
 Then read `AI_REQUESTS.md` if you need a bundle-local hosted-AI request scaffold.
+Then read `WORKFLOW_CONTEXT.md` if you need the repo-standard workflow posture for this bundle.
 Then apply/read `parts/part_01.patch`.
 
 ---

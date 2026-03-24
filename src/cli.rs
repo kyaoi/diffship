@@ -242,6 +242,10 @@ pub struct InitArgs {
     #[arg(long, value_enum, default_value_t = InitLanguage::En)]
     pub lang: InitLanguage,
 
+    /// Built-in bootstrap workflow profile for generated repo-local guidance
+    #[arg(long, value_enum, default_value_t = InitWorkflowProfile::Balanced)]
+    pub workflow_profile: InitWorkflowProfile,
+
     /// Also export a minimal rules kit zip under .diffship/artifacts/rules/
     #[arg(long, default_value_t = false)]
     pub zip: bool,
@@ -262,6 +266,27 @@ impl InitLanguage {
         match self {
             Self::En => "en",
             Self::Ja => "ja",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum InitWorkflowProfile {
+    Balanced,
+    CautiousTdd,
+    PrototypeSpeed,
+    BugfixMinimal,
+    NoTestFast,
+}
+
+impl InitWorkflowProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Balanced => "balanced",
+            Self::CautiousTdd => "cautious-tdd",
+            Self::PrototypeSpeed => "prototype-speed",
+            Self::BugfixMinimal => "bugfix-minimal",
+            Self::NoTestFast => "no-test-fast",
         }
     }
 }

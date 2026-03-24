@@ -527,6 +527,20 @@ fn m2_apply_refuses_base_commit_mismatch() {
         .assert()
         .failure()
         .code(6);
+
+    let runs_dir = root.join(".diffship").join("runs");
+    let latest = fs::read_dir(&runs_dir)
+        .unwrap()
+        .filter_map(|ent| ent.ok().map(|e| e.path()))
+        .filter(|path| path.is_dir())
+        .max()
+        .unwrap();
+    let apply: Value =
+        serde_json::from_str(&fs::read_to_string(latest.join("apply.json")).unwrap()).unwrap();
+    assert_eq!(
+        apply.get("failure_category").and_then(|v| v.as_str()),
+        Some("base_commit_mismatch")
+    );
 }
 
 #[test]
@@ -728,6 +742,11 @@ cmd1 = "exit 7"
     );
     let apply_json = fs::read_to_string(latest.join("apply.json")).unwrap();
     assert!(apply_json.contains("\"pack_fix_path\":"));
+    let apply: Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(
+        apply.get("failure_category").and_then(|v| v.as_str()),
+        Some("post_apply_failed")
+    );
 }
 
 #[test]

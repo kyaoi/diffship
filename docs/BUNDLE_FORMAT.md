@@ -10,6 +10,8 @@ This document defines the **bundle contract** produced by `diffship build` and c
 diffship_YYYY-MM-DD_HHMM_<head7>/
   HANDOFF.md
   AI_REQUESTS.md
+  WORKFLOW_CONTEXT.md
+  workflow.context.json
   handoff.manifest.json
   handoff.context.xml
   project.context.json   # optional (when --project-context focused)
@@ -53,6 +55,7 @@ Deterministic bundle-local hosted-AI request scaffold.
 
 Must include:
 - a deterministic reading order for the current bundle
+- deterministic references to `WORKFLOW_CONTEXT.md` / `workflow.context.json` before deeper hosted-AI planning
 - explicit output-mode guidance for analysis-only, plain text edits, and loop-ready `OPS_PATCH_BUNDLE` responses
 - hard constraints such as patch-canonical handling and exact current-head / `base_commit` usage
 - whether optional project-context artifacts are present and when to read them
@@ -65,6 +68,25 @@ Must include:
 - that guidance may also reuse focused project-context `edit_scope_role` facts so hosted AI can keep widened repo context read-only unless a file is explicitly marked as a write target
 
 `AI_REQUESTS.md` is supplemental guidance. `HANDOFF.md` remains the primary human/LLM entrypoint, and patch parts remain canonical.
+
+---
+
+## 2.2 `WORKFLOW_CONTEXT.md` / `workflow.context.json`
+
+Deterministic bundle-local workflow guidance derived from resolved workflow config and repo-local workflow sources.
+
+Must include:
+- the selected workflow profile
+- the selected strategy mode
+- the effective strategy default profile
+- deterministic error-override mappings when configured
+- deterministic repo-local source hints (for example `.diffship/WORKFLOW_PROFILE.md` or repo-local config stubs when present)
+- profile-derived expectations for tests-first posture, docs/traceability sync, change scope, verify cadence, and things to avoid
+
+`WORKFLOW_CONTEXT.md` is the rendered hosted-AI view.
+`workflow.context.json` is the canonical machine-readable form for the same workflow facts.
+
+These files are supplemental guidance. They do not replace `HANDOFF.md`, `AI_REQUESTS.md`, or patch parts.
 
 ---
 
@@ -89,6 +111,7 @@ Must include at least:
 - artifact paths (`parts/*`, optional `attachments.zip`, optional `excluded.md`, optional `secrets.md`)
 - optional project-context artifact paths (`project.context.json`, `PROJECT_CONTEXT.md`, `project_context/files/...`) when focused project context is enabled
 - `AI_REQUESTS.md` as the deterministic bundle-local hosted-AI request scaffold
+- `WORKFLOW_CONTEXT.md` / `workflow.context.json` as deterministic workflow-guidance artifacts
 - parts index and file index
 - aggregate row counts by category / segment / status
 - deterministic reading-order guidance derived from the selected rows

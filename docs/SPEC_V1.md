@@ -179,6 +179,8 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-OUT-044**: Canonical file semantic facts in `handoff.manifest.json`, `parts/part_XX.context.json`, and focused project-context outputs SHOULD also expose deterministic coarse labels for repo-rule, dependency-policy, build-graph, and test-infrastructure touches when those roles can be inferred from local paths alone, so hosted AI can distinguish policy/build/test-support surfaces without parser-heavy analysis.
 - **S-OUT-045**: When focused project context is enabled, `project.context.json` SHOULD also expose deterministic per-file `edit_scope_role` values plus summary counts by edit-scope role so hosted AI can distinguish direct write targets from read-only verification/rule/support context inside the bounded project-context pack.
 - **S-OUT-046**: `AI_REQUESTS.md` SHOULD reuse focused project-context `edit_scope_role` facts so hosted AI sees bounded write scope even while widening into the focused project-context pack.
+- **S-OUT-047**: `diffship build` MUST emit deterministic root-level workflow guidance artifacts (`WORKFLOW_CONTEXT.md` and `workflow.context.json`) derived from resolved workflow config and repo-local workflow sources, and these artifacts MUST remain supplemental to patch parts and `HANDOFF.md`.
+- **S-OUT-048**: `AI_REQUESTS.md` and `handoff.manifest.json` MUST reference the workflow guidance artifacts deterministically so hosted AI can see the repo-standard workflow posture before choosing response mode, scope, or verification depth.
 
 #### 4.2.9 Packing algorithm and fallback
 
@@ -268,6 +270,10 @@ Creates a reprompt bundle from the latest run.
 - **S-PACKFIX-002**: Output must be a single zip that is safe to upload to an AI, and the default filename SHOULD include the run timestamp plus a short `HEAD`/base label so multiple bundles are distinguishable by basename alone.
 - **S-PACKFIX-003**: When a run recorded local post-apply commands, `pack-fix` MUST include `run/post_apply.json` plus `run/post-apply/` logs and SHOULD point the reprompt instructions at that evidence before telling the AI to interpret verify failures.
 - **S-PACKFIX-004**: When `run/post_apply.json` records normalization changes, the generated reprompt `PROMPT.md` SHOULD summarize the changed-path count, coarse categories, and concrete changed paths so the AI inspects local normalization evidence before reasoning about verify failures.
+- **S-PACKFIX-005**: `pack-fix` SHOULD resolve failure-aware strategy guidance from the detected normalized failure category plus resolved workflow config (`[workflow]`, strategy mode, and per-error overrides) unless strategy mode is `off`.
+- **S-PACKFIX-006**: When strategy guidance is resolved, `PROMPT.md` SHOULD summarize the detected failure category, selected strategy profile, and deterministic alternatives before the detailed run evidence sections.
+- **S-PACKFIX-007**: When strategy guidance is resolved, the reprompt zip MUST include a machine-readable `strategy.resolved.json`, and `PROMPT.md` SHOULD point the AI at that file before or alongside verify/post-apply evidence.
+- **S-PACKFIX-008**: `strategy.resolved.json` SHOULD be deterministic for the same resolved workflow config plus detected failure category; it MUST avoid run-id-specific or path-specific noise that would make repeated identical failures produce different strategy exports.
 
 ### 4.8 `diffship loop <patch-bundle>`
 
@@ -355,6 +361,13 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-OPS-SECRETS-002**: Ops MUST never print secret values; only paths and reasons.
 - **S-OPS-TASKS-001**: If a patch bundle declares required user tasks, diffship MUST surface them prominently and MUST block promotion by default until the user acknowledges (use --ack-tasks).
 
+### 7.4 Workflow / strategy config schema
+
+- **S-WORKFLOW-001**: Project/global config MAY define `[workflow].default_profile` as the repo-standard workflow profile, and diffship MUST resolve it with the normal config precedence (`CLI > manifest > project > global > built-in defaults`) even before bundle-local workflow export exists.
+- **S-WORKFLOW-002**: Project/global config MAY define `[workflow.strategy].mode` with values `suggest|prefer|force|off`, and diffship MUST reject unsupported values.
+- **S-WORKFLOW-003**: Project/global config MAY define `[workflow.strategy].default_profile` plus deterministic `[workflow.strategy.error_overrides]` mappings from normalized failure categories to strategy profile names; when `default_profile` is omitted, diffship MUST fall back to `[workflow].default_profile`.
+- **S-WORKFLOW-004**: The built-in strategy profile set SHOULD include a documented fast path such as `no-test-fast` with stable machine-readable expectations (for example `tests_expected=false` and a preferred fast verify profile), and structural/policy failure categories MUST still remain distinguishable instead of being flattened into that fast path.
+
 ---
 
 ## 8. Runs & logs
@@ -366,6 +379,8 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-RUN-005**: New ops run directories MUST use a human-readable timestamp-plus-`HEAD` `run_id` (`run_YYYY-MM-DD_HHMMSS_<head7>`), with a deterministic suffix when collisions occur, while older run directories remain readable.
 - **S-RUN-006**: Run directories MUST retain argv/stdout/stderr/duration metadata for diffship-spawned external commands in a machine-readable index plus per-command log files.
 - **S-RUN-007**: Human-readable `diffship runs` / `diffship status` and their JSON summaries SHOULD surface the run directory plus direct `commands.json` / phase-directory paths when command logs exist, so users can inspect hook/verify output without manually reconstructing paths.
+- **S-RUN-008**: `apply.json`, `verify.json`, and `promotion.json` SHOULD record a stable normalized `failure_category` when a phase fails so later tooling can react without matching raw stderr text.
+- **S-RUN-009**: Verification failure categories SHOULD be derived from deterministic local command facts (for example verify command names/argv) before falling back to a generic verify failure category.
 
 ---
 
@@ -406,3 +421,4 @@ Ops-specific codes:
 - **S-INIT-010**: `diffship init --refresh-forbid` MUST allow rewriting only `.diffship/forbid.toml` from current repo detections without requiring `--force` for unrelated generated files.
 - **S-INIT-011**: Generated `.diffship/config.toml` stubs SHOULD include commented `ops.post_apply` preset guidance that frames post-apply as a local normalization step (not an AI-output repair mechanism) and shows a few stack-oriented starting points.
 - **S-INIT-012**: `diffship init` MUST write `.diffship/ai_generated_config.toml` as an AI-editable local config layer without overwriting existing content unless `--force`, and diffship MUST merge that file before `.diffship/config.toml` so repositories can keep user-owned defaults separate from AI-owned defaults.
+- **S-INIT-013**: `diffship init --workflow-profile <balanced|cautious-tdd|prototype-speed|bugfix-minimal|no-test-fast>` MUST select a built-in bootstrap workflow profile, write repo-local workflow guidance to `.diffship/WORKFLOW_PROFILE.md` without overwriting existing content unless `--force`, and record the selected profile in generated `.diffship/config.toml` comments.

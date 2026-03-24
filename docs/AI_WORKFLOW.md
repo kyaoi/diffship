@@ -15,6 +15,7 @@ If the repository was initialized with `diffship init`, also provide the generat
 - `.diffship/PROJECT_KIT.md`
 - `.diffship/PROJECT_RULES.md`
 - `.diffship/AI_GUIDE.md`
+- `.diffship/WORKFLOW_PROFILE.md`
 
 If you maintain a custom init template directory, keep the repository-specific parts of `AI_PROJECT_TEMPLATE.md`
 inside the sections marked "Customize this section" so the generated `.diffship/AI_GUIDE.md` stays easy to update.
@@ -130,6 +131,7 @@ Tips:
 
 * Keep the bundle **small** (only necessary diffs; reduce noise)
 * Use `.diffshipignore` / `.gitignore` to prevent artifacts and secrets from leaking
+* When you share a reprompt zip created by `diffship pack-fix`, tell the AI to read `strategy.resolved.json` before raw verify/post-apply logs when that file is present; built-in profiles may also expose `tests_expected` and `preferred_verify_profile` there
 
 ---
 

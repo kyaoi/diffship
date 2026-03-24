@@ -1,4 +1,4 @@
-use crate::cli::{InitArgs, InitLanguage};
+use crate::cli::{InitArgs, InitLanguage, InitWorkflowProfile};
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
 use crate::ops::config;
@@ -28,6 +28,7 @@ struct InitSummary {
     force: bool,
     refresh_forbid: bool,
     language: String,
+    workflow_profile: String,
     wrote: Vec<String>,
     skipped: Vec<String>,
     zip_bundle: Option<String>,
@@ -68,6 +69,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         args.refresh_forbid,
         args.template_dir.as_deref(),
         args.lang,
+        args.workflow_profile,
         args.zip,
         args.out.as_deref(),
     );
@@ -143,7 +145,18 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
     );
     write_if_needed(&ai_out, &ai_body, args.force, &mut wrote, &mut skipped)?;
 
-    // 4) Dedicated forbid patterns stub
+    // 4) Repo-local workflow profile guidance
+    let workflow_out = diffship_dir.join("WORKFLOW_PROFILE.md");
+    let workflow_body = workflow_profile_body(&metadata, args.workflow_profile);
+    write_if_needed(
+        &workflow_out,
+        &workflow_body,
+        args.force,
+        &mut wrote,
+        &mut skipped,
+    )?;
+
+    // 5) Dedicated forbid patterns stub
     let forbid_out = diffship_dir.join("forbid.toml");
     let forbid_body = default_forbid_stub(&metadata);
     write_if_needed(
@@ -154,7 +167,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         &mut skipped,
     )?;
 
-    // 5) Diffship-local gitignore for generated state
+    // 6) Diffship-local gitignore for generated state
     let gitignore_out = diffship_dir.join(".gitignore");
     let gitignore_body = default_gitignore();
     write_if_needed(
@@ -165,7 +178,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         &mut skipped,
     )?;
 
-    // 6) AI-generated config stub
+    // 7) AI-generated config stub
     let ai_cfg_out = diffship_dir.join(config::AI_GENERATED_CONFIG_FILE_NAME);
     let ai_cfg_body = default_ai_generated_config_stub(&metadata);
     write_if_needed(
@@ -176,9 +189,9 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         &mut skipped,
     )?;
 
-    // 7) User-owned config stub
+    // 8) User-owned config stub
     let cfg_out = diffship_dir.join("config.toml");
-    let cfg_body = default_config_stub(&metadata);
+    let cfg_body = default_config_stub(&metadata, args.workflow_profile);
     write_if_needed(&cfg_out, &cfg_body, args.force, &mut wrote, &mut skipped)?;
 
     let zip_bundle = if args.zip {
@@ -200,6 +213,7 @@ pub fn cmd(git_root: &Path, args: InitArgs) -> Result<(), ExitError> {
         force: args.force,
         refresh_forbid: args.refresh_forbid,
         language: args.lang.as_str().to_string(),
+        workflow_profile: args.workflow_profile.as_str().to_string(),
         wrote: wrote.clone(),
         skipped: skipped.clone(),
         zip_bundle: zip_bundle.as_ref().map(|path| path.display().to_string()),
@@ -260,6 +274,7 @@ fn build_cli_args(
     refresh_forbid: bool,
     template_dir: Option<&str>,
     lang: InitLanguage,
+    workflow_profile: InitWorkflowProfile,
     zip: bool,
     out: Option<&str>,
 ) -> Vec<String> {
@@ -275,6 +290,9 @@ fn build_cli_args(
     }
     if lang != InitLanguage::En {
         v.push(format!("--lang={}", lang.as_str()));
+    }
+    if workflow_profile != InitWorkflowProfile::Balanced {
+        v.push(format!("--workflow-profile={}", workflow_profile.as_str()));
     }
     if zip {
         v.push("--zip".to_string());
@@ -339,7 +357,10 @@ fn write_if_needed(
     Ok(())
 }
 
-fn default_config_stub(metadata: &GeneratedMetadata) -> String {
+fn default_config_stub(
+    metadata: &GeneratedMetadata,
+    workflow_profile: InitWorkflowProfile,
+) -> String {
     // Keep it minimal and future-proof; precedence rules are implemented in M4.
     // This file is the user-owned layer for stable project defaults.
     format!(
@@ -352,6 +373,9 @@ fn default_config_stub(metadata: &GeneratedMetadata) -> String {
 #
 # See also: docs/CONFIG.md
 # Precedence: CLI > manifest > project > global > default
+#
+# Bootstrap workflow profile selected during init: {workflow_profile}
+# See `.diffship/WORKFLOW_PROFILE.md` for the repo-local workflow expectations that profile generated.
 #
 # Use this file in two layers:
 # - Keep the user-owned defaults aligned with how this repository actually uses diffship
@@ -423,6 +447,7 @@ policy = "auto"            # auto|manual
         repo_name = metadata.repo_name,
         current_branch = metadata.branch,
         preferred_target = metadata.preferred_target_branch,
+        workflow_profile = workflow_profile.as_str(),
     )
 }
 
@@ -499,6 +524,102 @@ fn default_forbid_stub(metadata: &GeneratedMetadata) -> String {
         }
     }
     out
+}
+
+fn workflow_profile_body(
+    metadata: &GeneratedMetadata,
+    workflow_profile: InitWorkflowProfile,
+) -> String {
+    let (summary, tests_first, docs_traceability, change_scope, verify_cadence, avoid) =
+        workflow_profile_sections(workflow_profile);
+
+    format!(
+        "# Diffship Workflow Profile\n\n\
+> Generated by `diffship init`\n\n\
+This file is the repo-local source of truth for the default workflow posture that diffship bootstrapped for this repository.\n\
+Humans can edit it later as the repository's expectations become more specific.\n\n\
+## Active default workflow profile\n\n\
+- Profile: `{profile}`\n\
+- Repository: `{repo}`\n\
+- Current branch at init time: `{branch}`\n\
+- Preferred promote target: `{target}`\n\n\
+## Summary\n\n\
+{summary}\n\n\
+## Tests first in this profile\n\n\
+{tests_first}\n\n\
+## Docs and traceability expectations\n\n\
+{docs_traceability}\n\n\
+## Allowed change scope\n\n\
+{change_scope}\n\n\
+## Preferred verify cadence\n\n\
+{verify_cadence}\n\n\
+## Avoid\n\n\
+{avoid}\n",
+        profile = workflow_profile.as_str(),
+        repo = metadata.repo_name,
+        branch = metadata.branch,
+        target = metadata.preferred_target_branch,
+        summary = summary,
+        tests_first = tests_first,
+        docs_traceability = docs_traceability,
+        change_scope = change_scope,
+        verify_cadence = verify_cadence,
+        avoid = avoid,
+    )
+}
+
+fn workflow_profile_sections(
+    workflow_profile: InitWorkflowProfile,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    match workflow_profile {
+        InitWorkflowProfile::Balanced => (
+            "- Default posture: practical, small, reviewable tasks.\n- Add or update tests when behavior changes or when a focused regression test is the clearest guardrail.",
+            "- Prefer adding a focused test early when the task changes behavior.\n- Do not force test-first for every tiny docs-only or comment-only edit.",
+            "- Keep docs and traceability in sync with behavior changes in the same task.\n- Treat spec, workflow docs, and focused tests as the contract chain.",
+            "- Prefer minimal vertical slices.\n- Avoid broad refactors unless the task explicitly requires them.",
+            "- Standard verify bias.\n- Run the smallest relevant checks first, then end in a state where the normal repo gate can pass.",
+            "- Avoid speculative cleanup unrelated to the task.\n- Avoid skipping docs or tests when the behavior changed.",
+        ),
+        InitWorkflowProfile::CautiousTdd => (
+            "- Default posture: narrow, regression-resistant changes with a test-first bias.\n- Prefer proving the failure or target behavior before expanding implementation scope.",
+            "- Start from a failing or missing focused test whenever practical.\n- Let the test define the smallest acceptable implementation.",
+            "- Update docs and traceability as soon as the behavior is settled.\n- Keep the contract visible while iterating on the fix.",
+            "- Keep changes tightly scoped to the reproduced issue.\n- Escalate before mixing cleanup or unrelated refactors into the same task.",
+            "- Prefer early focused verify runs while iterating, then run the expected repo gates before finishing.\n- Treat passing regression coverage as part of done criteria.",
+            "- Avoid prototype-style broad edits.\n- Avoid landing behavior changes without a focused regression guard when one is practical.",
+        ),
+        InitWorkflowProfile::PrototypeSpeed => (
+            "- Default posture: optimize for fast iteration and feedback.\n- Favor the shortest path to a working end-to-end result.",
+            "- Add tests selectively when they unblock confidence or capture a behavior likely to survive iteration.\n- Do not force new regression tests for every exploratory change.",
+            "- Keep docs and traceability aligned when behavior meaningfully changes.\n- Accept concise updates over exhaustive documentation during early exploration.",
+            "- Allow slightly broader implementation edits when they materially reduce iteration time.\n- Still avoid unrelated refactors with no immediate payoff.",
+            "- Prefer faster local checks first and reserve heavier gates for consolidation points.\n- End with the relevant checks that keep the repository stable.",
+            "- Avoid polishing beyond what the current prototype needs.\n- Avoid turning temporary exploration into undocumented permanent behavior.",
+        ),
+        InitWorkflowProfile::BugfixMinimal => (
+            "- Default posture: fix the reproduced problem with the smallest credible change.\n- Bias toward preserving surrounding code and workflow.",
+            "- Add the narrowest regression test that captures the bug when practical.\n- Do not widen the task into general cleanup.",
+            "- Update only the docs and traceability entries that the fix actually changes.\n- Keep the explanation tied to the reproduced behavior.",
+            "- Touch the minimum files needed to repair the bug.\n- Prefer direct fixes over architecture reshaping.",
+            "- Run the focused checks that exercise the bug path first, then the normal repository gates needed for confidence.\n- Keep verify scope proportional to the fix.",
+            "- Avoid opportunistic refactors.\n- Avoid changing adjacent behavior unless the fix requires it.",
+        ),
+        InitWorkflowProfile::NoTestFast => (
+            "- Default posture: fix the immediate issue quickly with minimal surface area.\n- Intentionally avoid new tests unless they are unavoidable for safe delivery.",
+            "- Do not add new regression tests by default.\n- Add one only when the repository cannot validate the change responsibly without it.",
+            "- Still update docs and traceability when user-visible behavior changes.\n- Keep documentation updates as small as the behavior allows.",
+            "- Prefer the smallest implementation delta possible.\n- Defer broad cleanup and extra hardening unless the task explicitly asks for them.",
+            "- Prefer the fastest relevant local checks.\n- Run heavier verification only when the risk or repository policy demands it.",
+            "- Avoid turning this profile into a blanket excuse to skip required repository checks.\n- Avoid using it for structural or policy failures that need a different response.",
+        ),
+    }
 }
 
 impl GeneratedMetadata {

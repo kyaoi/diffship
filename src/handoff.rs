@@ -3,6 +3,7 @@ use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitE
 use crate::filter::PathFilter;
 use crate::git;
 use crate::handoff_config::{DEFAULT_PROFILE_NAME, HandoffConfig};
+use crate::ops::config as ops_config;
 use crate::pathing::resolve_user_path;
 use crate::plan::HandoffPlan;
 use serde::Serialize;
@@ -305,6 +306,8 @@ struct ManifestArtifacts {
     manifest_json: String,
     context_xml: String,
     ai_requests_md: String,
+    workflow_context_md: String,
+    workflow_context_json: String,
     part_paths: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     project_context_json: Option<String>,
@@ -318,6 +321,27 @@ struct ManifestArtifacts {
     excluded_md: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     secrets_md: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkflowContext {
+    schema_version: u32,
+    profile: String,
+    strategy_mode: String,
+    strategy_default_profile: String,
+    repo_local_sources: Vec<String>,
+    error_overrides: BTreeMap<String, String>,
+    expectations: WorkflowExpectations,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkflowExpectations {
+    summary: Vec<String>,
+    tests_first: Vec<String>,
+    docs_traceability: Vec<String>,
+    change_scope: Vec<String>,
+    verify_cadence: Vec<String>,
+    avoid: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -657,6 +681,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
     fs::create_dir_all(&parts_dir)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to create output dir: {e}")))?;
     let result = (|| {
+        let workflow_context = build_workflow_context(git_root)?;
         let sources = SourceSelection::from_args(&args)?;
         let packing_limits = PackingLimits::from_args(&args)?;
         let filters = PathFilter::load(git_root, &args.include, &args.exclude)?;
@@ -971,6 +996,16 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
         });
         write_text_file(&out_dir.join("HANDOFF.md"), &handoff)?;
+        let workflow_context_json = render_workflow_context_json(&workflow_context)?;
+        write_text_file(
+            &out_dir.join(workflow_context_json_path()),
+            &workflow_context_json,
+        )?;
+        let workflow_context_md = render_workflow_context_md(&workflow_context);
+        write_text_file(
+            &out_dir.join(workflow_context_md_path()),
+            &workflow_context_md,
+        )?;
         let handoff_manifest = render_handoff_manifest(&HandoffManifestInputs {
             plan: plan.as_ref(),
             head: &head,
@@ -990,6 +1025,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             secret_hits: &secret_hits,
             reading_order: &reading_order,
             file_semantics: &file_semantics,
+            workflow_context: &workflow_context,
             project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
             task_groups: &task_groups,
         })?;
@@ -1012,6 +1048,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             secret_hits: &secret_hits,
             reading_order: &reading_order,
             file_semantics: &file_semantics,
+            workflow_context: &workflow_context,
             project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
             task_groups: &task_groups,
         });
@@ -1036,6 +1073,7 @@ pub fn cmd(git_root: &Path, args: BuildArgs) -> Result<(), ExitError> {
             secret_hits: &secret_hits,
             reading_order: &reading_order,
             file_semantics: &file_semantics,
+            workflow_context: &workflow_context,
             project_context: project_context.as_ref().map(|bundle| &bundle.manifest),
             task_groups: &task_groups,
         });
@@ -3354,6 +3392,7 @@ struct HandoffManifestInputs<'a> {
     secret_hits: &'a [SecretHit],
     reading_order: &'a [String],
     file_semantics: &'a BTreeMap<String, ManifestFileSemantic>,
+    workflow_context: &'a WorkflowContext,
     project_context: Option<&'a ProjectContextManifest>,
     task_groups: &'a [TaskGroupComputed],
 }
@@ -3507,6 +3546,7 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
         ));
     }
     s.push_str("- AI request kit: `AI_REQUESTS.md`\n");
+    s.push_str("- Workflow context: `WORKFLOW_CONTEXT.md` + `workflow.context.json`\n");
     if let Some(project_context) = inp.project_context {
         s.push_str(&format!(
             "- Project context: `PROJECT_CONTEXT.md` + `{}` snapshot(s) (`{}` omitted)\n",
@@ -3648,6 +3688,9 @@ fn render_handoff_md(inp: &HandoffDocInputs<'_>) -> String {
     s.push_str("Open this document first.\n");
     s.push_str(
         "Then read `AI_REQUESTS.md` if you need a bundle-local hosted-AI request scaffold.\n",
+    );
+    s.push_str(
+        "Then read `WORKFLOW_CONTEXT.md` if you need the repo-standard workflow posture for this bundle.\n",
     );
     if inp.project_context.is_some() {
         s.push_str(
@@ -4552,16 +4595,295 @@ fn project_context_snapshot_root() -> &'static str {
     "project_context/files"
 }
 
+fn workflow_context_md_path() -> &'static str {
+    "WORKFLOW_CONTEXT.md"
+}
+
+fn workflow_context_json_path() -> &'static str {
+    "workflow.context.json"
+}
+
+fn build_workflow_context(git_root: &Path) -> Result<WorkflowContext, ExitError> {
+    let cfg = ops_config::resolve_workflow_config(git_root)?;
+    let mut repo_local_sources = Vec::new();
+    for rel in [
+        ".diffship/WORKFLOW_PROFILE.md",
+        ".diffship/ai_generated_config.toml",
+        ".diffship/config.toml",
+    ] {
+        if git_root.join(rel).is_file() {
+            repo_local_sources.push(rel.to_string());
+        }
+    }
+    let expectations = workflow_expectations(cfg.default_profile.as_str());
+    let strategy_mode = cfg.strategy_mode.clone();
+    let strategy_default_profile = cfg.strategy_default_profile().to_string();
+    let error_overrides = cfg.strategy_error_overrides().clone();
+    Ok(WorkflowContext {
+        schema_version: 1,
+        profile: cfg.default_profile,
+        strategy_mode,
+        strategy_default_profile,
+        repo_local_sources,
+        error_overrides,
+        expectations,
+    })
+}
+
+fn workflow_expectations(profile: &str) -> WorkflowExpectations {
+    let (summary, tests_first, docs_traceability, change_scope, verify_cadence, avoid) =
+        match profile {
+            "cautious-tdd" => (
+                vec![
+                    "Default posture: narrow, regression-resistant changes with a test-first bias."
+                        .to_string(),
+                    "Prefer proving the failure or target behavior before expanding implementation scope."
+                        .to_string(),
+                ],
+                vec![
+                    "Start from a failing or missing focused test whenever practical.".to_string(),
+                    "Let the test define the smallest acceptable implementation.".to_string(),
+                ],
+                vec![
+                    "Update docs and traceability as soon as the behavior is settled.".to_string(),
+                    "Keep the contract visible while iterating on the fix.".to_string(),
+                ],
+                vec![
+                    "Keep changes tightly scoped to the reproduced issue.".to_string(),
+                    "Escalate before mixing cleanup or unrelated refactors into the same task."
+                        .to_string(),
+                ],
+                vec![
+                    "Prefer early focused verify runs while iterating, then run the expected repo gates before finishing."
+                        .to_string(),
+                    "Treat passing regression coverage as part of done criteria.".to_string(),
+                ],
+                vec![
+                    "Avoid prototype-style broad edits.".to_string(),
+                    "Avoid landing behavior changes without a focused regression guard when one is practical."
+                        .to_string(),
+                ],
+            ),
+            "prototype-speed" => (
+                vec![
+                    "Default posture: optimize for fast iteration and feedback.".to_string(),
+                    "Favor the shortest path to a working end-to-end result.".to_string(),
+                ],
+                vec![
+                    "Add tests selectively when they unblock confidence or capture a behavior likely to survive iteration."
+                        .to_string(),
+                    "Do not force new regression tests for every exploratory change.".to_string(),
+                ],
+                vec![
+                    "Keep docs and traceability aligned when behavior meaningfully changes."
+                        .to_string(),
+                    "Accept concise updates over exhaustive documentation during early exploration."
+                        .to_string(),
+                ],
+                vec![
+                    "Allow slightly broader implementation edits when they materially reduce iteration time."
+                        .to_string(),
+                    "Still avoid unrelated refactors with no immediate payoff.".to_string(),
+                ],
+                vec![
+                    "Prefer faster local checks first and reserve heavier gates for consolidation points."
+                        .to_string(),
+                    "End with the relevant checks that keep the repository stable.".to_string(),
+                ],
+                vec![
+                    "Avoid polishing beyond what the current prototype needs.".to_string(),
+                    "Avoid turning temporary exploration into undocumented permanent behavior."
+                        .to_string(),
+                ],
+            ),
+            "bugfix-minimal" => (
+                vec![
+                    "Default posture: fix the reproduced problem with the smallest credible change."
+                        .to_string(),
+                    "Bias toward preserving surrounding code and workflow.".to_string(),
+                ],
+                vec![
+                    "Add the narrowest regression test that captures the bug when practical."
+                        .to_string(),
+                    "Do not widen the task into general cleanup.".to_string(),
+                ],
+                vec![
+                    "Update only the docs and traceability entries that the fix actually changes."
+                        .to_string(),
+                    "Keep the explanation tied to the reproduced behavior.".to_string(),
+                ],
+                vec![
+                    "Touch the minimum files needed to repair the bug.".to_string(),
+                    "Prefer direct fixes over architecture reshaping.".to_string(),
+                ],
+                vec![
+                    "Run the focused checks that exercise the bug path first, then the normal repository gates needed for confidence."
+                        .to_string(),
+                    "Keep verify scope proportional to the fix.".to_string(),
+                ],
+                vec![
+                    "Avoid opportunistic refactors.".to_string(),
+                    "Avoid changing adjacent behavior unless the fix requires it.".to_string(),
+                ],
+            ),
+            "no-test-fast" => (
+                vec![
+                    "Default posture: fix the immediate issue quickly with minimal surface area."
+                        .to_string(),
+                    "Intentionally avoid new tests unless they are unavoidable for safe delivery."
+                        .to_string(),
+                ],
+                vec![
+                    "Do not add new regression tests by default.".to_string(),
+                    "Add one only when the repository cannot validate the change responsibly without it."
+                        .to_string(),
+                ],
+                vec![
+                    "Still update docs and traceability when user-visible behavior changes."
+                        .to_string(),
+                    "Keep documentation updates as small as the behavior allows.".to_string(),
+                ],
+                vec![
+                    "Prefer the smallest implementation delta possible.".to_string(),
+                    "Defer broad cleanup and extra hardening unless the task explicitly asks for them."
+                        .to_string(),
+                ],
+                vec![
+                    "Prefer the fastest relevant local checks.".to_string(),
+                    "Run heavier verification only when the risk or repository policy demands it."
+                        .to_string(),
+                ],
+                vec![
+                    "Avoid turning this profile into a blanket excuse to skip required repository checks."
+                        .to_string(),
+                    "Avoid using it for structural or policy failures that need a different response."
+                        .to_string(),
+                ],
+            ),
+            _ => (
+                vec![
+                    "Default posture: practical, small, reviewable tasks.".to_string(),
+                    "Add or update tests when behavior changes or when a focused regression test is the clearest guardrail."
+                        .to_string(),
+                ],
+                vec![
+                    "Prefer adding a focused test early when the task changes behavior."
+                        .to_string(),
+                    "Do not force test-first for every tiny docs-only or comment-only edit."
+                        .to_string(),
+                ],
+                vec![
+                    "Keep docs and traceability in sync with behavior changes in the same task."
+                        .to_string(),
+                    "Treat spec, workflow docs, and focused tests as the contract chain."
+                        .to_string(),
+                ],
+                vec![
+                    "Prefer minimal vertical slices.".to_string(),
+                    "Avoid broad refactors unless the task explicitly requires them.".to_string(),
+                ],
+                vec![
+                    "Standard verify bias.".to_string(),
+                    "Run the smallest relevant checks first, then end in a state where the normal repo gate can pass."
+                        .to_string(),
+                ],
+                vec![
+                    "Avoid speculative cleanup unrelated to the task.".to_string(),
+                    "Avoid skipping docs or tests when the behavior changed.".to_string(),
+                ],
+            ),
+        };
+    WorkflowExpectations {
+        summary,
+        tests_first,
+        docs_traceability,
+        change_scope,
+        verify_cadence,
+        avoid,
+    }
+}
+
+fn render_workflow_context_json(context: &WorkflowContext) -> Result<String, ExitError> {
+    serde_json::to_string_pretty(context).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!("failed to render workflow context JSON: {e}"),
+        )
+    })
+}
+
+fn render_workflow_context_md(context: &WorkflowContext) -> String {
+    let mut s = String::new();
+    s.push_str("# WORKFLOW CONTEXT\n\n");
+    s.push_str("Use this file to understand the repo-standard workflow posture before choosing response mode, change scope, or verification depth.\n\n");
+    s.push_str("## Active defaults\n");
+    s.push_str(&format!("- workflow profile: `{}`\n", context.profile));
+    s.push_str(&format!("- strategy mode: `{}`\n", context.strategy_mode));
+    s.push_str(&format!(
+        "- strategy default profile: `{}`\n",
+        context.strategy_default_profile
+    ));
+    if context.repo_local_sources.is_empty() {
+        s.push_str("- repo-local sources: `-`\n");
+    } else {
+        s.push_str(&format!(
+            "- repo-local sources: {}\n",
+            context
+                .repo_local_sources
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    if !context.error_overrides.is_empty() {
+        s.push_str("\n## Error-specific overrides\n");
+        for (category, profile) in &context.error_overrides {
+            s.push_str(&format!("- `{category}` -> `{profile}`\n"));
+        }
+    }
+
+    s.push_str("\n## Summary\n");
+    for item in &context.expectations.summary {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s.push_str("\n## Tests first\n");
+    for item in &context.expectations.tests_first {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s.push_str("\n## Docs and traceability\n");
+    for item in &context.expectations.docs_traceability {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s.push_str("\n## Change scope\n");
+    for item in &context.expectations.change_scope {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s.push_str("\n## Verify cadence\n");
+    for item in &context.expectations.verify_cadence {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s.push_str("\n## Avoid\n");
+    for item in &context.expectations.avoid {
+        s.push_str(&format!("- {item}\n"));
+    }
+    s
+}
+
 fn render_ai_requests_md(inp: &HandoffManifestInputs<'_>) -> String {
     let mut s = String::new();
-    let reading_order_start = if inp.project_context.is_some() { 4 } else { 3 };
+    let reading_order_start = if inp.project_context.is_some() { 5 } else { 4 };
     s.push_str("# AI REQUESTS\n\n");
     s.push_str("Use this file as the bundle-local request scaffold when forwarding the handoff to a hosted AI. Patch parts remain canonical.\n\n");
     s.push_str("## Read order\n");
     s.push_str("1. Read `HANDOFF.md` first.\n");
     s.push_str("2. Use the Change Map plus Parts Index to identify the patch parts that matter.\n");
+    s.push_str(
+        "3. Read `WORKFLOW_CONTEXT.md` before choosing response mode, change scope, or verification depth.\n",
+    );
     if inp.project_context.is_some() {
-        s.push_str("3. Read `PROJECT_CONTEXT.md` only when you need surrounding repo structure beyond the changed files.\n");
+        s.push_str("4. Read `PROJECT_CONTEXT.md` only when you need surrounding repo structure beyond the changed files.\n");
     }
     for (idx, item) in inp.reading_order.iter().enumerate() {
         s.push_str(&format!("{}. {}\n", idx + reading_order_start, item));
@@ -4600,6 +4922,7 @@ fn render_ai_requests_md(inp: &HandoffManifestInputs<'_>) -> String {
     s.push_str(
         "- `handoff.manifest.json` is the canonical machine-readable summary for this bundle.\n",
     );
+    s.push_str("- `workflow.context.json` / `WORKFLOW_CONTEXT.md` provide the repo-standard workflow posture for this bundle.\n");
     if inp.project_context.is_some() {
         s.push_str("- `project.context.json` / `PROJECT_CONTEXT.md` provide bounded supplemental repo context for hosted AI use.\n");
     } else {
@@ -4611,6 +4934,25 @@ fn render_ai_requests_md(inp: &HandoffManifestInputs<'_>) -> String {
     if !inp.exclusions.is_empty() {
         s.push_str("- `excluded.md` records files that were intentionally omitted from the patch payload.\n");
     }
+    s.push_str("\n## Workflow guidance\n");
+    s.push_str(&format!(
+        "- workflow profile: `{}`\n",
+        inp.workflow_context.profile
+    ));
+    s.push_str(&format!(
+        "- strategy mode: `{}`\n",
+        inp.workflow_context.strategy_mode
+    ));
+    s.push_str(&format!(
+        "- strategy default profile: `{}`\n",
+        inp.workflow_context.strategy_default_profile
+    ));
+    if !inp.workflow_context.error_overrides.is_empty() {
+        for (category, profile) in &inp.workflow_context.error_overrides {
+            s.push_str(&format!("- override: `{category}` -> `{profile}`\n"));
+        }
+    }
+    s.push_str("- Use `workflow.context.json` for machine-readable workflow facts and `WORKFLOW_CONTEXT.md` for the rendered summary.\n");
     if let Some(project_context) = inp.project_context {
         s.push_str("\n## Focused project-context guidance\n");
         s.push_str(&format!(
@@ -5504,6 +5846,8 @@ fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, Ex
             manifest_json: "handoff.manifest.json".to_string(),
             context_xml: handoff_context_xml_path().to_string(),
             ai_requests_md: ai_requests_md_path().to_string(),
+            workflow_context_md: workflow_context_md_path().to_string(),
+            workflow_context_json: workflow_context_json_path().to_string(),
             part_paths: inp
                 .parts
                 .iter()
@@ -5696,6 +6040,14 @@ fn render_handoff_context_xml(inp: &HandoffManifestInputs<'_>) -> String {
     s.push_str(&format!(
         "    <artifact path=\"{}\" kind=\"ai-requests\" />\n",
         xml_escape(ai_requests_md_path())
+    ));
+    s.push_str(&format!(
+        "    <artifact path=\"{}\" kind=\"workflow-context-md\" />\n",
+        xml_escape(workflow_context_md_path())
+    ));
+    s.push_str(&format!(
+        "    <artifact path=\"{}\" kind=\"workflow-context-json\" />\n",
+        xml_escape(workflow_context_json_path())
     ));
     if inp.project_context.is_some() {
         s.push_str(&format!(

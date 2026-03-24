@@ -4,6 +4,7 @@ use crate::exit::{
 };
 use crate::git;
 use crate::ops::command_log;
+use crate::ops::failure_category;
 use crate::ops::lock;
 use crate::ops::pack_fix;
 use crate::ops::patch_bundle;
@@ -39,6 +40,7 @@ struct ApplySummary {
     post_apply_logs_path: Option<String>,
     pack_fix_path: Option<String>,
     ok: bool,
+    failure_category: Option<String>,
     error: Option<String>,
 }
 
@@ -206,6 +208,7 @@ pub fn apply_locked(
             post_apply_logs_path: None,
             pack_fix_path: None,
             ok: false,
+            failure_category: Some(failure_category::BASE_COMMIT_MISMATCH.to_string()),
             error: Some(format!(
                 "base_commit mismatch: manifest={} session_head={}",
                 declared, session_state.head
@@ -285,6 +288,13 @@ pub fn apply_locked(
         post_apply_logs_path: post_apply_out.as_ref().map(|out| out.logs_path.clone()),
         pack_fix_path: pack_fix_path.clone(),
         ok,
+        failure_category: if ok {
+            None
+        } else if !apply_res.is_ok {
+            Some(failure_category::PATCH_APPLY_FAILED.to_string())
+        } else {
+            Some(failure_category::POST_APPLY_FAILED.to_string())
+        },
         error: error.clone(),
     };
     write_apply_summary(&run_dir, &summary)?;

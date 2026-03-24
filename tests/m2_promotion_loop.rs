@@ -1,4 +1,5 @@
 use assert_cmd::prelude::*;
+use serde_json::Value;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -519,6 +520,20 @@ fn m3_promotion_blocks_on_secrets_without_ack() {
         .assert()
         .failure()
         .code(11);
+    let promote: Value = serde_json::from_str(
+        &fs::read_to_string(
+            root.join(".diffship")
+                .join("runs")
+                .join(&run_id)
+                .join("promotion.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        promote.get("failure_category").and_then(|v| v.as_str()),
+        Some("promotion_blocked_secrets")
+    );
 
     // With ack, it should proceed.
     diffship_cmd()
