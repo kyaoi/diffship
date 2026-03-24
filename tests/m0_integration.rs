@@ -142,10 +142,14 @@ fn m0_init_status_runs_happy_path() {
     assert!(ai_cfg.contains("# path7 = \".diffship/config.toml\""));
     let cfg = fs::read_to_string(root.join(".diffship").join("config.toml")).unwrap();
     let branch = current_branch(root);
+    let preferred_target = branch.clone();
     assert!(cfg.contains("# Repository snapshot:"));
     assert!(cfg.contains("# - repo:"));
     assert!(cfg.contains(&format!("# - current branch: {}", branch)));
-    assert!(cfg.contains("# - preferred promote target: main"));
+    assert!(cfg.contains(&format!(
+        "# - preferred promote target: {}",
+        preferred_target
+    )));
     assert!(cfg.contains("# Bootstrap workflow profile selected during init: balanced"));
     assert!(cfg.contains("# See `.diffship/WORKFLOW_PROFILE.md`"));
     assert!(cfg.contains("Use this file in two layers"));
@@ -163,7 +167,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(cfg.contains("Copy `[handoff.profiles.*]` stanzas"));
     assert!(cfg.contains("It does not export the full profile catalog."));
     assert!(cfg.contains("output_dir = \"./.diffship/artifacts/handoffs\""));
-    assert!(cfg.contains("target_branch = \"main\""));
+    assert!(cfg.contains(&format!("target_branch = \"{}\"", preferred_target)));
 
     // status --json
     let out = diffship_cmd()
