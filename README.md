@@ -11,7 +11,7 @@ It covers both sides of an AI workflow:
 
 - Deterministic handoff bundles built from committed, staged, unstaged, and optional untracked changes
 - Preview and compare commands for bundle review and reproducibility checks
-- Safe patch-bundle apply, verify, promote, and reprompt loops under `.diffship/runs/`
+- Safe patch-bundle apply, verify, promote, and reprompt loops with repo-local run logs
 - Repo-local project kit generation via `diffship init`
 - Configurable verify profiles, promotion modes, and handoff packing profiles
 - CLI and TUI support for the core workflows
@@ -21,7 +21,7 @@ It covers both sides of an AI workflow:
 Install from GitHub:
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.4
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.5
 ```
 
 Or work from source:
@@ -53,7 +53,7 @@ Run the main ops loop for an AI patch bundle:
 diffship loop path/to/patch-bundle.zip
 ```
 
-If verify or post-apply steps fail, diffship records the run under `.diffship/runs/`
+If verify or post-apply steps fail, diffship records the run in its repo-local run logs
 and can generate a reprompt bundle with `diffship pack-fix --run-id <run-id>`.
 
 ## Common Commands
