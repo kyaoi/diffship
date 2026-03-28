@@ -52,6 +52,9 @@ pub enum Command {
     #[command(name = "pack-fix")]
     PackFix(PackFixArgs),
 
+    /// Inspect the resolved failure-aware strategy for a run
+    Strategy(StrategyArgs),
+
     /// Promote a verified sandbox result back to a target branch (default: develop)
     Promote(PromoteArgs),
 
@@ -420,6 +423,21 @@ pub struct PackFixArgs {
     /// Output zip path (default: .diffship/runs/<run-id>/pack-fix_<timestamp>_<head7>[_N].zip)
     #[arg(long)]
     pub out: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct StrategyArgs {
+    /// Run id to inspect (defaults to the latest run)
+    #[arg(long, conflicts_with = "latest")]
+    pub run_id: Option<String>,
+
+    /// Inspect the latest run explicitly
+    #[arg(long, default_value_t = false, conflicts_with = "run_id")]
+    pub latest: bool,
+
+    /// Emit machine-readable JSON matching strategy.resolved.json
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

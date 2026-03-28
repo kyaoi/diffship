@@ -279,6 +279,15 @@ Conventions:
 
 ---
 
+## strategy
+
+- **S-STRATEGY-001** — Tests: `tests/m2_strategy.rs` — Code: `src/cli.rs`, `src/ops/run.rs`, `src/ops/strategy.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-STRATEGY-002** — Tests: `tests/m2_strategy.rs`, `tests/m2_pack_fix.rs` — Code: `src/ops/strategy.rs`, `src/ops/pack_fix.rs`, `src/ops/config.rs` — Status: Implemented
+- **S-STRATEGY-003** — Tests: `tests/m2_strategy.rs` — Code: `src/ops/strategy.rs`, `src/ops/pack_fix.rs` — Status: Implemented
+- **S-STRATEGY-004** — Tests: `tests/m2_strategy.rs` — Code: `src/ops/strategy.rs` — Status: Implemented
+
+---
+
 ## loop
 
 - **S-LOOP-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
@@ -385,7 +394,7 @@ Conventions:
 - **S-WORKFLOW-001** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
 - **S-WORKFLOW-002** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
 - **S-WORKFLOW-003** — Tests: `src/ops/config.rs` — Code: `src/ops/config.rs` — Status: Implemented
-- **S-WORKFLOW-004** — Tests: `src/ops/strategy.rs`, `tests/m2_pack_fix.rs` — Code: `src/ops/strategy.rs`, `src/ops/pack_fix.rs` — Status: Implemented
+- **S-WORKFLOW-004** — Tests: `src/ops/strategy.rs`, `tests/m2_pack_fix.rs`, `tests/m2_strategy.rs` — Code: `src/ops/strategy.rs`, `src/ops/pack_fix.rs` — Status: Implemented
 
 ---
 

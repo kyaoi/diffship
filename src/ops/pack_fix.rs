@@ -1,6 +1,5 @@
 use crate::cli::PackFixArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
-use crate::ops::config;
 use crate::ops::lock;
 use crate::ops::run;
 use crate::ops::strategy;
@@ -30,12 +29,6 @@ struct PostApplyBrief {
     change_categories: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct PhaseSummaryBrief {
-    ok: Option<bool>,
-    failure_category: Option<String>,
-}
-
 /// Create a "reprompt zip" that contains run metadata, bundle, verify logs, and sandbox diffs.
 ///
 /// Default output path: `.diffship/runs/<run-id>/pack-fix_<timestamp>_<head7>[_N].zip`.
@@ -57,7 +50,7 @@ pub fn cmd(git_root: &Path, args: PackFixArgs) -> Result<(), ExitError> {
 
     let run_id = match &args.run_id {
         Some(id) => id.clone(),
-        None => detect_latest_run_id(git_root).ok_or_else(|| {
+        None => run::latest_run_id(git_root)?.ok_or_else(|| {
             ExitError::new(
                 EXIT_GENERAL,
                 "no runs found (run diffship apply first, or pass --run-id)",
@@ -146,7 +139,7 @@ fn write_pack_fix_zip(
     let post_apply_json_path = run_dir.join("post_apply.json");
     let has_post_apply = post_apply_json_path.exists();
     let post_apply_info = read_post_apply_brief(&post_apply_json_path);
-    let strategy_resolution = resolve_pack_fix_strategy(git_root, run_dir)?;
+    let strategy_resolution = strategy::resolve_for_run(git_root, run_dir)?;
 
     let mut prompt = String::new();
     prompt.push_str("# diffship pack-fix (reprompt kit)\n\n");
@@ -345,41 +338,6 @@ fn read_post_apply_brief(path: &Path) -> Option<PostApplyBrief> {
     serde_json::from_slice::<PostApplyBrief>(&bytes).ok()
 }
 
-fn resolve_pack_fix_strategy(
-    git_root: &Path,
-    run_dir: &Path,
-) -> Result<Option<strategy::StrategyResolution>, ExitError> {
-    let failure_category = detect_failure_category(run_dir);
-    if failure_category.is_none() {
-        return Ok(None);
-    }
-    let cfg = config::resolve_workflow_config(git_root)?;
-    Ok(strategy::resolve_strategy_from_workflow(
-        &cfg,
-        failure_category.as_deref(),
-    ))
-}
-
-fn detect_failure_category(run_dir: &Path) -> Option<String> {
-    for name in ["promotion.json", "verify.json", "apply.json"] {
-        let Some(summary) = read_phase_summary(&run_dir.join(name)) else {
-            continue;
-        };
-        if summary.ok == Some(false)
-            && let Some(category) = summary.failure_category
-            && !category.trim().is_empty()
-        {
-            return Some(category);
-        }
-    }
-    None
-}
-
-fn read_phase_summary(path: &Path) -> Option<PhaseSummaryBrief> {
-    let bytes = fs::read(path).ok()?;
-    serde_json::from_slice::<PhaseSummaryBrief>(&bytes).ok()
-}
-
 fn default_pack_fix_zip_name(run_dir: &Path, run_id: &str) -> String {
     if let Some(stem) = run_id.strip_prefix("run_") {
         return format!("pack-fix_{stem}.zip");
@@ -525,34 +483,6 @@ fn git_capture(dir: &Path, args: &[&str]) -> Result<String, ExitError> {
             ),
         ))
     }
-}
-
-fn detect_latest_run_id(git_root: &Path) -> Option<String> {
-    // Prefer the newest run by created_at (RFC3339 is lexicographically sortable).
-    let dir = run::runs_dir(git_root);
-    if !dir.exists() {
-        return None;
-    }
-    let mut best: Option<(String, String)> = None;
-    for ent in fs::read_dir(&dir).ok()?.flatten() {
-        if !ent.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let meta_path = ent.path().join("run.json");
-        let bytes = fs::read(&meta_path).ok()?;
-        let meta: run::RunMeta = serde_json::from_slice(&bytes).ok()?;
-        match &best {
-            Some((best_created, best_id)) => {
-                if meta.created_at > *best_created
-                    || (meta.created_at == *best_created && meta.run_id > *best_id)
-                {
-                    best = Some((meta.created_at, meta.run_id));
-                }
-            }
-            None => best = Some((meta.created_at, meta.run_id)),
-        }
-    }
-    best.map(|(_, id)| id)
 }
 
 fn path_relative_display(git_root: &Path, p: &Path) -> String {

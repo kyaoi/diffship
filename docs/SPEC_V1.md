@@ -309,6 +309,15 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-CLEANUP-005**: cleanup MUST support an opt-in mode that removes diffship-owned build artifacts under `.diffship/artifacts/` while leaving user-selected outputs outside `.diffship/` untouched.
 - **S-CLEANUP-006**: cleanup MUST remove diffship-owned temporary artifacts under `.diffship/tmp/` when they remain after completed or interrupted runs.
 
+### 4.13 `diffship strategy`
+
+Inspects the resolved failure-aware strategy for a run without opening the reprompt zip.
+
+- **S-STRATEGY-001**: `diffship strategy` MUST support `--run-id <id>` and `--latest`; when neither is provided, it MUST default to the latest run.
+- **S-STRATEGY-002**: `diffship strategy` MUST reuse the same normalized failure-category detection and resolved workflow config as `diffship pack-fix`; it MUST refuse to invent guidance when the selected run has no failed phase with a normalized failure category.
+- **S-STRATEGY-003**: `diffship strategy --json` MUST emit the same machine-readable shape as `strategy.resolved.json`, without adding run-id-specific or path-specific noise to the JSON payload.
+- **S-STRATEGY-004**: The default human-readable output MUST summarize the selected run id, detected failure category, selected/default strategy profiles, deterministic alternatives, and any known `tests_expected` / `preferred_verify_profile` hints.
+
 ---
 
 ## 5. Handoff document requirements

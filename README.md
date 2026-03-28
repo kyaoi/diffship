@@ -21,7 +21,7 @@ It covers both sides of an AI workflow:
 Install from GitHub:
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.6
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.7.0
 ```
 
 Or work from source:
@@ -55,6 +55,7 @@ diffship loop path/to/patch-bundle.zip
 
 If verify or post-apply steps fail, diffship records the run in its repo-local run logs
 and can generate a reprompt bundle with `diffship pack-fix --run-id <run-id>`.
+You can also inspect the same failure-aware guidance locally with `diffship strategy --run-id <run-id>`.
 
 ## Common Commands
 
@@ -74,6 +75,7 @@ Ops:
 diffship init
 diffship apply path/to/patch-bundle.zip
 diffship verify
+diffship strategy --latest
 diffship promote
 diffship loop path/to/patch-bundle.zip
 diffship pack-fix --run-id <run-id>

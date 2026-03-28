@@ -1,7 +1,12 @@
-use crate::ops::config::WorkflowConfig;
+use crate::cli::StrategyArgs;
+use crate::exit::{EXIT_GENERAL, ExitError};
+use crate::ops::config::{self, WorkflowConfig};
 use crate::ops::failure_category;
+use crate::ops::run;
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct StrategyResolution {
@@ -34,6 +39,94 @@ struct CategoryStrategy {
 struct StrategyProfileFacts {
     tests_expected: Option<bool>,
     preferred_verify_profile: Option<&'static str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PhaseSummaryBrief {
+    ok: Option<bool>,
+    failure_category: Option<String>,
+}
+
+pub fn cmd(git_root: &Path, args: StrategyArgs) -> Result<(), ExitError> {
+    let run_id = match args.run_id {
+        Some(id) => id,
+        None => run::latest_run_id(git_root)?.ok_or_else(|| {
+            ExitError::new(
+                EXIT_GENERAL,
+                "no runs found (run diffship apply first, or pass --run-id)",
+            )
+        })?,
+    };
+    let run_dir = run::run_dir(git_root, &run_id);
+    if !run_dir.exists() {
+        return Err(ExitError::new(
+            EXIT_GENERAL,
+            format!("run not found: {}", run_id),
+        ));
+    }
+
+    let failure_category = detect_failure_category(&run_dir).ok_or_else(|| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "run {} has no failed phase with a normalized failure_category",
+                run_id
+            ),
+        )
+    })?;
+    let cfg = config::resolve_workflow_config(git_root)?;
+    let resolution = resolve_strategy_from_workflow(&cfg, Some(&failure_category)).ok_or_else(|| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "workflow strategy resolution is disabled for run {} (workflow.strategy.mode=off)",
+                run_id
+            ),
+        )
+    })?;
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&resolution).map_err(|e| {
+            ExitError::new(EXIT_GENERAL, format!("failed to encode strategy JSON: {e}"))
+        })?;
+        println!("{json}");
+        return Ok(());
+    }
+
+    println!("diffship strategy");
+    println!("run_id: {run_id}");
+    println!("failure_category: {}", resolution.failure_category);
+    println!("strategy_mode: {}", resolution.strategy_mode);
+    println!("selected_profile: {}", resolution.selected_profile);
+    println!("default_profile: {}", resolution.default_profile);
+    if resolution.alternatives.is_empty() {
+        println!("alternatives: -");
+    } else {
+        println!("alternatives: {}", resolution.alternatives.join(", "));
+    }
+    if let Some(tests_expected) = resolution.tests_expected {
+        println!("tests_expected: {tests_expected}");
+    }
+    if let Some(profile) = resolution.preferred_verify_profile.as_deref() {
+        println!("preferred_verify_profile: {profile}");
+    }
+    println!("reason: {}", resolution.reason);
+    Ok(())
+}
+
+pub(crate) fn resolve_for_run(
+    git_root: &Path,
+    run_dir: &Path,
+) -> Result<Option<StrategyResolution>, ExitError> {
+    let failure_category = detect_failure_category(run_dir);
+    if failure_category.is_none() {
+        return Ok(None);
+    }
+    let cfg = config::resolve_workflow_config(git_root)?;
+    Ok(resolve_strategy_from_workflow(
+        &cfg,
+        failure_category.as_deref(),
+    ))
 }
 
 pub fn resolve_strategy(input: StrategyInput<'_>) -> Option<StrategyResolution> {
@@ -134,6 +227,21 @@ pub fn resolve_strategy_from_workflow(
     })
 }
 
+pub(crate) fn detect_failure_category(run_dir: &Path) -> Option<String> {
+    for name in ["promotion.json", "verify.json", "apply.json"] {
+        let Some(summary) = read_phase_summary(&run_dir.join(name)) else {
+            continue;
+        };
+        if summary.ok == Some(false)
+            && let Some(category) = summary.failure_category
+            && !category.trim().is_empty()
+        {
+            return Some(category);
+        }
+    }
+    None
+}
+
 fn strategy_for_category(category: &str) -> Option<CategoryStrategy> {
     match category {
         failure_category::PATCH_APPLY_FAILED => Some(CategoryStrategy {
@@ -214,6 +322,11 @@ fn strategy_profile_facts(profile: &str) -> Option<StrategyProfileFacts> {
         }),
         _ => None,
     }
+}
+
+fn read_phase_summary(path: &Path) -> Option<PhaseSummaryBrief> {
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice::<PhaseSummaryBrief>(&bytes).ok()
 }
 
 #[cfg(test)]

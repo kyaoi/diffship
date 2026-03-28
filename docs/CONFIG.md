@@ -59,12 +59,12 @@ verify_docs_failed = "docs-sync-minimal"
 Notes:
 
 - `[workflow].default_profile` is the repo-standard workflow posture.
-- `[workflow.strategy].mode` controls how strongly `pack-fix` strategy resolution should bias toward configured defaults.
+- `[workflow.strategy].mode` controls how strongly `pack-fix` and `diffship strategy` resolution should bias toward configured defaults.
 - `[workflow.strategy].default_profile` is optional; when omitted, diffship falls back to `[workflow].default_profile`.
 - `[workflow.strategy.error_overrides]` is a deterministic string map keyed by normalized failure category names.
 - `suggest` starts from category-specific guidance when one exists and keeps the repo default as an alternative.
 - `prefer` and `force` bias toward the configured default profile, but structural/policy categories still keep category-specific handling.
-- `off` disables strategy guidance in `pack-fix`.
+- `off` disables strategy guidance in both `pack-fix` and `diffship strategy`.
 - Profile names are treated as stable strings so repositories can adopt the schema before every built-in strategy is implemented.
 - Built-in strategy metadata now also reports `tests_expected` and `preferred_verify_profile` in `strategy.resolved.json` when the selected profile is known. The fast path `no-test-fast` resolves to `tests_expected = false` and `preferred_verify_profile = "fast"`.
 

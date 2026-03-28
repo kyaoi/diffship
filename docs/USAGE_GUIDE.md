@@ -619,6 +619,13 @@ You can recreate it manually:
 diffship pack-fix --run-id <run-id>
 ```
 
+You can inspect the same failure-aware guidance locally:
+
+```bash
+diffship strategy --run-id <run-id>
+diffship strategy --latest --json
+```
+
 When local `ops.post_apply` hooks ran, the reprompt zip also includes `run/post_apply.json` plus `run/post-apply/*`, and the generated `PROMPT.md` points the AI at that evidence before the verify logs.
 
 `run/post_apply.json` now also records deterministic `changed_paths`, coarse `change_categories`, and a machine-readable normalization summary derived from sandbox state before and after post-apply. The reprompt `PROMPT.md` repeats that summary inline so the AI sees local normalization effects before it starts interpreting verify failures.

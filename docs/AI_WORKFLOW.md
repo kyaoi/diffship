@@ -132,6 +132,7 @@ Tips:
 * Keep the bundle **small** (only necessary diffs; reduce noise)
 * Use `.diffshipignore` / `.gitignore` to prevent artifacts and secrets from leaking
 * When you share a reprompt zip created by `diffship pack-fix`, tell the AI to read `strategy.resolved.json` before raw verify/post-apply logs when that file is present; built-in profiles may also expose `tests_expected` and `preferred_verify_profile` there
+* Before sharing that reprompt zip, you can inspect the same local recommendation with `diffship strategy --run-id <run-id>` or `diffship strategy --latest --json`
 
 ---
 

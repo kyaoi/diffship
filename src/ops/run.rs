@@ -137,6 +137,13 @@ pub fn list_runs(git_root: &Path, limit: usize) -> Result<Vec<RunSummary>, ExitE
     Ok(summaries)
 }
 
+pub fn latest_run_id(git_root: &Path) -> Result<Option<String>, ExitError> {
+    Ok(list_runs(git_root, 1)?
+        .into_iter()
+        .next()
+        .map(|run| run.run_id))
+}
+
 fn read_command_fields(run_dir: &Path) -> (usize, Vec<String>) {
     let Ok(records) = command_log::read_records(run_dir) else {
         return (0, vec![]);

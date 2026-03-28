@@ -127,6 +127,13 @@ You can also create or re-create it explicitly:
 diffship pack-fix --run-id <run-id>
 ```
 
+You can inspect the same failure-aware recommendation locally without opening the zip:
+
+```bash
+diffship strategy --run-id <run-id>
+diffship strategy --latest --json
+```
+
 ### Post-apply failed → create a reprompt bundle
 
 When a local `ops.post_apply` command fails after the patch step succeeded, diffship also writes the default reprompt zip under the same run directory so you can send the failure context back to the AI immediately.

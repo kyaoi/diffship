@@ -452,17 +452,20 @@ Representative fields:
 
 ---
 
-## New Product Direction: Future Local Judgment Command
+## New Product Direction: Local Judgment Command
 
-Not required for the first implementation, but highly desirable later:
+The first local judgment surface is now implemented:
 
 * `diffship strategy --latest`
 * `diffship strategy --run-id <id>`
-* or `diffship explain --run-id <id>`
+* `diffship strategy --run-id <id> --json`
 
-This should reuse the same internal resolver as `pack-fix` so the user can inspect the same strategy result locally without opening the zip.
+This reuses the same internal resolver as `pack-fix` so the user can inspect the same strategy result locally without opening the zip, and the JSON output matches the `strategy.resolved.json` shape.
 
-This is a follow-up convenience layer, not the first blocker.
+Still desirable later:
+
+* `diffship explain --run-id <id>`
+* TUI surfacing for the same local strategy guidance
 
 ---
 
@@ -479,7 +482,8 @@ Do not try to redesign `init`, `build`, `pack-fix`, config, and TUI all at once.
 2. add bundle-local workflow export in `build`
 3. add strategy resolution model for normalized failure categories
 4. add strategy export in `pack-fix`
-5. only later consider local `strategy` / `explain` command or TUI surfacing
+5. add local `strategy` inspection that reuses the same resolver as `pack-fix`
+6. only later consider `explain` or TUI surfacing
 
 ### Testing policy
 
@@ -522,6 +526,17 @@ The next milestone should focus on workflow standardization and failure-aware bu
 
 ---
 
+### M10: Local strategy inspection
+
+| ID     | Status | Description                  | Done Criteria                                                                                                                                     |
+| ------ | ------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M10-01 | done   | Local strategy command       | `diffship strategy --latest|--run-id|--json` reuses the same failure-category detection and resolver as `pack-fix`                              |
+| M10-02 | done   | JSON parity                  | `diffship strategy --json` emits the same canonical machine-readable shape as `strategy.resolved.json` without extra run-local noise            |
+| M10-03 | done   | Human-readable local summary | `diffship strategy` summarizes the selected run id, failure category, selected/default profiles, alternatives, and known test/verify hints      |
+| M10-04 | done   | Focused regression coverage  | Tests cover explicit run selection, `--latest`, JSON parity with reprompt exports, and refusal when no normalized failure category is available |
+
+---
+
 ## What Is Explicitly Not a Near-Term Goal
 
 To prevent scope creep, the following are not immediate blockers:
@@ -535,11 +550,9 @@ To prevent scope creep, the following are not immediate blockers:
 
 ## Current Priority Order
 
-1. Keep the existing build/loop/pack-fix path stable.
-2. Add repo-standard workflow profiles through `init` and config.
-3. Export workflow guidance into normal build zips.
-4. Resolve failure-aware strategies into pack-fix zips.
-5. Only then consider richer local/TUI judgment surfaces.
+1. Keep the existing build/loop/pack-fix/strategy path stable.
+2. Preserve a single shared strategy resolver between local inspection and reprompt exports.
+3. Only then consider richer TUI judgment surfaces or a separate `explain` layer.
 
 ---
 
