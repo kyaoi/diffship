@@ -106,6 +106,7 @@ fn m0_init_status_runs_happy_path() {
     assert!(kit.contains("Customize this section: local commands and gates"));
     assert!(kit.contains("Suggested read-first files"));
     assert!(kit.contains("Generated metadata"));
+    assert!(kit.contains("diffship strategy --run-id <run-id>"));
     let ai = fs::read_to_string(root.join(".diffship").join("AI_GUIDE.md")).unwrap();
     assert!(ai.contains("# DiffshipOS AI Guide"));
     assert!(ai.contains("## Generated repo snapshot"));
@@ -117,6 +118,8 @@ fn m0_init_status_runs_happy_path() {
     assert!(ai.contains("Core contract: meaning of files the user may provide"));
     assert!(ai.contains("Core contract: additional deliverables beyond file edits"));
     assert!(ai.contains("Generated metadata"));
+    assert!(ai.contains("diffship strategy --run-id <run-id>"));
+    assert!(ai.contains("strategy.resolved.json"));
     let rules = fs::read_to_string(root.join(".diffship").join("PROJECT_RULES.md")).unwrap();
     assert!(rules.contains("# Diffship Project Rules"));
     assert!(rules.contains("Paste this into an external AI workspace"));
@@ -126,6 +129,8 @@ fn m0_init_status_runs_happy_path() {
     assert!(workflow.contains("- Profile: `balanced`"));
     assert!(workflow.contains("## Preferred verify cadence"));
     assert!(workflow.contains("## Docs and traceability expectations"));
+    assert!(workflow.contains("## Failed-run follow-up"));
+    assert!(workflow.contains("diffship strategy --run-id <run-id>"));
     let forbid = fs::read_to_string(root.join(".diffship").join("forbid.toml")).unwrap();
     assert!(forbid.contains("[ops.forbid]"));
     assert!(forbid.contains("pnpm-lock.yaml"));

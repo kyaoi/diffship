@@ -74,6 +74,13 @@ If a run fails and you want a reprompt bundle:
 diffship pack-fix --run-id <run-id>
 ```
 
+If you want to inspect the same failure-aware recommendation locally before sharing that reprompt bundle:
+
+```bash
+diffship strategy --run-id <run-id>
+diffship strategy --latest --json
+```
+
 ---
 
 ## 3. Core workflow: supported AI return modes

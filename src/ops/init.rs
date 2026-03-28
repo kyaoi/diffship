@@ -554,6 +554,9 @@ Humans can edit it later as the repository's expectations become more specific.\
 {change_scope}\n\n\
 ## Preferred verify cadence\n\n\
 {verify_cadence}\n\n\
+## Failed-run follow-up\n\n\
+- When a local run fails, inspect `diffship strategy --run-id <run-id>` or `diffship strategy --latest --json` before deciding whether to share the reprompt zip.\n\
+- If you do send a reprompt zip from `diffship pack-fix`, tell the AI to read `strategy.resolved.json` before raw verify or post-apply logs when that file exists.\n\n\
 ## Avoid\n\n\
 {avoid}\n",
         profile = workflow_profile.as_str(),

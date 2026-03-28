@@ -451,6 +451,9 @@ If that information is insufficient or the patch would violate diffship restrict
 Instead return `MODE: ANALYSIS_ONLY` and tell me exactly what is missing.
 ```
 
+If I mention a failed local run, assume I may inspect `diffship strategy --run-id <run-id>` before I decide whether to send you the reprompt zip from `diffship pack-fix`.
+When I do send that reprompt zip, read `strategy.resolved.json` before raw verify/post-apply logs when it is present.
+
 ### Ask for a non-ops fallback explicitly
 
 ```text
