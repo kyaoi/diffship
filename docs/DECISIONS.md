@@ -1520,3 +1520,13 @@ It keeps concise conclusions so the rationale survives chat switches and work ca
 - Why:
   - Hosted AI can still over-edit widened repo context unless Diffship explicitly distinguishes direct write targets from read-only support, rule, and verification context inside the focused pack.
   - This keeps bounded write-scope guidance consistent between manifest task groups and the optional focused project-context layer.
+
+## D-113: Cleanup should treat non-resumable terminal runs as eligible run logs
+
+- Decision:
+  - Extend cleanup run eligibility beyond promoted/orphaned runs to also include terminal runs that are no longer waiting for user follow-up, such as apply failures, verify failures, `promotion=none`, and failed promotion attempts.
+  - Keep runs blocked on explicit user acknowledgement, such as required tasks or secrets acknowledgement, out of automatic cleanup eligibility.
+
+- Why:
+  - `diffship cleanup --all` should reclaim finished run directories consistently, including cases where a run completed without producing a promoted head.
+  - Users still need blocked promotion runs to remain available for follow-up acknowledgement and retry.

@@ -331,7 +331,7 @@ pub struct CleanupArgs {
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
 
-    /// Also remove run logs that are already promoted or orphaned
+    /// Also remove run logs that are promoted, orphaned, or otherwise terminal
     #[arg(long, default_value_t = false)]
     pub include_runs: bool,
 

@@ -142,6 +142,7 @@ diffship cleanup --all
 ```
 
 `cleanup` also removes leftover diffship-owned temp artifacts under `.diffship/tmp/`.
+With `--include-runs` or `--all`, cleanup also removes terminal run directories such as promoted runs, `promotion=none` runs, failed promotions, failed verifies, and orphaned runs, while leaving runs that are still waiting for follow-up promotion acknowledgement intact.
 
 ### Promotion blocked: secrets
 

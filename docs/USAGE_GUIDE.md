@@ -579,6 +579,8 @@ diffship cleanup --all
 diffship cleanup --json
 ```
 
+`--include-runs` and `--all` remove terminal run directories such as promoted runs, `promotion=none` runs, failed promotions, failed verifies, and orphaned runs, but keep runs that still require an explicit follow-up acknowledgement before promotion.
+
 ### 6.4 Promotion modes
 
 Available promotion modes:

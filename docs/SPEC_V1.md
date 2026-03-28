@@ -305,7 +305,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-CLEANUP-001**: diffship MUST provide a cleanup command that removes diffship-owned orphan workspaces under `.diffship/worktrees/`, including orphan sandboxes and orphan session worktrees.
 - **S-CLEANUP-002**: cleanup MAY remove sandbox worktrees for runs that have already been promoted, but it MUST also remove the corresponding run-local `sandbox.json` so later auto-selection does not treat that sandbox as still available.
 - **S-CLEANUP-003**: cleanup MUST support `--dry-run` preview mode and `--json` machine-readable output.
-- **S-CLEANUP-004**: cleanup MUST support an opt-in mode that removes eligible run logs under `.diffship/runs/` when those runs are already promoted or orphaned. Removing such runs MUST NOT update the repository `HEAD` or diffship session refs.
+- **S-CLEANUP-004**: cleanup MUST support an opt-in mode that removes eligible run logs under `.diffship/runs/` when those runs are already promoted, orphaned, or otherwise terminal and not awaiting further user acknowledgement. Eligible terminal runs include apply failures, verify failures, and completed promotion decisions such as `promotion=none` or failed promotion attempts. Removing such runs MUST NOT update the repository `HEAD` or diffship session refs.
 - **S-CLEANUP-005**: cleanup MUST support an opt-in mode that removes diffship-owned build artifacts under `.diffship/artifacts/` while leaving user-selected outputs outside `.diffship/` untouched.
 - **S-CLEANUP-006**: cleanup MUST remove diffship-owned temporary artifacts under `.diffship/tmp/` when they remain after completed or interrupted runs.
 

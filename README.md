@@ -21,7 +21,7 @@ It covers both sides of an AI workflow:
 Install from GitHub:
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.5
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.6.6
 ```
 
 Or work from source:

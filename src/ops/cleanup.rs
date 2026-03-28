@@ -1,12 +1,12 @@
 use crate::cli::CleanupArgs;
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::git;
+use crate::ops::failure_category;
 use crate::ops::lock;
 use crate::ops::run;
 use crate::ops::session;
 use crate::ops::worktree;
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,6 +36,7 @@ enum CleanupKind {
     OrphanSandbox,
     OrphanSessionWorktree,
     PromotedRun,
+    TerminalRun,
     OrphanRun,
     BuildArtifact,
     RulesArtifact,
@@ -49,6 +50,7 @@ impl CleanupKind {
             Self::OrphanSandbox => "orphan_sandbox",
             Self::OrphanSessionWorktree => "orphan_session_worktree",
             Self::PromotedRun => "promoted_run",
+            Self::TerminalRun => "terminal_run",
             Self::OrphanRun => "orphan_run",
             Self::BuildArtifact => "build_artifact",
             Self::RulesArtifact => "rules_artifact",
@@ -72,6 +74,23 @@ struct CleanupCandidate {
     size_bytes: u64,
     extra_paths: Vec<PathBuf>,
     extra_files: Vec<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApplySummaryLite {
+    ok: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerifySummaryLite {
+    ok: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct PromoteSummaryLite {
+    ok: bool,
+    promoted_head: Option<String>,
+    failure_category: Option<String>,
 }
 
 pub fn cmd(git_root: &Path, args: CleanupArgs) -> Result<(), ExitError> {
@@ -339,6 +358,19 @@ fn collect_run_candidates(
             continue;
         }
 
+        if let Some(reason) = terminal_run_reason(&run_dir) {
+            out.push(CleanupCandidate {
+                kind: CleanupKind::TerminalRun,
+                name: run_id,
+                path: run_dir.clone(),
+                reason,
+                size_bytes: dir_size_bytes(&run_dir) + sandbox_size,
+                extra_paths,
+                extra_files: Vec::new(),
+            });
+            continue;
+        }
+
         if !run_meta_ok || sandbox_meta.is_none() || !sandbox_exists {
             out.push(CleanupCandidate {
                 kind: CleanupKind::OrphanRun,
@@ -482,17 +514,9 @@ fn collect_artifact_entries(
 }
 
 fn run_is_promoted(run_dir: &Path) -> bool {
-    let path = run_dir.join("promotion.json");
-    let Ok(bytes) = fs::read(path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return false;
-    };
-    value
-        .get("promoted_head")
-        .and_then(|v| v.as_str())
-        .map(|s| !s.trim().is_empty())
+    read_summary::<PromoteSummaryLite>(&run_dir.join("promotion.json"))
+        .and_then(|summary| summary.promoted_head)
+        .map(|head| !head.trim().is_empty())
         .unwrap_or(false)
 }
 
@@ -502,6 +526,39 @@ fn run_has_valid_meta(run_dir: &Path) -> bool {
         return false;
     };
     serde_json::from_slice::<run::RunMeta>(&bytes).is_ok()
+}
+
+fn terminal_run_reason(run_dir: &Path) -> Option<String> {
+    let promotion = read_summary::<PromoteSummaryLite>(&run_dir.join("promotion.json"));
+    if let Some(summary) = promotion {
+        if summary.ok {
+            return Some("promotion finished with no further action required".to_string());
+        }
+        if summary.failure_category.as_deref() == Some(failure_category::PROMOTION_FAILED) {
+            return Some("promotion failed after verify completed".to_string());
+        }
+    }
+
+    let verify = read_summary::<VerifySummaryLite>(&run_dir.join("verify.json"));
+    if let Some(summary) = verify
+        && !summary.ok
+    {
+        return Some("verify finished with failures".to_string());
+    }
+
+    let apply = read_summary::<ApplySummaryLite>(&run_dir.join("apply.json"));
+    if let Some(summary) = apply
+        && !summary.ok
+    {
+        return Some("apply finished with failures".to_string());
+    }
+
+    None
+}
+
+fn read_summary<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn orphan_run_reason(run_meta_ok: bool, sandbox_meta_ok: bool, sandbox_exists: bool) -> String {

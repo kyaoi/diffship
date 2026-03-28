@@ -263,6 +263,143 @@ fn cleanup_include_runs_keeps_active_unpromoted_run() {
 }
 
 #[test]
+fn cleanup_all_removes_terminal_run_when_promotion_is_skipped() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+    let session_ref_before = git_stdout(root, &["rev-parse", "refs/diffship/sessions/default"]);
+
+    fs::write(
+        run_dir.join("promotion.json"),
+        format!(
+            concat!(
+                "{{",
+                "\"run_id\":\"{}\",",
+                "\"target_branch\":\"main\",",
+                "\"base_commit\":\"{}\",",
+                "\"promoted_head\":null,",
+                "\"commits\":[],",
+                "\"ok\":true,",
+                "\"failure_category\":null,",
+                "\"error\":\"promotion skipped by policy (promotion=none)\",",
+                "\"secrets_hits\":0,",
+                "\"tasks_present\":false,",
+                "\"user_tasks_path\":null",
+                "}}"
+            ),
+            setup.run_id,
+            head(root),
+        ),
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--all"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("terminal_run"))
+        .stdout(predicate::str::contains(
+            "promotion finished with no further action required",
+        ));
+
+    assert!(!run_dir.exists());
+    assert!(!root.join(&setup.sandbox_path).exists());
+    assert_eq!(
+        git_stdout(root, &["rev-parse", "refs/diffship/sessions/default"]),
+        session_ref_before
+    );
+}
+
+#[test]
+fn cleanup_include_runs_removes_terminal_run_when_verify_failed() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+
+    fs::write(
+        run_dir.join("verify.json"),
+        concat!(
+            "{",
+            "\"run_id\":\"run\",",
+            "\"created_at\":\"2026-03-28T00:00:00Z\",",
+            "\"profile\":\"standard\",",
+            "\"ok\":false,",
+            "\"failure_category\":\"verify_failed\",",
+            "\"commands\":[]",
+            "}"
+        ),
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--include-runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("terminal_run"))
+        .stdout(predicate::str::contains("verify finished with failures"));
+
+    assert!(!run_dir.exists());
+    assert!(!root.join(&setup.sandbox_path).exists());
+}
+
+#[test]
+fn cleanup_include_runs_keeps_run_waiting_for_tasks_ack() {
+    let td = init_repo();
+    let root = td.path();
+    let setup = create_session_and_sandbox(root);
+    let run_dir = root.join(".diffship").join("runs").join(&setup.run_id);
+
+    fs::write(
+        run_dir.join("verify.json"),
+        concat!(
+            "{",
+            "\"run_id\":\"run\",",
+            "\"created_at\":\"2026-03-28T00:00:00Z\",",
+            "\"profile\":\"standard\",",
+            "\"ok\":true,",
+            "\"failure_category\":null,",
+            "\"commands\":[]",
+            "}"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        run_dir.join("promotion.json"),
+        concat!(
+            "{",
+            "\"run_id\":\"run\",",
+            "\"created_at\":\"2026-03-28T00:00:01Z\",",
+            "\"target_branch\":\"main\",",
+            "\"base_commit\":\"deadbeef\",",
+            "\"promoted_head\":null,",
+            "\"commits\":[],",
+            "\"ok\":false,",
+            "\"failure_category\":\"promotion_blocked_tasks\",",
+            "\"error\":\"required user tasks must be acknowledged before promotion\",",
+            "\"secrets_hits\":0,",
+            "\"tasks_present\":true,",
+            "\"user_tasks_path\":\".diffship/runs/run/tasks/USER_TASKS.md\"",
+            "}"
+        ),
+    )
+    .unwrap();
+
+    diffship_cmd()
+        .args(["cleanup", "--include-runs"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nothing to do"));
+
+    assert!(run_dir.exists());
+    assert!(root.join(&setup.sandbox_path).exists());
+}
+
+#[test]
 fn cleanup_include_runs_removes_run_when_run_json_is_missing() {
     let td = init_repo();
     let root = td.path();
