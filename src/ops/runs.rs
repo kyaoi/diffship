@@ -34,12 +34,13 @@ pub fn cmd(git_root: &Path, args: RunsArgs) -> Result<(), ExitError> {
         println!("diffship runs --heads-only:");
         for r in runs {
             println!(
-                "- {}  {}  {}  base={}  promoted={}",
+                "- {}  {}  {}  base={}  promoted={}  state={}",
                 r.created_at,
                 r.run_id,
                 r.command,
                 r.effective_base_commit.as_deref().unwrap_or("(none)"),
-                r.promoted_head.as_deref().unwrap_or("(none)")
+                r.promoted_head.as_deref().unwrap_or("(none)"),
+                r.state_label.as_deref().unwrap_or("(unknown)")
             );
         }
         return Ok(());
@@ -56,8 +57,18 @@ pub fn cmd(git_root: &Path, args: RunsArgs) -> Result<(), ExitError> {
                 r.command_phases.join(",")
             )
         };
-        println!("- {}  {}  {}{}", r.created_at, r.run_id, r.command, logs);
+        println!(
+            "- {}  {}  {}  state={}{}",
+            r.created_at,
+            r.run_id,
+            r.command,
+            r.state_label.as_deref().unwrap_or("(unknown)"),
+            logs
+        );
         println!("    run_dir={}", r.run_dir);
+        if let Some(next) = &r.next_command {
+            println!("    next={}", next);
+        }
         if let Some(path) = &r.commands_index_path {
             println!("    commands_json={}", path);
         }

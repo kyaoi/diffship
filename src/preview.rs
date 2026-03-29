@@ -210,6 +210,17 @@ pub fn cmd(args: PreviewArgs) -> Result<(), ExitError> {
     Ok(())
 }
 
+pub(crate) fn load_bundle_summary_value(path: &Path) -> Result<serde_json::Value, ExitError> {
+    let view = load_bundle(path)?;
+    serde_json::to_value(summary_json(path, &view, "explain"))
+        .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render JSON: {e}")))
+}
+
+pub(crate) fn load_bundle_entry_text(path: &Path, entry: &str) -> Result<String, ExitError> {
+    let view = load_bundle(path)?;
+    read_entry_text(&view, entry)
+}
+
 fn print_json<T: Serialize>(value: &T) -> Result<(), ExitError> {
     let s = serde_json::to_string_pretty(value)
         .map_err(|e| ExitError::new(EXIT_GENERAL, format!("failed to render JSON: {e}")))?;

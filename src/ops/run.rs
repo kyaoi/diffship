@@ -1,5 +1,6 @@
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::command_log;
+use crate::ops::run_state;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Reverse;
@@ -30,6 +31,9 @@ pub struct RunSummary {
     pub command_phases: Vec<String>,
     pub commands_index_path: Option<String>,
     pub command_phase_dirs: Vec<String>,
+    pub state_label: Option<String>,
+    pub failure_category: Option<String>,
+    pub next_command: Option<String>,
 }
 
 pub fn runs_dir(git_root: &Path) -> PathBuf {
@@ -103,14 +107,15 @@ pub fn list_runs(git_root: &Path, limit: usize) -> Result<Vec<RunSummary>, ExitE
             continue;
         };
 
-        let (effective_base_commit, promoted_head) = read_head_fields(&ent.path());
-        let (command_count, command_phases) = read_command_fields(&ent.path());
         let run_dir_path = ent.path();
+        let (effective_base_commit, promoted_head) = read_head_fields(&run_dir_path);
+        let (command_count, command_phases) = read_command_fields(&ent.path());
         let commands_index_path = run_dir_path.join("commands.json");
         let command_phase_dirs = command_phases
             .iter()
             .map(|phase| run_dir_path.join(phase).display().to_string())
             .collect::<Vec<_>>();
+        let derived_state = run_state::derive(git_root, &meta.run_id, &run_dir_path);
         summaries.push(RunSummary {
             run_id: meta.run_id,
             created_at: meta.created_at,
@@ -124,6 +129,9 @@ pub fn list_runs(git_root: &Path, limit: usize) -> Result<Vec<RunSummary>, ExitE
                 .is_file()
                 .then(|| commands_index_path.display().to_string()),
             command_phase_dirs,
+            state_label: derived_state.state_label,
+            failure_category: derived_state.failure_category,
+            next_command: derived_state.next_command,
         });
     }
 

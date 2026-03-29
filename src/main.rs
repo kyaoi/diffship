@@ -1,10 +1,17 @@
 mod bundle_compare;
 mod cli;
 mod exit;
+mod explain;
 mod filter;
 mod git;
 mod handoff;
+mod handoff_change_hints;
+mod handoff_common;
 mod handoff_config;
+mod handoff_part_context;
+mod handoff_patch_analysis;
+mod handoff_patch_chunks;
+mod handoff_semantics;
 mod ops;
 mod pathing;
 mod plan;

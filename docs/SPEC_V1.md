@@ -89,6 +89,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
   - untracked
 - **S-SOURCES-002**: staged/unstaged/untracked are always based on the **current HEAD**; committed range uses the selected range.
 - **S-SOURCES-003**: `HANDOFF.md` MUST clearly describe included segments and their bases (e.g., HEAD hash).
+- **S-SOURCES-004**: Project/global config MAY define `[sources]` defaults for committed/staged/unstaged/untracked selection, and `diffship build` plus TUI handoff-plan initialization MUST resolve them with the normal precedence while preserving CLI overrides.
 
 #### 4.2.2 Committed range modes
 
@@ -113,18 +114,21 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-UNTRACKED-003**: In `auto`, text/small files become patch; large text files become raw attachment; binary files follow section 4.2.5 (default excluded unless `--include-binary`).
 - **S-UNTRACKED-004**: In `patch`, untracked should be represented as add-diffs (e.g., `/dev/null → file`) when possible.
 - **S-UNTRACKED-005**: In `raw`, untracked is bundled into `attachments.zip` under a stable path prefix.
+- **S-UNTRACKED-006**: Project/global config MAY define `[untracked].mode` as the default untracked inclusion mode, and `build --plan-out` / `build --plan` replay MUST preserve the resolved mode deterministically even if config changes later.
 
 #### 4.2.5 Binary handling
 
 - **S-BINARY-001**: Binary content is excluded by default.
 - **S-BINARY-002**: Support `--include-binary` with `--binary-mode raw|patch|meta` (default raw).
 - **S-BINARY-003**: When included as raw, binary files are bundled into `attachments.zip`.
+- **S-BINARY-004**: Project/global config MAY define `[diff].include_binary` and `[diff].binary_mode` defaults, and `build --plan-out` / `build --plan` replay MUST preserve the resolved binary policy deterministically even if config changes later.
 
 #### 4.2.6 Split mode
 
 - **S-SPLIT-001**: Support `--split-by auto|file|commit`.
 - **S-SPLIT-002**: `commit` split applies to committed range only; other segments remain file-level units.
 - **S-SPLIT-003**: `auto` chooses commit split if committed range spans multiple commits; otherwise file split.
+- **S-SPLIT-004**: Project/global config MAY define `[split].by` as the default split mode, and `build --plan-out` / `build --plan` replay MUST preserve the resolved split mode deterministically even if config changes later.
 
 #### 4.2.7 Packing profiles
 
@@ -194,6 +198,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 
 - **S-PLAN-001**: `diffship build --plan <file>` MUST replay a serialized handoff plan.
 - **S-PLAN-002**: `diffship build --plan-out <file>` MUST export the resolved handoff plan in a replayable `plan.toml` format, including the selected `profile` name plus resolved numeric limits (but not the full profile catalog).
+- **S-PLAN-003**: Exported `plan.toml` MUST preserve resolved handoff selection and handoff-side safety defaults, and replay MUST NOT silently re-resolve those exported values from newer config files.
 
 ### 4.3 `diffship preview <handoff-bundle>`
 
@@ -226,6 +231,7 @@ Builds a handoff bundle from a committed range and/or uncommitted sources.
 - **S-PBUNDLE-005**: Optional files (`summary.md`, `constraints.yaml`, `checks_request.yaml`, `commit_message.txt`) may be included and should be copied into run logs when present.
 - **S-PBUNDLE-006**: Patch bundles MAY include a `tasks/` directory describing required user actions (see `docs/PATCH_BUNDLE_FORMAT.md`).
 - **S-PBUNDLE-007**: Patch bundles MAY add new repo-relative files in standard `OPS_PATCH_BUNDLE` flow when the patch uses `/dev/null -> b/<path>` with `new file mode 100644|100755`; no separate mode is required.
+- **S-PBUNDLE-008**: `diffship validate-patch <patch-bundle>` MUST validate the same patch-bundle contract and local path-policy restrictions used by ops preflight without mutating the repo or creating a run, and it MUST support both human-readable and `--json` output.
 
 ### 4.5 `diffship apply <patch-bundle>`
 
@@ -289,6 +295,7 @@ Orchestrates apply → verify → (on failure) pack-fix.
 - **S-STATUS-002**: Must support `--json` output.
 - **S-STATUS-003**: `diffship status --heads-only` MUST provide a concise human-readable view centered on repo/session/sandbox/run head information without changing the `--json` schema family.
 - **S-STATUS-004**: `diffship runs --heads-only` MUST provide a concise human-readable run view centered on effective base and promoted head information without changing the `--json` schema family.
+- **S-STATUS-005**: Human-readable `diffship status` / `diffship runs` SHOULD surface a normalized run-state label and a concrete next command when that guidance can be derived from existing run artifacts.
 
 ### 4.10 `diffship session repair`
 
@@ -318,6 +325,14 @@ Inspects the resolved failure-aware strategy for a run without opening the repro
 - **S-STRATEGY-003**: `diffship strategy --json` MUST emit the same machine-readable shape as `strategy.resolved.json`, without adding run-id-specific or path-specific noise to the JSON payload.
 - **S-STRATEGY-004**: The default human-readable output MUST summarize the selected run id, detected failure category, selected/default strategy profiles, deterministic alternatives, and any known `tests_expected` / `preferred_verify_profile` hints.
 
+### 4.14 `diffship explain`
+
+Summarizes the next useful action for a run or a handoff bundle without mutating repo state.
+
+- **S-EXPLAIN-001**: `diffship explain` MUST support `--run-id <id>`, `--latest`, and `--bundle <path>`; when neither `--run-id` nor `--bundle` is provided, it MUST default to the latest run.
+- **S-EXPLAIN-002**: For run targets, the default human-readable output MUST summarize the normalized run state, relevant failure category when available, and the next suggested local command derived from existing run artifacts; `--json` MUST expose the same guidance in machine-readable form without adding run-id-specific noise beyond the selected target metadata.
+- **S-EXPLAIN-003**: For handoff bundle targets, the default human-readable output MUST summarize the canonical reading order and next read target when the structured manifest is present, and `--json` MUST expose the same bundle guidance without reparsing rendered prose.
+
 ---
 
 ## 5. Handoff document requirements
@@ -337,6 +352,7 @@ Inspects the resolved failure-aware strategy for a run without opening the repro
 - **S-SECRETS-001**: Detect likely secrets and emit warnings (paths + reason; do not print secret values).
 - **S-SECRETS-002**: Interactive flows must request confirmation to continue.
 - **S-SECRETS-003**: Support `--yes` to continue non-interactively; support `--fail-on-secrets` for CI.
+- **S-SECRETS-004**: Project/global config MAY define `[secrets].fail_on_secrets` as the default build-side secret policy, and `build --plan-out` / `build --plan` replay MUST preserve the resolved value deterministically even if config changes later.
 
 ---
 
@@ -392,6 +408,7 @@ Inspects the resolved failure-aware strategy for a run without opening the repro
 - **S-RUN-007**: Human-readable `diffship runs` / `diffship status` and their JSON summaries SHOULD surface the run directory plus direct `commands.json` / phase-directory paths when command logs exist, so users can inspect hook/verify output without manually reconstructing paths.
 - **S-RUN-008**: `apply.json`, `verify.json`, and `promotion.json` SHOULD record a stable normalized `failure_category` when a phase fails so later tooling can react without matching raw stderr text.
 - **S-RUN-009**: Verification failure categories SHOULD be derived from deterministic local command facts (for example verify command names/argv) before falling back to a generic verify failure category.
+- **S-RUN-010**: `status --json`, `runs --json`, and `diffship explain --json` SHOULD surface a normalized run-state label and derived next-command hint when that guidance can be inferred from run artifacts without additional repo mutation.
 
 ---
 

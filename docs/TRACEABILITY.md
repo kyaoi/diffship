@@ -54,6 +54,7 @@ Conventions:
 - **S-SOURCES-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-SOURCES-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-SOURCES-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-SOURCES-004** — Tests: `tests/m6_handoff_build.rs`, `tests/m5_tui_cli_parity.rs` — Code: `src/handoff_config.rs`, `src/handoff.rs`, `src/tui/mod.rs` — Status: Implemented
 
 ---
 
@@ -86,6 +87,7 @@ Conventions:
 - **S-UNTRACKED-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-UNTRACKED-004** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-UNTRACKED-005** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-UNTRACKED-006** — Tests: `tests/m6_handoff_build.rs`, `src/handoff_config.rs` — Code: `src/handoff_config.rs`, `src/plan.rs`, `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -94,6 +96,7 @@ Conventions:
 - **S-BINARY-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-BINARY-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-BINARY-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-BINARY-004** — Tests: `tests/m6_handoff_build.rs`, `src/handoff_config.rs` — Code: `src/handoff_config.rs`, `src/plan.rs`, `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -102,6 +105,7 @@ Conventions:
 - **S-SPLIT-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-SPLIT-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-SPLIT-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
+- **S-SPLIT-004** — Tests: `tests/m6_handoff_build.rs`, `src/handoff_config.rs` — Code: `src/handoff_config.rs`, `src/plan.rs`, `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -179,6 +183,7 @@ Conventions:
 
 - **S-PLAN-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
 - **S-PLAN-002** — Tests: `tests/m6_handoff_build.rs`, `src/plan.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-PLAN-003** — Tests: `tests/m6_handoff_build.rs`, `src/plan.rs` — Code: `src/plan.rs`, `src/handoff.rs`, `src/handoff_config.rs`, `src/tui/mod.rs` — Status: Implemented
 
 ---
 
@@ -226,6 +231,7 @@ Conventions:
 - **S-PBUNDLE-005** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
 - **S-PBUNDLE-006** — Tests: `tests/m3_tasks.rs` — Code: `src/ops/patch_bundle.rs`, `src/ops/tasks.rs` — Status: Implemented
 - **S-PBUNDLE-007** — Tests: `tests/m2_apply_verify.rs` — Code: `src/ops/patch_bundle.rs` — Status: Implemented
+- **S-PBUNDLE-008** — Tests: `tests/m8_explain_validate.rs` — Code: `src/ops/validate_patch.rs`, `src/ops/patch_bundle.rs`, `src/cli.rs` — Status: Implemented
 
 ---
 
@@ -288,6 +294,14 @@ Conventions:
 
 ---
 
+## Explain
+
+- **S-EXPLAIN-001** — Tests: `tests/m8_explain_validate.rs` — Code: `src/explain.rs`, `src/cli.rs`, `src/ops/mod.rs` — Status: Implemented
+- **S-EXPLAIN-002** — Tests: `tests/m8_explain_validate.rs` — Code: `src/explain.rs`, `src/ops/run.rs`, `src/ops/strategy.rs` — Status: Implemented
+- **S-EXPLAIN-003** — Tests: `tests/m8_explain_validate.rs` — Code: `src/explain.rs`, `src/preview.rs` — Status: Implemented
+
+---
+
 ## loop
 
 - **S-LOOP-001** — Tests: `tests/m2_promotion_loop.rs` — Code: `src/ops/loop_cmd.rs` — Status: Implemented
@@ -302,6 +316,7 @@ Conventions:
 - **S-STATUS-002** — Tests: `tests/m0_integration.rs` — Code: `src/ops/status.rs` — Status: Implemented
 - **S-STATUS-003** — Tests: `tests/m0_integration.rs`, `tests/m1_worktrees.rs` — Code: `src/ops/status.rs` — Status: Implemented
 - **S-STATUS-004** — Tests: `tests/m0_integration.rs` — Code: `src/ops/runs.rs`, `src/ops/run.rs` — Status: Implemented
+- **S-STATUS-005** — Tests: `tests/m0_integration.rs`, `tests/m8_explain_validate.rs` — Code: `src/ops/status.rs`, `src/ops/runs.rs`, `src/ops/run.rs` — Status: Implemented
 
 ---
 
@@ -330,6 +345,7 @@ Conventions:
 - **S-SECRETS-001** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-SECRETS-002** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs` — Status: Implemented
 - **S-SECRETS-003** — Tests: `tests/m6_handoff_build.rs` — Code: `src/handoff.rs`, `src/cli.rs` — Status: Implemented
+- **S-SECRETS-004** — Tests: `tests/m6_handoff_build.rs`, `src/handoff_config.rs` — Code: `src/handoff_config.rs`, `src/plan.rs`, `src/handoff.rs` — Status: Implemented
 
 ---
 
@@ -386,6 +402,7 @@ Conventions:
 - **S-RUN-007** — Tests: `tests/m0_integration.rs`, `tests/m2_apply_verify.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs` — Status: Implemented
 - **S-RUN-008** — Tests: `tests/m2_apply_verify.rs`, `tests/m2_pack_fix.rs`, `tests/m2_promotion_loop.rs`, `tests/m3_tasks.rs` — Code: `src/ops/apply.rs`, `src/ops/verify.rs`, `src/ops/promote.rs`, `src/ops/failure_category.rs` — Status: Implemented
 - **S-RUN-009** — Tests: `tests/m2_pack_fix.rs`, `src/ops/failure_category.rs` — Code: `src/ops/verify.rs`, `src/ops/failure_category.rs` — Status: Implemented
+- **S-RUN-010** — Tests: `tests/m0_integration.rs`, `tests/m8_explain_validate.rs` — Code: `src/ops/run.rs`, `src/ops/status.rs`, `src/ops/runs.rs`, `src/explain.rs` — Status: Implemented
 
 ---
 

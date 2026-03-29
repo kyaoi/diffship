@@ -15,6 +15,9 @@ pub enum Command {
     /// Start the interactive TUI (status/runs viewer + loop launcher)
     Tui(TuiArgs),
 
+    /// Explain the current state of a run or handoff bundle
+    Explain(ExplainArgs),
+
     /// Build an AI handoff bundle from committed and optional uncommitted diffs
     Build(BuildArgs),
 
@@ -55,6 +58,10 @@ pub enum Command {
     /// Inspect the resolved failure-aware strategy for a run
     Strategy(StrategyArgs),
 
+    /// Validate a patch bundle without applying it
+    #[command(name = "validate-patch")]
+    ValidatePatch(ValidatePatchArgs),
+
     /// Promote a verified sandbox result back to a target branch (default: develop)
     Promote(PromoteArgs),
 
@@ -80,6 +87,25 @@ pub enum Command {
 
 #[derive(Debug, Args, Default)]
 pub struct TuiArgs {}
+
+#[derive(Debug, Args)]
+pub struct ExplainArgs {
+    /// Run id to explain (defaults to the latest run when --bundle is omitted)
+    #[arg(long, conflicts_with_all = ["latest", "bundle"])]
+    pub run_id: Option<String>,
+
+    /// Explain the latest run explicitly
+    #[arg(long, default_value_t = false, conflicts_with_all = ["run_id", "bundle"])]
+    pub latest: bool,
+
+    /// Handoff bundle path (directory or .zip)
+    #[arg(long, conflicts_with_all = ["run_id", "latest"])]
+    pub bundle: Option<String>,
+
+    /// Emit machine-readable JSON
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
 
 #[derive(Debug, Args)]
 pub struct CompareArgs {
@@ -436,6 +462,16 @@ pub struct StrategyArgs {
     pub latest: bool,
 
     /// Emit machine-readable JSON matching strategy.resolved.json
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ValidatePatchArgs {
+    /// Patch bundle path (directory or .zip)
+    pub bundle: String,
+
+    /// Emit machine-readable JSON
     #[arg(long, default_value_t = false)]
     pub json: bool,
 }

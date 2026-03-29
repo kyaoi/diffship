@@ -3173,3 +3173,91 @@ fn build_fail_on_secrets_flag_exits_4() {
         .code(4)
         .stderr(predicates::str::contains("fail-on-secrets"));
 }
+
+#[test]
+fn build_config_defaults_feed_plan_and_plan_replay_stays_stable() {
+    let td = init_repo();
+    let root = td.path();
+
+    fs::write(root.join("base.txt"), "base\n").unwrap();
+    commit_all(root, "base");
+
+    write_project_config(
+        root,
+        r#"
+[sources]
+include_committed = false
+include_staged = true
+include_untracked = true
+
+[split]
+by = "file"
+
+[untracked]
+mode = "patch"
+
+[secrets]
+fail_on_secrets = true
+"#,
+    );
+
+    fs::write(root.join("staged.txt"), "staged\n").unwrap();
+    Command::new("git")
+        .args(["add", "staged.txt"])
+        .current_dir(root)
+        .assert()
+        .success();
+    fs::write(root.join("note.txt"), "note\n").unwrap();
+
+    let bundle_a = root.join("bundle_defaults_a");
+    let plan_a = root.join("defaults_plan.toml");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    cmd.current_dir(root)
+        .args(["build", "--out"])
+        .arg(&bundle_a)
+        .args(["--plan-out"])
+        .arg(&plan_a);
+    cmd.assert().success();
+
+    let handoff_a = fs::read_to_string(bundle_a.join("HANDOFF.md")).unwrap();
+    assert!(handoff_a.contains("committed=`no`, staged=`yes`, unstaged=`no`, untracked=`yes`"));
+    let plan_text = fs::read_to_string(&plan_a).unwrap();
+    assert!(plan_text.contains("include_committed = false"));
+    assert!(plan_text.contains("include_staged = true"));
+    assert!(plan_text.contains("include_untracked = true"));
+    assert!(plan_text.contains("split_by = \"file\""));
+    assert!(plan_text.contains("untracked_mode = \"patch\""));
+    assert!(plan_text.contains("fail_on_secrets = true"));
+
+    write_project_config(
+        root,
+        r#"
+[sources]
+include_committed = true
+include_staged = false
+include_untracked = false
+
+[split]
+by = "commit"
+
+[untracked]
+mode = "raw"
+
+[secrets]
+fail_on_secrets = false
+"#,
+    );
+
+    let bundle_b = root.join("bundle_defaults_b");
+    let mut replay = assert_cmd::cargo::cargo_bin_cmd!("diffship");
+    replay
+        .current_dir(root)
+        .args(["build", "--plan"])
+        .arg(&plan_a)
+        .args(["--out"])
+        .arg(&bundle_b);
+    replay.assert().success();
+
+    let handoff_b = fs::read_to_string(bundle_b.join("HANDOFF.md")).unwrap();
+    assert!(handoff_b.contains("committed=`no`, staged=`yes`, unstaged=`no`, untracked=`yes`"));
+}

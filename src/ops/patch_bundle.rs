@@ -1,6 +1,6 @@
 use crate::exit::{EXIT_FORBIDDEN_PATH, EXIT_GENERAL, ExitError};
 use crate::filter;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -13,7 +13,7 @@ use crate::ops::tasks;
 ///
 /// This module is intentionally strict: validation happens before touching any worktree.
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PatchBundleManifest {
     pub protocol_version: String,
     pub task_id: String,
@@ -47,7 +47,7 @@ pub struct PatchBundleManifest {
     pub commit_policy: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApplyMode {
     GitApply,
@@ -161,6 +161,16 @@ pub struct PatchBundle {
     pub run_bundle_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidatedPatchBundle {
+    pub bundle_path: String,
+    pub bundle_kind: String,
+    pub detected_root: String,
+    pub manifest: PatchBundleManifest,
+    pub patch_files: Vec<String>,
+    pub tasks_user_tasks_present: bool,
+}
+
 /// Load and parse manifest.yaml from a run directory's saved bundle copy.
 pub fn load_manifest_from_run_bundle(run_dir: &Path) -> Result<PatchBundleManifest, ExitError> {
     let p = run_dir.join("bundle").join("manifest.yaml");
@@ -214,6 +224,92 @@ pub fn rewrite_run_manifest_base_commit(
             format!("failed to rewrite bundle manifest {}: {e}", path.display()),
         )
     })
+}
+
+pub fn validate_bundle_path(
+    git_root: &Path,
+    bundle_path: &Path,
+    extra_forbidden_patterns: &[String],
+    editable_diffship_files: &[String],
+) -> Result<ValidatedPatchBundle, ExitError> {
+    let mut extract_root: Option<tempfile::TempDir> = None;
+    let materialized_root = if bundle_path.is_dir() {
+        bundle_path.to_path_buf()
+    } else {
+        let is_zip = bundle_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.eq_ignore_ascii_case("zip"))
+            .unwrap_or(false);
+        if !is_zip {
+            return Err(ExitError::new(
+                EXIT_GENERAL,
+                format!(
+                    "bundle path must be a directory or .zip: {}",
+                    bundle_path.display()
+                ),
+            ));
+        }
+        let tempdir = tempfile::tempdir().map_err(|e| {
+            ExitError::new(
+                EXIT_GENERAL,
+                format!("failed to create temporary extract dir: {e}"),
+            )
+        })?;
+        extract_zip_safely(bundle_path, tempdir.path())?;
+        let path = tempdir.path().to_path_buf();
+        extract_root = Some(tempdir);
+        path
+    };
+
+    let root = detect_bundle_root(&materialized_root)?;
+    let manifest_path = root.join("manifest.yaml");
+    let bytes = fs::read(&manifest_path).map_err(|e| {
+        ExitError::new(
+            EXIT_GENERAL,
+            format!(
+                "missing manifest.yaml (expected at {}): {e}",
+                manifest_path.display()
+            ),
+        )
+    })?;
+    let manifest_text = String::from_utf8_lossy(&bytes);
+    let manifest = parse_manifest_yaml(&manifest_text)?;
+
+    validate_manifest(&manifest)?;
+    validate_touched_files(
+        &manifest.touched_files,
+        extra_forbidden_patterns,
+        editable_diffship_files,
+    )?;
+    tasks::validate_tasks_contract(&manifest, &root)?;
+
+    let patches = collect_patches(&root)?;
+    validate_patches(
+        git_root,
+        &patches,
+        extra_forbidden_patterns,
+        editable_diffship_files,
+    )?;
+
+    let report = ValidatedPatchBundle {
+        bundle_path: bundle_path.display().to_string(),
+        bundle_kind: if bundle_path.is_dir() {
+            "directory".to_string()
+        } else {
+            "zip".to_string()
+        },
+        detected_root: root.display().to_string(),
+        manifest,
+        patch_files: patches
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
+        tasks_user_tasks_present: root.join("tasks").join("USER_TASKS.md").is_file(),
+    };
+
+    drop(extract_root);
+    Ok(report)
 }
 
 pub fn load_and_copy_into_run(

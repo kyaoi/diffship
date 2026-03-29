@@ -32,6 +32,13 @@ diffship build --plan ./diffship_plan.toml --out ./replayed_bundle
 
 3) Send the handoff bundle to AI and receive an AI-produced patch bundle (`patch-bundle.zip`).
 
+Optional: validate the returned patch bundle contract before running ops:
+
+```bash
+diffship validate-patch ./patch-bundle.zip
+diffship validate-patch ./patch-bundle.zip --json
+```
+
 4) Apply+verify+promote in one step:
 
 ```bash
@@ -226,6 +233,15 @@ diffship runs
 ```
 
 The human-readable `runs` and `status` outputs now show `commands=<n>` and phase names when a run recorded external command logs.
+They also surface a derived `state=...` label and, when possible, a concrete `next=diffship ...` follow-up command.
+
+Inspect that guidance directly for either a run or a handoff bundle:
+
+```bash
+diffship explain --latest
+diffship explain --run-id <run-id> --json
+diffship explain --bundle ./diffship_YYYY-MM-DD_HHMM_<head7>
+```
 
 ### Verify a specific run again
 

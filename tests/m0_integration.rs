@@ -189,13 +189,21 @@ fn m0_init_status_runs_happy_path() {
     assert!(v.get("repo_head").is_some());
     assert!(v.get("lock").is_some());
     assert!(v.get("recent_runs").is_some());
+    assert!(
+        v.get("recent_runs")
+            .and_then(|x| x.as_array())
+            .and_then(|runs| runs.first())
+            .and_then(|run| run.get("state_label"))
+            .is_some()
+    );
 
     diffship_cmd()
         .args(["status", "--heads-only"])
         .current_dir(root)
         .assert()
         .success()
-        .stdout(predicate::str::contains("repo_head"));
+        .stdout(predicate::str::contains("repo_head"))
+        .stdout(predicate::str::contains("state="));
 
     // runs --json
     let out = diffship_cmd()
@@ -220,13 +228,15 @@ fn m0_init_status_runs_happy_path() {
             .and_then(|x| x.as_str())
             .is_some_and(|x| x.contains("/.diffship/runs/"))
     );
+    assert!(runs[0].get("state_label").is_some());
 
     diffship_cmd()
         .args(["runs", "--heads-only"])
         .current_dir(root)
         .assert()
         .success()
-        .stdout(predicate::str::contains("base="));
+        .stdout(predicate::str::contains("base="))
+        .stdout(predicate::str::contains("state="));
 
     diffship_cmd()
         .args(["runs"])

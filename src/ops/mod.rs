@@ -12,12 +12,14 @@ mod patch_bundle;
 mod post_apply;
 mod promote;
 pub(crate) mod run;
+pub(crate) mod run_state;
 mod runs;
 mod secrets;
 pub(crate) mod session;
 mod status;
 pub(crate) mod strategy;
 pub(crate) mod tasks;
+mod validate_patch;
 mod verify;
 pub(crate) mod worktree;
 
@@ -52,6 +54,7 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
             }
             crate::tui::run(&git_root)
         }
+        Command::Explain(args) => crate::explain::cmd(&git_root, args),
         Command::Preview(args) => crate::preview::cmd(args),
         Command::Compare(args) => crate::bundle_compare::cmd(args),
         Command::Build(args) => crate::handoff::cmd(&git_root, args),
@@ -67,6 +70,7 @@ pub fn dispatch(cli: Cli) -> Result<(), ExitError> {
         Command::Verify(args) => verify::cmd(&git_root, args),
         Command::PackFix(args) => pack_fix::cmd(&git_root, args),
         Command::Strategy(args) => strategy::cmd(&git_root, args),
+        Command::ValidatePatch(args) => validate_patch::cmd(&git_root, args),
         Command::Promote(args) => promote::cmd(&git_root, args),
         Command::Loop(args) => loop_cmd::cmd(&git_root, args),
         Command::__TestHoldLock(args) => lock::test_hold_lock(&git_root, args),

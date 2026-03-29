@@ -2,7 +2,23 @@ use crate::cli::BuildArgs;
 use crate::exit::{EXIT_GENERAL, EXIT_PACKING_LIMITS, EXIT_SECRETS_WARNING, ExitError};
 use crate::filter::PathFilter;
 use crate::git;
+use crate::handoff_change_hints;
+use crate::handoff_common::{
+    handoff_context_xml_path, nonempty, part_context_path, row_part_name, sum_opt,
+};
 use crate::handoff_config::{DEFAULT_PROFILE_NAME, HandoffConfig};
+use crate::handoff_part_context::{self, CategoryCounts as PartContextCategorySummary};
+use crate::handoff_patch_analysis::{
+    collect_changed_patch_lines, extract_hunk_headers, extract_import_like_refs,
+    extract_symbol_like_names, is_api_surface_like_line, is_signature_change_like_line,
+};
+use crate::handoff_patch_chunks::{collect_patch_chunks, merge_unique_sorted, patch_chunk_path};
+use crate::handoff_semantics::{
+    infer_related_config_candidates, infer_related_doc_candidates, infer_related_source_candidates,
+    infer_related_test_candidates, is_build_graph_path, is_ci_or_tooling_path,
+    is_dependency_policy_path, is_generated_like_path, is_lockfile_path, is_repo_rule_path,
+    is_test_infrastructure_path, is_test_like_path, language_label,
+};
 use crate::ops::config as ops_config;
 use crate::pathing::resolve_user_path;
 use crate::plan::HandoffPlan;
@@ -1163,9 +1179,7 @@ fn resolve_build_args(
     effective.zip_only = args.zip_only;
     effective.yes = args.yes;
     effective.fail_on_secrets = args.fail_on_secrets;
-    let cfg = HandoffConfig::load(git_root)?;
-    let (resolved, _) = cfg.resolve_build_args(effective)?;
-    Ok(resolved)
+    Ok(effective)
 }
 
 fn build_args_conflict_with_plan(args: &BuildArgs) -> bool {
@@ -3038,16 +3052,6 @@ fn append_patch_chunk(out: &mut String, chunk: &str, keep: &BTreeSet<String>) {
         out.push_str(chunk.trim_end());
         out.push('\n');
     }
-}
-
-fn patch_chunk_path(chunk: &str) -> Option<String> {
-    let first = chunk.lines().next()?;
-    let rest = first.strip_prefix("diff --git ")?;
-    let mut parts = rest.split_whitespace();
-    let a = parts.next()?.strip_prefix("a/").unwrap_or("");
-    let b = parts.next()?.strip_prefix("b/").unwrap_or("");
-    let path = if b.is_empty() { a } else { b };
-    Some(path.to_string())
 }
 
 fn contains_private_key_block(s: &str) -> bool {
@@ -5914,7 +5918,7 @@ fn render_handoff_manifest(inp: &HandoffManifestInputs<'_>) -> Result<String, Ex
                 ins: row.ins,
                 del: row.del,
                 bytes: row.bytes,
-                part: row_part_name(row),
+                part: row_part_name(&row.part),
                 note: nonempty(row.note.trim()),
                 change_hints: build_manifest_file_change_hints(row),
                 semantic: file_semantic_for_row(inp.file_semantics, row),
@@ -6120,19 +6124,25 @@ fn render_handoff_context_xml(inp: &HandoffManifestInputs<'_>) -> String {
         ));
         s.push_str(&format!(
             "      <title>{}</title>\n",
-            xml_escape(&part_context_title(part, &file_paths, &category_counts))
+            xml_escape(&handoff_part_context::title(
+                &part.name,
+                &file_paths,
+                part_context_category_summary(&category_counts),
+            ))
         ));
         s.push_str(&format!(
             "      <summary>{}</summary>\n",
-            xml_escape(&part_context_summary(
+            xml_escape(&handoff_part_context::summary(
                 &part.segments,
-                &category_counts,
+                part_context_category_summary(&category_counts),
                 file_paths.len()
             ))
         ));
         s.push_str(&format!(
             "      <intent>{}</intent>\n",
-            xml_escape(&part_context_intent(&category_counts))
+            xml_escape(&handoff_part_context::intent(
+                part_context_category_summary(&category_counts),
+            ))
         ));
         s.push_str("      <segments>\n");
         for segment in &part.segments {
@@ -6214,8 +6224,7 @@ fn range_mode_label(v: RangeMode) -> &'static str {
 }
 
 fn row_has_reduced_context(row: &FileRow) -> bool {
-    row.note
-        .contains("packing fallback reduced diff context to U")
+    handoff_change_hints::note_has_reduced_context(&row.note)
 }
 
 fn reduced_context_paths(rows: &[FileRow]) -> Vec<String> {
@@ -6225,21 +6234,6 @@ fn reduced_context_paths(rows: &[FileRow]) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
-}
-
-fn row_part_name(row: &FileRow) -> Option<String> {
-    match row.part.trim() {
-        "" | "-" => None,
-        other => Some(other.to_string()),
-    }
-}
-
-fn nonempty(s: &str) -> Option<String> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s.to_string())
-    }
 }
 
 fn sorted_manifest_attachments(entries: &[AttachmentEntry]) -> Vec<ManifestAttachment> {
@@ -6335,9 +6329,17 @@ fn render_part_contexts(
             task_shape_labels: task_group.manifest.task_shape_labels.clone(),
             task_edit_targets: task_group.manifest.edit_targets.clone(),
             task_context_only_files: task_group.manifest.context_only_files.clone(),
-            title: part_context_title(part, &file_paths, &category_counts),
-            summary: part_context_summary(&part.segments, &category_counts, file_paths.len()),
-            intent: part_context_intent(&category_counts),
+            title: handoff_part_context::title(
+                &part.name,
+                &file_paths,
+                part_context_category_summary(&category_counts),
+            ),
+            summary: handoff_part_context::summary(
+                &part.segments,
+                part_context_category_summary(&category_counts),
+                file_paths.len(),
+            ),
+            intent: handoff_part_context::intent(part_context_category_summary(&category_counts)),
             intent_labels: build_part_intent_labels(&part_rows, file_semantics),
             review_labels: build_review_labels_for_rows(&part_rows, file_semantics),
             segments: part.segments.clone(),
@@ -6351,7 +6353,7 @@ fn render_part_contexts(
                     ins: row.ins,
                     del: row.del,
                     bytes: row.bytes,
-                    part: row_part_name(row),
+                    part: row_part_name(&row.part),
                     note: nonempty(row.note.trim()),
                     change_hints: build_manifest_file_change_hints(row),
                     semantic: file_semantic_for_row(file_semantics, row),
@@ -6385,8 +6387,8 @@ fn render_part_contexts(
                 bundle_has_exclusions: !exclusions.is_empty(),
                 bundle_has_secret_warnings: !secret_hits.is_empty(),
             },
-            acceptance_criteria: part_context_acceptance_criteria(
-                part,
+            acceptance_criteria: handoff_part_context::acceptance_criteria(
+                &part.name,
                 &file_paths,
                 !reduced_context_paths.is_empty(),
             ),
@@ -6402,15 +6404,6 @@ fn render_part_contexts(
     Ok(rendered)
 }
 
-fn part_context_path(part_name: &str) -> String {
-    let stem = part_name.strip_suffix(".patch").unwrap_or(part_name);
-    format!("parts/{stem}.context.json")
-}
-
-fn handoff_context_xml_path() -> &'static str {
-    "handoff.context.xml"
-}
-
 fn file_semantic_for_row(
     semantics: &BTreeMap<String, ManifestFileSemantic>,
     row: &FileRow,
@@ -6421,16 +6414,15 @@ fn file_semantic_for_row(
 }
 
 fn build_manifest_file_change_hints(row: &FileRow) -> ManifestFileChangeHints {
-    let previous_path = row.note.trim().strip_prefix("from ").map(ToOwned::to_owned);
+    let derived = handoff_change_hints::derive(&row.status, &row.note, &row.part);
     ManifestFileChangeHints {
-        new_file: row.status == "A" && previous_path.is_none(),
-        deleted_file: row.status == "D",
-        rename_or_copy: previous_path.is_some(),
-        previous_path,
-        stored_as_attachment: row.part == "attachments.zip"
-            || row.note.contains("stored in attachments.zip"),
-        excluded: row.part == "-" || row.note.contains("see excluded.md"),
-        reduced_context: row_has_reduced_context(row),
+        new_file: derived.new_file,
+        deleted_file: derived.deleted_file,
+        rename_or_copy: derived.rename_or_copy,
+        previous_path: derived.previous_path,
+        stored_as_attachment: derived.stored_as_attachment,
+        excluded: derived.excluded,
+        reduced_context: derived.reduced_context,
     }
 }
 
@@ -6542,391 +6534,6 @@ fn build_manifest_file_semantic(
     }
 }
 
-fn language_label(path: &str) -> &'static str {
-    let file_name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    match Path::new(path).extension().and_then(|ext| ext.to_str()) {
-        Some("rs") => "rust",
-        Some("py") => "python",
-        Some("ts") => "typescript",
-        Some("tsx") => "tsx",
-        Some("js") => "javascript",
-        Some("jsx") => "jsx",
-        Some("go") => "go",
-        Some("java") => "java",
-        Some("kt") => "kotlin",
-        Some("swift") => "swift",
-        Some("c") | Some("h") => "c",
-        Some("cc") | Some("cpp") | Some("cxx") | Some("hpp") | Some("hh") => "cpp",
-        Some("json") => "json",
-        Some("yaml") | Some("yml") => "yaml",
-        Some("toml") => "toml",
-        Some("md") => "markdown",
-        Some("sh") | Some("bash") | Some("zsh") => "shell",
-        _ if matches!(file_name, "Makefile" | "justfile" | "Justfile") => "build-script",
-        _ => "unknown",
-    }
-}
-
-fn is_generated_like_path(path: &str) -> bool {
-    let file_name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    path.starts_with("dist/")
-        || path.starts_with("build/")
-        || path.starts_with("target/")
-        || path.starts_with("coverage/")
-        || file_name.contains(".generated.")
-        || file_name.contains("_generated.")
-        || file_name.ends_with(".min.js")
-}
-
-fn is_lockfile_path(path: &str) -> bool {
-    matches!(
-        Path::new(path).file_name().and_then(|name| name.to_str()),
-        Some(
-            "Cargo.lock"
-                | "package-lock.json"
-                | "pnpm-lock.yaml"
-                | "yarn.lock"
-                | "poetry.lock"
-                | "Gemfile.lock"
-                | "composer.lock"
-                | "Podfile.lock"
-        )
-    )
-}
-
-fn is_ci_or_tooling_path(path: &str) -> bool {
-    let file_name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    path.starts_with(".github/")
-        || path.starts_with(".gitlab/")
-        || matches!(
-            file_name,
-            "Makefile" | "justfile" | "Justfile" | "mise.toml" | "lefthook.yml" | "lefthook.yaml"
-        )
-}
-
-fn is_repo_rule_path(path: &str) -> bool {
-    matches!(
-        path,
-        "AGENTS.md"
-            | "docs/AI_WORKFLOW.md"
-            | "docs/PROJECT_KIT_TEMPLATE.md"
-            | "docs/HANDOFF_TEMPLATE.md"
-            | ".diffship/PROJECT_RULES.md"
-            | ".diffship/AI_GUIDE.md"
-            | ".diffship/PROJECT_KIT.md"
-    )
-}
-
-fn is_dependency_policy_path(path: &str) -> bool {
-    matches!(
-        Path::new(path).file_name().and_then(|name| name.to_str()),
-        Some(
-            "Cargo.toml"
-                | "package.json"
-                | "pyproject.toml"
-                | "requirements.txt"
-                | "requirements-dev.txt"
-                | "constraints.txt"
-                | "Gemfile"
-                | "go.mod"
-                | "go.sum"
-                | "Package.swift"
-        )
-    ) || is_lockfile_path(path)
-}
-
-fn is_build_graph_path(path: &str) -> bool {
-    matches!(
-        Path::new(path).file_name().and_then(|name| name.to_str()),
-        Some(
-            "Cargo.toml"
-                | "package.json"
-                | "pyproject.toml"
-                | "tsconfig.json"
-                | "Makefile"
-                | "justfile"
-                | "Justfile"
-                | "CMakeLists.txt"
-                | "build.gradle"
-                | "build.gradle.kts"
-                | "settings.gradle"
-                | "settings.gradle.kts"
-                | "Package.swift"
-                | "Dockerfile"
-        )
-    ) || path.ends_with("docker-compose.yml")
-}
-
-fn is_test_infrastructure_path(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.contains("/fixtures/")
-        || lower.contains("/fixture/")
-        || lower.contains("/mocks/")
-        || lower.contains("/mock/")
-        || lower.contains("/snapshots/")
-        || lower.contains("/snapshot/")
-        || lower.contains("/harness/")
-        || lower.starts_with("tests/fixtures/")
-        || lower.starts_with("test/fixtures/")
-}
-
-fn infer_related_test_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
-    if is_test_like_path(path) {
-        return Vec::new();
-    }
-
-    let p = Path::new(path);
-    let file_name = p
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let stem = p
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let ext = p
-        .extension()
-        .and_then(|name| name.to_str())
-        .map(|ext| format!(".{ext}"))
-        .unwrap_or_default();
-    let rel_no_src = path.strip_prefix("src/").unwrap_or(path);
-    let parent = Path::new(rel_no_src)
-        .parent()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    let mut explicit = BTreeSet::new();
-    for root in ["tests", "test", "__tests__"] {
-        explicit.insert(join_rel(root, rel_no_src));
-        if !file_name.is_empty() {
-            explicit.insert(join_rel(root, file_name));
-        }
-        if !stem.is_empty() {
-            for candidate in [
-                format!("{stem}_test{ext}"),
-                format!("test_{stem}{ext}"),
-                format!("{stem}.test{ext}"),
-                format!("{stem}.spec{ext}"),
-            ] {
-                let rel = if parent.is_empty() {
-                    candidate
-                } else {
-                    format!("{parent}/{candidate}")
-                };
-                explicit.insert(join_rel(root, &rel));
-            }
-        }
-    }
-
-    explicit
-        .into_iter()
-        .filter(|candidate| candidate_paths.contains(candidate) && is_test_like_path(candidate))
-        .collect()
-}
-
-fn infer_related_source_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
-    if !is_test_like_path(path) {
-        return Vec::new();
-    }
-
-    let stripped = strip_test_root(path).unwrap_or(path);
-    let normalized = normalize_test_path_to_source_like(stripped);
-    let file_name = Path::new(&normalized)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_string();
-
-    let mut explicit = BTreeSet::new();
-    explicit.insert(join_rel("src", &normalized));
-    if !file_name.is_empty() {
-        explicit.insert(join_rel("src", &file_name));
-    }
-
-    explicit
-        .into_iter()
-        .filter(|candidate| candidate_paths.contains(candidate) && candidate.starts_with("src/"))
-        .collect()
-}
-
-fn infer_related_doc_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
-    if path.starts_with("docs/") || path == "README.md" {
-        return Vec::new();
-    }
-
-    let normalized = normalize_path_for_related_docs(path);
-    let p = Path::new(&normalized);
-    let stem = p
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let parent = p
-        .parent()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    let mut explicit = BTreeSet::new();
-    explicit.insert("README.md".to_string());
-    explicit.insert(join_rel("docs", &replace_extension(&normalized, "md")));
-    if !stem.is_empty() {
-        explicit.insert(join_rel("docs", &format!("{stem}.md")));
-        if !parent.is_empty() {
-            explicit.insert(join_rel("docs", &format!("{parent}/{stem}.md")));
-        }
-    }
-
-    explicit
-        .into_iter()
-        .filter(|candidate| {
-            candidate_paths.contains(candidate)
-                && (candidate == "README.md" || candidate.starts_with("docs/"))
-        })
-        .collect()
-}
-
-fn infer_related_config_candidates(path: &str, candidate_paths: &BTreeSet<String>) -> Vec<String> {
-    let mut explicit = BTreeSet::new();
-    if candidate_paths.contains("Cargo.toml") && matches!(language_label(path), "rust") {
-        explicit.insert("Cargo.toml".to_string());
-    }
-    if matches!(
-        language_label(path),
-        "typescript" | "tsx" | "javascript" | "jsx"
-    ) {
-        for candidate in ["package.json", "tsconfig.json"] {
-            if candidate_paths.contains(candidate) {
-                explicit.insert(candidate.to_string());
-            }
-        }
-    }
-    if matches!(language_label(path), "python") {
-        for candidate in ["pyproject.toml", "requirements.txt"] {
-            if candidate_paths.contains(candidate) {
-                explicit.insert(candidate.to_string());
-            }
-        }
-    }
-    if matches!(language_label(path), "go") && candidate_paths.contains("go.mod") {
-        explicit.insert("go.mod".to_string());
-    }
-    if matches!(language_label(path), "java" | "kotlin") {
-        for candidate in [
-            "build.gradle",
-            "settings.gradle",
-            "gradle.properties",
-            "pom.xml",
-        ] {
-            if candidate_paths.contains(candidate) {
-                explicit.insert(candidate.to_string());
-            }
-        }
-    }
-    if matches!(language_label(path), "swift") && candidate_paths.contains("Package.swift") {
-        explicit.insert("Package.swift".to_string());
-    }
-    if path.starts_with(".github/") {
-        for candidate in ["README.md", "docs/ci.md"] {
-            if candidate_paths.contains(candidate) {
-                explicit.insert(candidate.to_string());
-            }
-        }
-    }
-    explicit.into_iter().collect()
-}
-
-fn normalize_path_for_related_docs(path: &str) -> String {
-    if is_test_like_path(path) {
-        normalize_test_path_to_source_like(strip_test_root(path).unwrap_or(path))
-    } else {
-        path.strip_prefix("src/").unwrap_or(path).to_string()
-    }
-}
-
-fn strip_test_root(path: &str) -> Option<&str> {
-    for root in ["tests/", "test/", "__tests__/"] {
-        if let Some(stripped) = path.strip_prefix(root) {
-            return Some(stripped);
-        }
-    }
-    None
-}
-
-fn normalize_test_path_to_source_like(path: &str) -> String {
-    let p = Path::new(path);
-    let parent = p
-        .parent()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let file_name = p
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let normalized = normalize_test_file_name(file_name);
-    if parent.is_empty() {
-        normalized
-    } else {
-        format!("{parent}/{normalized}")
-    }
-}
-
-fn normalize_test_file_name(file_name: &str) -> String {
-    let name = file_name.strip_prefix("test_").unwrap_or(file_name);
-    for needle in ["_test.", ".test.", "_spec.", ".spec."] {
-        if let Some((prefix, suffix)) = name.split_once(needle) {
-            return format!("{prefix}.{suffix}");
-        }
-    }
-    name.to_string()
-}
-
-fn replace_extension(path: &str, new_ext: &str) -> String {
-    let p = Path::new(path);
-    let stem = p.file_stem().and_then(|name| name.to_str()).unwrap_or(path);
-    let parent = p
-        .parent()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let file_name = format!("{stem}.{new_ext}");
-    if parent.is_empty() {
-        file_name
-    } else {
-        format!("{parent}/{file_name}")
-    }
-}
-
-fn join_rel(root: &str, rel: &str) -> String {
-    let trimmed = rel.trim_start_matches('/');
-    if trimmed.is_empty() {
-        root.to_string()
-    } else {
-        format!("{root}/{trimmed}")
-    }
-}
-
-fn is_test_like_path(path: &str) -> bool {
-    let file_name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    path.starts_with("tests/")
-        || path.starts_with("test/")
-        || path.starts_with("__tests__/")
-        || file_name.starts_with("test_")
-        || file_name.contains("_test.")
-        || file_name.contains(".test.")
-        || file_name.contains("_spec.")
-        || file_name.contains(".spec.")
-}
-
 fn build_part_scoped_context(
     part: &PartOutput,
     part_rows: &[&FileRow],
@@ -7023,220 +6630,6 @@ fn unique_part_paths(part_rows: &[&FileRow]) -> Vec<String> {
         .collect()
 }
 
-fn collect_patch_chunks(patch: &str) -> Vec<(String, String)> {
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-
-    for line in patch.lines() {
-        if line.starts_with("diff --git ") {
-            if !current.is_empty() {
-                if let Some(path) = patch_chunk_path(&current) {
-                    chunks.push((path, current.clone()));
-                }
-                current.clear();
-            }
-            current.push_str(line);
-            continue;
-        }
-
-        if current.is_empty() {
-            continue;
-        }
-        current.push('\n');
-        current.push_str(line);
-    }
-
-    if !current.is_empty()
-        && let Some(path) = patch_chunk_path(&current)
-    {
-        chunks.push((path, current));
-    }
-
-    chunks
-}
-
-fn merge_unique_sorted(existing: &[String], incoming: &[String]) -> Vec<String> {
-    existing
-        .iter()
-        .chain(incoming.iter())
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn extract_hunk_headers(patch: &str) -> Vec<String> {
-    patch
-        .lines()
-        .filter_map(|line| {
-            let rest = line.strip_prefix("@@ ")?;
-            let (_, suffix) = rest.split_once(" @@")?;
-            let suffix = suffix.trim();
-            if suffix.is_empty() {
-                None
-            } else {
-                Some(suffix.to_string())
-            }
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn collect_changed_patch_lines(patch: &str) -> Vec<String> {
-    patch
-        .lines()
-        .filter(|line| {
-            (line.starts_with('+') || line.starts_with('-'))
-                && !line.starts_with("+++")
-                && !line.starts_with("---")
-        })
-        .map(|line| line[1..].trim().to_string())
-        .filter(|line| !line.is_empty())
-        .collect()
-}
-
-fn extract_symbol_like_names(hunk_headers: &[String], changed_lines: &[String]) -> Vec<String> {
-    hunk_headers
-        .iter()
-        .chain(changed_lines.iter())
-        .flat_map(|line| extract_symbol_like_names_from_line(line))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn extract_symbol_like_names_from_line(line: &str) -> Vec<String> {
-    let trimmed = line.trim();
-    let mut symbols = BTreeSet::new();
-
-    for keyword in [
-        "fn ",
-        "struct ",
-        "enum ",
-        "trait ",
-        "impl ",
-        "mod ",
-        "function ",
-        "class ",
-        "interface ",
-        "type ",
-        "def ",
-        "func ",
-    ] {
-        if let Some(name) = identifier_after_keyword(trimmed, keyword) {
-            symbols.insert(name);
-        }
-    }
-
-    if trimmed.contains("=>")
-        && let Some(name) = identifier_after_keyword(trimmed, "const ")
-            .or_else(|| identifier_after_keyword(trimmed, "let "))
-            .or_else(|| identifier_after_keyword(trimmed, "var "))
-    {
-        symbols.insert(name);
-    }
-
-    symbols.into_iter().collect()
-}
-
-fn identifier_after_keyword(line: &str, keyword: &str) -> Option<String> {
-    let idx = line.find(keyword)?;
-    let rest = &line[idx + keyword.len()..];
-    let candidate = rest
-        .trim_start_matches(|c: char| c.is_whitespace() || c == '(' || c == '<')
-        .chars()
-        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':' || *c == '.')
-        .collect::<String>();
-    normalize_symbol_candidate(&candidate)
-}
-
-fn normalize_symbol_candidate(candidate: &str) -> Option<String> {
-    let trimmed =
-        candidate.trim_matches(|c: char| c == ':' || c == '.' || c == '<' || c == '>' || c == '(');
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed == "if" || trimmed == "for" || trimmed == "while" || trimmed == "match" {
-        return None;
-    }
-    Some(trimmed.to_string())
-}
-
-fn extract_import_like_refs(changed_lines: &[String]) -> Vec<String> {
-    changed_lines
-        .iter()
-        .filter_map(|line| normalize_import_like_ref(line))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn normalize_import_like_ref(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    let is_import_like = trimmed.starts_with("use ")
-        || trimmed.starts_with("import ")
-        || trimmed.starts_with("from ")
-        || trimmed.starts_with("mod ")
-        || trimmed.starts_with("#include")
-        || trimmed.contains("require(");
-    if !is_import_like {
-        return None;
-    }
-
-    Some(
-        trimmed
-            .trim_end_matches(';')
-            .trim_end_matches('{')
-            .trim()
-            .to_string(),
-    )
-}
-
-fn is_signature_change_like_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    [
-        "pub fn ",
-        "fn ",
-        "pub struct ",
-        "struct ",
-        "pub enum ",
-        "enum ",
-        "pub trait ",
-        "trait ",
-        "impl ",
-        "function ",
-        "export function ",
-        "class ",
-        "export class ",
-        "interface ",
-        "type ",
-        "export type ",
-        "def ",
-        "async def ",
-        "func ",
-    ]
-    .iter()
-    .any(|needle| trimmed.starts_with(needle))
-}
-
-fn is_api_surface_like_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    if trimmed.starts_with("pub ")
-        || trimmed.starts_with("export ")
-        || trimmed.starts_with("interface ")
-        || trimmed.starts_with("type ")
-        || trimmed.starts_with("class ")
-        || trimmed.starts_with("trait ")
-    {
-        return true;
-    }
-    trimmed.starts_with("def ") && !trimmed.starts_with("def _")
-}
-
 fn count_part_categories(rows: &[&FileRow]) -> PartContextCategoryCounts {
     let mut counts = PartContextCategoryCounts::default();
     let unique_paths = rows
@@ -7253,6 +6646,16 @@ fn count_part_categories(rows: &[&FileRow]) -> PartContextCategoryCounts {
         }
     }
     counts
+}
+
+fn part_context_category_summary(counts: &PartContextCategoryCounts) -> PartContextCategorySummary {
+    PartContextCategorySummary {
+        docs: counts.docs,
+        config: counts.config,
+        source: counts.source,
+        tests: counts.tests,
+        other: counts.other,
+    }
 }
 
 fn count_row_labels<'a, I, F>(rows: I, mut key_fn: F) -> BTreeMap<String, usize>
@@ -7403,136 +6806,6 @@ fn build_review_labels_for_rows(
     labels.into_iter().collect()
 }
 
-fn part_context_title(
-    part: &PartOutput,
-    file_paths: &[String],
-    category_counts: &PartContextCategoryCounts,
-) -> String {
-    if let Some(path) = file_paths.first()
-        && file_paths.len() == 1
-    {
-        return format!("{}: {}", part.name, path);
-    }
-    if file_paths.is_empty() {
-        format!("{}: no file changes", part.name)
-    } else {
-        format!(
-            "{}: {} files in {}",
-            part.name,
-            file_paths.len(),
-            primary_category_label(category_counts)
-        )
-    }
-}
-
-fn part_context_summary(
-    segments: &[String],
-    category_counts: &PartContextCategoryCounts,
-    file_count: usize,
-) -> String {
-    if file_count == 0 {
-        return "This part contains no file-level changes.".to_string();
-    }
-    format!(
-        "This part updates {} across {} segment(s): {}.",
-        summarize_category_counts(category_counts),
-        segments.len(),
-        segments.join(", ")
-    )
-}
-
-fn part_context_intent(category_counts: &PartContextCategoryCounts) -> String {
-    if category_total(category_counts) == 0 {
-        "Primary area: no file-level changes were recorded for this part.".to_string()
-    } else {
-        format!(
-            "Primary area: {} changes.",
-            primary_category_label(category_counts)
-        )
-    }
-}
-
-fn category_total(counts: &PartContextCategoryCounts) -> usize {
-    counts.docs + counts.config + counts.source + counts.tests + counts.other
-}
-
-fn primary_category_label(counts: &PartContextCategoryCounts) -> &'static str {
-    [
-        ("documentation", counts.docs),
-        ("config/tooling", counts.config),
-        ("source", counts.source),
-        ("tests", counts.tests),
-        ("other", counts.other),
-    ]
-    .into_iter()
-    .max_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(b.0)))
-    .map(|(label, _)| label)
-    .unwrap_or("other")
-}
-
-fn summarize_category_counts(counts: &PartContextCategoryCounts) -> String {
-    let mut items = Vec::new();
-    for (label, n) in [
-        ("documentation file", counts.docs),
-        ("config/tooling file", counts.config),
-        ("source file", counts.source),
-        ("test file", counts.tests),
-        ("other file", counts.other),
-    ] {
-        if n == 0 {
-            continue;
-        }
-        let suffix = if n == 1 { "" } else { "s" };
-        items.push(format!("{n} {label}{suffix}"));
-    }
-    if items.is_empty() {
-        "0 files".to_string()
-    } else {
-        items.join(", ")
-    }
-}
-
-fn part_context_acceptance_criteria(
-    part: &PartOutput,
-    file_paths: &[String],
-    reduced_context: bool,
-) -> Vec<String> {
-    let mut items = vec![
-        format!(
-            "Apply or review `parts/{}` as the canonical change payload for this part.",
-            part.name
-        ),
-        "Keep edits scoped to the listed files unless a new handoff bundle expands the scope."
-            .to_string(),
-    ];
-    if file_paths.is_empty() {
-        items.push(
-            "Confirm whether this no-op part can be ignored or removed in a future build."
-                .to_string(),
-        );
-    }
-    if reduced_context {
-        items.push(
-            "Reduced diff context is present; review affected paths carefully before editing further."
-                .to_string(),
-        );
-    }
-    items
-}
-
-fn sum_opt<I>(vals: I) -> Option<u64>
-where
-    I: IntoIterator<Item = Option<u64>>,
-{
-    let mut seen = false;
-    let mut sum = 0_u64;
-    for v in vals.into_iter().flatten() {
-        seen = true;
-        sum += v;
-    }
-    if seen { Some(sum) } else { None }
-}
-
 fn write_zip_from_dir(src_dir: &Path, zip_path: &Path) -> Result<(), ExitError> {
     if let Some(parent) = zip_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
@@ -7592,7 +6865,6 @@ fn add_dir_recursive<W: Write + io::Seek>(
 mod tests {
     use super::*;
     use std::fs;
-    use std::iter::FromIterator;
     use time::{Date, Month, PrimitiveDateTime, Time, UtcOffset};
 
     #[test]
@@ -7634,50 +6906,6 @@ mod tests {
         let resolved = default_output_dir_for_timestamp(cwd, "2026-03-07_1118", "abcdef1");
 
         assert_eq!(resolved, cwd.join("diffship_2026-03-07_1118_abcdef1_3"));
-    }
-
-    #[test]
-    fn language_label_classifies_common_extensions() {
-        assert_eq!(language_label("src/lib.rs"), "rust");
-        assert_eq!(language_label("web/app.ts"), "typescript");
-        assert_eq!(language_label("web/App.tsx"), "tsx");
-        assert_eq!(language_label("scripts/build.sh"), "shell");
-        assert_eq!(language_label("justfile"), "build-script");
-        assert_eq!(language_label("docs/spec.md"), "markdown");
-        assert_eq!(language_label("unknown/file.xyz"), "unknown");
-    }
-
-    #[test]
-    fn semantic_flags_classify_generated_lockfile_and_tooling_paths() {
-        assert!(is_generated_like_path("target/debug/app"));
-        assert!(is_generated_like_path("web/dist/app.min.js"));
-        assert!(is_generated_like_path("src/foo_generated.rs"));
-        assert!(!is_generated_like_path("src/lib.rs"));
-
-        assert!(is_lockfile_path("Cargo.lock"));
-        assert!(is_lockfile_path("frontend/pnpm-lock.yaml"));
-        assert!(!is_lockfile_path("Cargo.toml"));
-
-        assert!(is_ci_or_tooling_path(".github/workflows/ci.yml"));
-        assert!(is_ci_or_tooling_path("justfile"));
-        assert!(is_ci_or_tooling_path("tooling/mise.toml"));
-        assert!(!is_ci_or_tooling_path("src/lib.rs"));
-
-        assert!(is_repo_rule_path("AGENTS.md"));
-        assert!(is_repo_rule_path(".diffship/PROJECT_RULES.md"));
-        assert!(!is_repo_rule_path("docs/lib.md"));
-
-        assert!(is_dependency_policy_path("Cargo.toml"));
-        assert!(is_dependency_policy_path("package.json"));
-        assert!(!is_dependency_policy_path("src/lib.rs"));
-
-        assert!(is_build_graph_path("tsconfig.json"));
-        assert!(is_build_graph_path("Dockerfile"));
-        assert!(!is_build_graph_path("docs/lib.md"));
-
-        assert!(is_test_infrastructure_path("tests/fixtures/api.json"));
-        assert!(is_test_infrastructure_path("tests/mocks/client.rs"));
-        assert!(!is_test_infrastructure_path("tests/lib_test.rs"));
     }
 
     #[test]
@@ -7742,100 +6970,6 @@ mod tests {
             fixture
                 .coarse_labels
                 .contains(&"test_infrastructure_touch".to_string())
-        );
-    }
-
-    #[test]
-    fn infer_related_test_candidates_returns_existing_stable_matches() {
-        let candidates = BTreeSet::from_iter(
-            [
-                "src/lib.rs",
-                "tests/lib.rs",
-                "tests/lib_test.rs",
-                "tests/nested/foo_test.py",
-                "tests/nested/foo.spec.py",
-                "tests/ignored.md",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
-        );
-
-        assert_eq!(
-            infer_related_test_candidates("src/lib.rs", &candidates),
-            vec!["tests/lib.rs".to_string(), "tests/lib_test.rs".to_string()]
-        );
-        assert_eq!(
-            infer_related_test_candidates("src/nested/foo.py", &candidates),
-            vec![
-                "tests/nested/foo.spec.py".to_string(),
-                "tests/nested/foo_test.py".to_string(),
-            ]
-        );
-        assert!(infer_related_test_candidates("tests/lib_test.rs", &candidates).is_empty());
-    }
-
-    #[test]
-    fn infer_related_source_candidates_returns_existing_stable_matches() {
-        let candidates = BTreeSet::from_iter(
-            [
-                "src/lib.rs",
-                "src/nested/foo.py",
-                "tests/lib_test.rs",
-                "tests/nested/test_foo.py",
-                "tests/nested/foo.spec.py",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
-        );
-
-        assert_eq!(
-            infer_related_source_candidates("tests/lib_test.rs", &candidates),
-            vec!["src/lib.rs".to_string()]
-        );
-        assert_eq!(
-            infer_related_source_candidates("tests/nested/test_foo.py", &candidates),
-            vec!["src/nested/foo.py".to_string()]
-        );
-        assert_eq!(
-            infer_related_source_candidates("tests/nested/foo.spec.py", &candidates),
-            vec!["src/nested/foo.py".to_string()]
-        );
-        assert!(infer_related_source_candidates("src/lib.rs", &candidates).is_empty());
-    }
-
-    #[test]
-    fn infer_related_doc_and_config_candidates_return_existing_stable_matches() {
-        let candidates = BTreeSet::from_iter(
-            [
-                "src/lib.rs",
-                "tests/lib_test.rs",
-                "Cargo.toml",
-                "README.md",
-                "docs/lib.md",
-                "docs/nested/foo.md",
-                "src/nested/foo.py",
-                "tests/nested/test_foo.py",
-                "pyproject.toml",
-            ]
-            .into_iter()
-            .map(ToOwned::to_owned),
-        );
-
-        assert_eq!(
-            infer_related_doc_candidates("src/lib.rs", &candidates),
-            vec!["README.md".to_string(), "docs/lib.md".to_string()]
-        );
-        assert_eq!(
-            infer_related_doc_candidates("tests/nested/test_foo.py", &candidates),
-            vec!["README.md".to_string(), "docs/nested/foo.md".to_string()]
-        );
-        assert_eq!(
-            infer_related_config_candidates("src/lib.rs", &candidates),
-            vec!["Cargo.toml".to_string()]
-        );
-        assert_eq!(
-            infer_related_config_candidates("tests/nested/test_foo.py", &candidates),
-            vec!["pyproject.toml".to_string()]
         );
     }
 

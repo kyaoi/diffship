@@ -1,3 +1,5 @@
+mod helpers;
+
 use crate::exit::{EXIT_GENERAL, ExitError};
 use crate::ops::{command_log, lock, run, session, tasks, worktree};
 use crossterm::cursor::{Hide, MoveTo, Show};
@@ -14,6 +16,12 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+
+use self::helpers::{
+    cycle_named_value, cycle_value, display_opt, empty_to_none, next_edit_target,
+    opt_u64_to_string, opt_usize_to_string, parse_optional_u64, parse_optional_usize,
+    parse_pattern_list, yes_no,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -193,14 +201,36 @@ impl App {
         let status = Some(load_status(git_root, 8)?);
         let handoff_config = crate::handoff_config::HandoffConfig::load(git_root)?;
         let handoff_profile_names = handoff_config.available_profile_names();
-        let default_profile = handoff_config.resolve_selection(None, None, None)?;
-        let handoff_plan = crate::plan::HandoffPlan {
-            profile: Some(default_profile.selected_name.clone()),
-            max_parts: Some(default_profile.max_parts),
-            max_bytes_per_part: Some(default_profile.max_bytes_per_part),
-            out_dir: handoff_config.default_output_dir().map(str::to_string),
-            ..crate::plan::HandoffPlan::default()
-        };
+        let (default_args, _) = handoff_config.resolve_build_args(crate::cli::BuildArgs {
+            range_mode: "last".to_string(),
+            from: None,
+            to: None,
+            a: None,
+            b: None,
+            no_committed: false,
+            include: vec![],
+            exclude: vec![],
+            include_staged: false,
+            include_unstaged: false,
+            include_untracked: false,
+            split_by: Some("auto".to_string()),
+            untracked_mode: "auto".to_string(),
+            include_binary: false,
+            binary_mode: "raw".to_string(),
+            profile: None,
+            max_parts: None,
+            max_bytes_per_part: None,
+            plan: None,
+            plan_out: None,
+            out_dir: None,
+            out: None,
+            zip: false,
+            zip_only: false,
+            project_context: "none".to_string(),
+            yes: false,
+            fail_on_secrets: false,
+        })?;
+        let handoff_plan = crate::plan::HandoffPlan::from_build_args(&default_args);
 
         Ok(Self {
             screen: Screen::Runs,
@@ -320,7 +350,14 @@ impl App {
             } else {
                 " "
             };
-            let s = format!("{} {}  {}  {}", mark, r.created_at, r.run_id, r.command);
+            let s = format!(
+                "{} {}  {}  {}  [{}]",
+                mark,
+                r.created_at,
+                r.run_id,
+                r.command,
+                r.state_label.as_deref().unwrap_or("?")
+            );
             writeln_trunc(out, &s, w)?;
         }
 
@@ -339,6 +376,19 @@ impl App {
         writeln_trunc(out, &format!("created_at: {}", d.meta.created_at), w)?;
         writeln_trunc(out, &format!("command   : {}", d.meta.command), w)?;
         writeln_trunc(out, &format!("run_dir   : {}", d.run_dir.display()), w)?;
+        if let Some(summary) = self.runs.iter().find(|run| run.run_id == d.meta.run_id) {
+            writeln_trunc(
+                out,
+                &format!(
+                    "state     : {}",
+                    summary.state_label.as_deref().unwrap_or("(unknown)")
+                ),
+                w,
+            )?;
+            if let Some(next) = summary.next_command.as_deref() {
+                writeln_trunc(out, &format!("next      : {}", next), w)?;
+            }
+        }
 
         if let Some(sb) = &d.sandbox {
             writeln_trunc(out, &format!("sandbox   : {}", sb.path), w)?;
@@ -490,7 +540,13 @@ impl App {
             for r in &s.recent_runs {
                 writeln_trunc(
                     out,
-                    &format!("  - {}  {}  {}", r.created_at, r.run_id, r.command),
+                    &format!(
+                        "  - {}  {}  {}  [{}]",
+                        r.created_at,
+                        r.run_id,
+                        r.command,
+                        r.state_label.as_deref().unwrap_or("?")
+                    ),
                     w,
                 )?;
             }
@@ -1728,99 +1784,6 @@ fn edit_target_label(target: EditTarget) -> &'static str {
     }
 }
 
-fn display_opt(s: Option<&str>) -> &str {
-    s.filter(|v| !v.is_empty()).unwrap_or("(auto)")
-}
-
-fn empty_to_none(s: String) -> Option<String> {
-    if s.trim().is_empty() { None } else { Some(s) }
-}
-
-fn parse_pattern_list(s: &str) -> Vec<String> {
-    s.split([',', '\n'])
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-fn parse_optional_usize(label: &str, s: &str) -> Result<Option<usize>, String> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    trimmed
-        .parse::<usize>()
-        .map(Some)
-        .map_err(|e| format!("invalid {label}: {trimmed} ({e})"))
-}
-
-fn parse_optional_u64(label: &str, s: &str) -> Result<Option<u64>, String> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    trimmed
-        .parse::<u64>()
-        .map(Some)
-        .map_err(|e| format!("invalid {label}: {trimmed} ({e})"))
-}
-
-fn opt_usize_to_string(value: Option<usize>) -> String {
-    value.map(|v| v.to_string()).unwrap_or_default()
-}
-
-fn opt_u64_to_string(value: Option<u64>) -> String {
-    value.map(|v| v.to_string()).unwrap_or_default()
-}
-
-fn cycle_value(current: &str, values: &[&str]) -> String {
-    let idx = values.iter().position(|v| *v == current).unwrap_or(0);
-    values[(idx + 1) % values.len()].to_string()
-}
-
-fn cycle_named_value(current: Option<&str>, values: &[String]) -> Option<String> {
-    if values.is_empty() {
-        return None;
-    }
-    let current = current.unwrap_or(values[0].as_str());
-    let idx = values.iter().position(|v| v == current).unwrap_or(0);
-    Some(values[(idx + 1) % values.len()].clone())
-}
-
-fn yes_no(v: bool) -> &'static str {
-    if v { "yes" } else { "no" }
-}
-
-fn next_edit_target(target: EditTarget, reverse: bool) -> Option<EditTarget> {
-    const COMPARE_ORDER: &[EditTarget] = &[EditTarget::CompareBundleA, EditTarget::CompareBundleB];
-    const ORDER: &[EditTarget] = &[
-        EditTarget::HandoffFrom,
-        EditTarget::HandoffTo,
-        EditTarget::HandoffA,
-        EditTarget::HandoffB,
-        EditTarget::HandoffInclude,
-        EditTarget::HandoffExclude,
-        EditTarget::HandoffOut,
-        EditTarget::HandoffPlanPath,
-        EditTarget::HandoffMaxParts,
-        EditTarget::HandoffMaxBytes,
-    ];
-
-    let order = if COMPARE_ORDER.contains(&target) {
-        COMPARE_ORDER
-    } else {
-        ORDER
-    };
-    let idx = order.iter().position(|entry| *entry == target)?;
-    let next = if reverse {
-        idx.checked_sub(1).unwrap_or(order.len() - 1)
-    } else {
-        (idx + 1) % order.len()
-    };
-    Some(order[next])
-}
-
 fn trim_last_word(s: &mut String) {
     let trimmed_len = s.trim_end_matches(char::is_whitespace).len();
     s.truncate(trimmed_len);
@@ -2091,11 +2054,9 @@ fn display_opt_num<T: ToString>(value: Option<T>) -> String {
 mod tests {
     use super::{
         ChildRunResult, CompareState, EditTarget, HandoffState, InputMode, PreviewLineStyle,
-        compare_overview_lines, current_plan_export_path, cycle_named_value, cycle_value,
-        edit_status_lines, handoff_overview_lines, next_edit_target, parse_optional_u64,
-        parse_optional_usize, parse_pattern_list, preview_line_style, read_preview_lines,
-        render_compare_report, should_start_tui_impl, summarize_child_failure,
-        summarize_child_success,
+        compare_overview_lines, current_plan_export_path, edit_status_lines,
+        handoff_overview_lines, preview_line_style, read_preview_lines, render_compare_report,
+        should_start_tui_impl, summarize_child_failure, summarize_child_success,
     };
 
     #[test]
@@ -2119,69 +2080,6 @@ mod tests {
         for v in ["", "0", "false", "no", "off", "random"] {
             assert!(should_start_tui_impl(true, v), "expected enabled for: {v}");
         }
-    }
-
-    #[test]
-    fn cycle_value_wraps() {
-        assert_eq!(cycle_value("auto", &["auto", "file", "commit"]), "file");
-        assert_eq!(cycle_value("commit", &["auto", "file", "commit"]), "auto");
-    }
-
-    #[test]
-    fn cycle_named_value_wraps() {
-        let values = vec!["20x512".to_string(), "10x100".to_string()];
-        assert_eq!(
-            cycle_named_value(Some("20x512"), &values),
-            Some("10x100".to_string())
-        );
-        assert_eq!(
-            cycle_named_value(Some("10x100"), &values),
-            Some("20x512".to_string())
-        );
-    }
-
-    #[test]
-    fn next_edit_target_cycles_handoff_fields() {
-        assert_eq!(
-            next_edit_target(EditTarget::HandoffFrom, false),
-            Some(EditTarget::HandoffTo)
-        );
-        assert_eq!(
-            next_edit_target(EditTarget::HandoffMaxBytes, false),
-            Some(EditTarget::HandoffFrom)
-        );
-        assert_eq!(
-            next_edit_target(EditTarget::HandoffFrom, true),
-            Some(EditTarget::HandoffMaxBytes)
-        );
-        assert_eq!(next_edit_target(EditTarget::LoopBundle, false), None);
-    }
-
-    #[test]
-    fn next_edit_target_cycles_compare_fields() {
-        assert_eq!(
-            next_edit_target(EditTarget::CompareBundleA, false),
-            Some(EditTarget::CompareBundleB)
-        );
-        assert_eq!(
-            next_edit_target(EditTarget::CompareBundleB, false),
-            Some(EditTarget::CompareBundleA)
-        );
-        assert_eq!(
-            next_edit_target(EditTarget::CompareBundleA, true),
-            Some(EditTarget::CompareBundleB)
-        );
-    }
-
-    #[test]
-    fn numeric_edit_parsers_accept_empty_and_reject_invalid_values() {
-        assert_eq!(parse_optional_usize("max parts", "").unwrap(), None);
-        assert_eq!(parse_optional_usize("max parts", "12").unwrap(), Some(12));
-        assert!(parse_optional_usize("max parts", "abc").is_err());
-
-        assert_eq!(parse_optional_u64("max bytes", "").unwrap(), None);
-        assert_eq!(parse_optional_u64("max bytes", "1024").unwrap(), Some(1024));
-        assert!(parse_optional_u64("max bytes", "oops").is_err());
     }
 
     #[test]
@@ -2387,14 +2285,6 @@ mod tests {
         assert!(joined.contains(r#"- reading_order[0]: "Docs" -> "Source""#));
         assert!(joined.contains("file diffs:"));
         assert!(joined.contains("- [patch/content_differs] parts/part_01.patch"));
-    }
-
-    #[test]
-    fn parse_pattern_list_accepts_commas_and_newlines() {
-        assert_eq!(
-            parse_pattern_list("src/*.rs, docs/*.md\nnotes.txt"),
-            vec!["src/*.rs", "docs/*.md", "notes.txt"]
-        );
     }
 
     #[test]

@@ -379,11 +379,12 @@ Current `plan.toml` behavior:
 
 - stores the selected profile name
 - stores resolved numeric limits
-- stores handoff selection such as range, sources, filters, split mode, and binary mode
+- stores resolved handoff selection such as range, sources, filters, split mode, binary mode, and handoff-side secret policy
 - does not store runtime output routing such as `--out` or `--out-dir`
 - does not store the entire named profile catalog
 
 Named profile definitions stay in config, not in the plan export.
+Replay uses the exported resolved values instead of silently re-reading newer project/global handoff defaults.
 
 ### 5.8 Handoff output layout
 
@@ -521,7 +522,7 @@ What happens:
 7. promote if verification succeeds
 8. persist run logs under `.diffship/runs/<run-id>/`
 
-When a run executes external commands, `diffship runs` and `diffship status` show `commands=<n>` plus the recorded phases, and they also print direct `run_dir`, `commands.json`, and phase-directory paths so you can open the relevant logs immediately. The run directory still keeps the detailed `commands.json` index and per-phase log folders.
+When a run executes external commands, `diffship runs` and `diffship status` show `commands=<n>` plus the recorded phases, a derived `state=...` label, and when possible a concrete `next=diffship ...` follow-up command. They also print direct `run_dir`, `commands.json`, and phase-directory paths so you can open the relevant logs immediately. The run directory still keeps the detailed `commands.json` index and per-phase log folders.
 
 ### 6.3 Use individual ops commands
 
@@ -530,6 +531,13 @@ Apply only:
 ```bash
 diffship apply ./patch-bundle.zip
 diffship apply ./patch-bundle.zip --base-commit "$(git rev-parse HEAD)"
+```
+
+Validate a patch bundle without creating a run:
+
+```bash
+diffship validate-patch ./patch-bundle.zip
+diffship validate-patch ./patch-bundle.zip --json
 ```
 
 Verify a specific run:
@@ -558,6 +566,14 @@ Show overall status:
 diffship status
 diffship status --heads-only
 diffship status --json
+```
+
+Explain the next useful action for a run or bundle:
+
+```bash
+diffship explain --latest
+diffship explain --run-id <run-id> --json
+diffship explain --bundle ./diffship_YYYY-MM-DD_HHMM_<head7>
 ```
 
 Repair a stale session after manual commits:

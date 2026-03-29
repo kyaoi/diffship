@@ -21,7 +21,7 @@ It covers both sides of an AI workflow:
 Install from GitHub:
 
 ```bash
-cargo install --git https://github.com/kyaoi/diffship.git --tag v0.7.0
+cargo install --git https://github.com/kyaoi/diffship.git --tag v0.7.1
 ```
 
 Or work from source:
@@ -74,7 +74,9 @@ Ops:
 ```bash
 diffship init
 diffship apply path/to/patch-bundle.zip
+diffship validate-patch path/to/patch-bundle.zip
 diffship verify
+diffship explain --latest
 diffship strategy --latest
 diffship promote
 diffship loop path/to/patch-bundle.zip

@@ -250,6 +250,8 @@ impl HandoffPlan {
             "project_context = {}\n",
             toml_string(&self.project_context)
         ));
+        out.push_str(&format!("yes = {}\n", self.yes));
+        out.push_str(&format!("fail_on_secrets = {}\n", self.fail_on_secrets));
         out
     }
 
@@ -526,7 +528,8 @@ mod tests {
         assert!(!parsed.zip);
         assert!(!parsed.zip_only);
         assert_eq!(parsed.project_context, plan.project_context);
-        assert!(!parsed.yes);
+        assert!(parsed.yes);
+        assert_eq!(parsed.fail_on_secrets, plan.fail_on_secrets);
         assert_eq!(parsed.profile, plan.profile);
         assert_eq!(parsed.range_mode, plan.range_mode);
         assert_eq!(parsed.a, plan.a);

@@ -3,7 +3,7 @@
 This document describes **how configuration is resolved** and which keys are **actually supported** by the current diffship binary.
 
 > diffship is developed with spec-driven development.
-> Ops verify profile commands under `[verify.profiles.*]` and handoff settings under `[handoff]` / `[handoff.profiles.*]` are now consumed by the current implementation.
+> Ops verify profile commands under `[verify.profiles.*]`, handoff settings under `[handoff]` / `[handoff.profiles.*]`, and handoff defaults under `[diff]`, `[sources]`, `[untracked]`, `[split]`, and `[secrets]` are now consumed by the current implementation.
 > The generated `.diffship/config.toml` intentionally marks repository-owned edit points with "Customize this section" comments so the initial stub is easier to adopt, records the bootstrap workflow profile selected during `diffship init`, and points at `.diffship/WORKFLOW_PROFILE.md` for the repo-local workflow guidance. `.diffship/ai_generated_config.toml` keeps AI-owned defaults separate when a repo wants that split.
 
 ---
@@ -300,11 +300,14 @@ Compatibility alias `[handoff].out_dir` is also accepted.
 
 ```toml
 [diff]
-unified = 3
-renames = "auto"      # auto|on|off
 include_binary = false
 binary_mode = "raw"   # raw|patch|meta
 ```
+
+Notes:
+
+- The current implementation consumes `include_binary` and `binary_mode` from `[diff]`.
+- These defaults apply to `diffship build`, exported `plan.toml`, and initial TUI handoff-plan state.
 
 ### 3.3 Sources (segments)
 
@@ -316,6 +319,12 @@ include_unstaged = false
 include_untracked = false
 ```
 
+Notes:
+
+- These defaults apply to `diffship build` and initial TUI handoff-plan state.
+- CLI flags still have top precedence.
+- Exported `plan.toml` stores the resolved source selection so replay is stable even if config changes later.
+
 ### 3.4 Untracked options
 
 ```toml
@@ -325,12 +334,23 @@ threshold_bytes = 200000
 binary_globs = ["*.png", "*.jpg", "*.pdf", "*.zip"]
 ```
 
+Notes:
+
+- The current implementation consumes `mode` from `[untracked]`.
+- `threshold_bytes` and `binary_globs` remain documented future-facing keys; they are not consumed by the current binary.
+- Exported `plan.toml` stores the resolved `untracked_mode`.
+
 ### 3.5 Split mode
 
 ```toml
 [split]
 by = "auto" # auto|file|commit
 ```
+
+Notes:
+
+- The current implementation consumes `by` from `[split]`.
+- Exported `plan.toml` stores the resolved split mode.
 
 ### 3.6 Secrets warnings (handoff side)
 
@@ -339,6 +359,12 @@ by = "auto" # auto|file|commit
 enabled = true
 fail_on_secrets = false
 ```
+
+Notes:
+
+- The current implementation consumes `fail_on_secrets` from `[secrets]`.
+- `enabled` remains a documented future-facing key; the current binary always performs build-side secret scanning.
+- Exported `plan.toml` stores the resolved `fail_on_secrets` value so replay does not drift when config later changes.
 
 ### 3.7 Ignore file: `.diffshipignore`
 
