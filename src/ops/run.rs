@@ -243,8 +243,12 @@ mod tests {
         let dir = td.path();
         let repo = tempfile::tempdir().unwrap();
         crate::git::run_git(repo.path(), ["init", "-q"]).unwrap();
-        crate::git::run_git(repo.path(), ["config", "user.email", "test@example.com"]).unwrap();
-        crate::git::run_git(repo.path(), ["config", "user.name", "diffship-test"]).unwrap();
+        crate::git::run_git(
+            repo.path(),
+            ["config", "user.email", "aoistudy90@gmail.com"],
+        )
+        .unwrap();
+        crate::git::run_git(repo.path(), ["config", "user.name", "kyaoi"]).unwrap();
         fs::write(repo.path().join("README.md"), "hello\n").unwrap();
         crate::git::run_git(repo.path(), ["add", "."]).unwrap();
         crate::git::run_git(repo.path(), ["commit", "-m", "init", "-q"]).unwrap();

@@ -13,12 +13,12 @@ fn init_repo() -> TempDir {
         .assert()
         .success();
     Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
+        .args(["config", "user.email", "aoistudy90@gmail.com"])
         .current_dir(root)
         .assert()
         .success();
     Command::new("git")
-        .args(["config", "user.name", "diffship-test"])
+        .args(["config", "user.name", "kyaoi"])
         .current_dir(root)
         .assert()
         .success();
